@@ -1,7 +1,7 @@
 use std::path::Path;
 
-use agentstow_core::{AgentStowError, ArtifactId, ArtifactKind, Result};
-use agentstow_manifest::{ArtifactDef, Manifest, ProfileName};
+use agentstow_core::{AgentStowError, ArtifactId, ArtifactKind, ProfileName, Result};
+use agentstow_manifest::Manifest;
 use tera::Context;
 use tracing::instrument;
 

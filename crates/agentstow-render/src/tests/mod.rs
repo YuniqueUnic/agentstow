@@ -26,7 +26,7 @@ validate_as = "none"
         )
         .unwrap();
 
-    let manifest = Manifest::load_from_path(&temp.child("agentstow.toml").path()).unwrap();
+    let manifest = Manifest::load_from_path(temp.child("agentstow.toml").path()).unwrap();
     let out = Renderer::render_file(
         &manifest,
         &ArtifactId::new_unchecked("hello"),

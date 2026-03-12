@@ -31,7 +31,7 @@ impl Validator {
                 let s = std::str::from_utf8(bytes).map_err(|e| AgentStowError::Validate {
                     message: format!("shell 输出不是 UTF-8 文本: {e}").into(),
                 })?;
-                if s.as_bytes().iter().any(|b| *b == 0) {
+                if s.as_bytes().contains(&0) {
                     return Err(AgentStowError::Validate {
                         message: "shell 输出包含 NUL 字节".into(),
                     });

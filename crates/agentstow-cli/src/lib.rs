@@ -194,11 +194,11 @@ pub async fn run() -> i32 {
 
     let _ = init_tracing();
 
-    if let Some(cwd) = &cli.cwd {
-        if let Err(e) = std::env::set_current_dir(cwd) {
-            eprintln!("{e}");
-            return AgentStowError::from(e).exit_code().as_i32();
-        }
+    if let Some(cwd) = &cli.cwd
+        && let Err(e) = std::env::set_current_dir(cwd)
+    {
+        eprintln!("{e}");
+        return AgentStowError::from(e).exit_code().as_i32();
     }
 
     match run_cli(cli).await {
@@ -376,7 +376,7 @@ async fn run_cli(cli: Cli) -> Result<()> {
                 McpSubcommand::Render { stdout, out } => {
                     let json = Mcp::render_mcp_json(&manifest.mcp_servers)?;
                     if stdout || out.is_none() {
-                        print!("{json}\n");
+                        println!("{json}");
                         return Ok(());
                     }
                     let out_path = out.unwrap();
@@ -582,12 +582,12 @@ async fn link_status(manifest: &Manifest, json: bool) -> Result<()> {
     let mut out = Vec::new();
     for rec in records {
         let ok = match rec.method {
-            InstallMethod::Symlink | InstallMethod::Junction => {
-                let Some(src) = rec.rendered_path.as_ref() else {
-                    false
-                };
-                agentstow_linker::check_symlink(&rec.target_path, src).unwrap_or(false)
-            }
+            InstallMethod::Symlink | InstallMethod::Junction => match rec.rendered_path.as_ref() {
+                Some(src) => {
+                    agentstow_linker::check_symlink(&rec.target_path, src).unwrap_or(false)
+                }
+                None => false,
+            },
             InstallMethod::Copy => {
                 if !rec.target_path.is_file() {
                     false
@@ -655,12 +655,12 @@ fn resolve_profile(
             message: "需要指定 --profile（或在 target 内配置 profile）".into(),
         })?;
     let p = ProfileName::new_unchecked(chosen);
-    if let Some(m) = manifest {
-        if !m.profiles.contains_key(&p) {
-            return Err(AgentStowError::Manifest {
-                message: format!("profile 不存在: {}", p.as_str()).into(),
-            });
-        }
+    if let Some(m) = manifest
+        && !m.profiles.contains_key(&p)
+    {
+        return Err(AgentStowError::Manifest {
+            message: format!("profile 不存在: {}", p.as_str()).into(),
+        });
     }
     Ok(p)
 }

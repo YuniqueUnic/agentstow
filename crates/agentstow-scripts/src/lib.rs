@@ -70,15 +70,14 @@ impl ScriptRunner {
             message: format!("spawn 失败: {e}").into(),
         })?;
 
-        if matches!(req.script.stdin_mode, StdinMode::Text | StdinMode::Json) {
-            if let Some(stdin_text) = &req.stdin_text {
-                if let Some(mut stdin) = child.inner().stdin.take() {
-                    stdin
-                        .write_all(stdin_text.as_bytes())
-                        .await
-                        .map_err(AgentStowError::from)?;
-                }
-            }
+        if matches!(req.script.stdin_mode, StdinMode::Text | StdinMode::Json)
+            && let Some(stdin_text) = &req.stdin_text
+            && let Some(mut stdin) = child.inner().stdin.take()
+        {
+            stdin
+                .write_all(stdin_text.as_bytes())
+                .await
+                .map_err(AgentStowError::from)?;
         }
 
         let mut stdout_buf = Vec::new();

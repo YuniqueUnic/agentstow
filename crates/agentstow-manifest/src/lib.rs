@@ -253,13 +253,12 @@ fn validate_manifest(m: &ManifestToml) -> Result<()> {
                 .into(),
             });
         }
-        if let Some(profile) = &target.profile {
-            if !m.profiles.contains_key(profile) {
-                return Err(AgentStowError::Manifest {
-                    message: format!("target 引用不存在的 profile: {target_name} -> {profile}")
-                        .into(),
-                });
-            }
+        if let Some(profile) = &target.profile
+            && !m.profiles.contains_key(profile)
+        {
+            return Err(AgentStowError::Manifest {
+                message: format!("target 引用不存在的 profile: {target_name} -> {profile}").into(),
+            });
         }
     }
     Ok(())

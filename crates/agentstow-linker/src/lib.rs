@@ -83,15 +83,9 @@ pub enum InstallSource {
     Path(PathBuf),
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct ApplyOptions {
     pub force: bool,
-}
-
-impl Default for ApplyOptions {
-    fn default() -> Self {
-        Self { force: false }
-    }
 }
 
 #[instrument(skip_all, fields(target=%job.target, method=?job.method, target_path=%normalize_for_display(&job.target_path)))]
@@ -110,7 +104,7 @@ pub fn apply_job(
 pub fn plan_job(job: &LinkJob, render_store: &RenderStore) -> Result<LinkPlanItem> {
     let desired = match job.method {
         InstallMethod::Symlink => match (&job.artifact_kind, &job.desired) {
-            (ArtifactKind::File, InstallSource::FileBytes(bytes)) => DesiredInstall::Symlink {
+            (ArtifactKind::File, InstallSource::FileBytes(_bytes)) => DesiredInstall::Symlink {
                 source_path: render_store.rendered_file_path(&job.artifact_id, &job.profile),
             },
             (ArtifactKind::Dir, InstallSource::Path(p)) => DesiredInstall::Symlink {
@@ -279,25 +273,25 @@ fn apply_junction(job: &LinkJob, opt: ApplyOptions) -> Result<LinkPlanItem> {
     #[cfg(windows)]
     {
         junction::create(source_path, &job.target_path).map_err(AgentStowError::from)?;
-    }
-    #[cfg(not(windows))]
-    {
-        return Err(AgentStowError::Link {
-            message: "junction 仅支持 Windows".into(),
+        return Ok(LinkPlanItem {
+            target: job.target.clone(),
+            artifact_id: job.artifact_id.clone(),
+            profile: job.profile.clone(),
+            artifact_kind: job.artifact_kind,
+            method: job.method,
+            target_path: job.target_path.clone(),
+            desired: DesiredInstall::Junction {
+                source_path: source_path.clone(),
+            },
         });
     }
 
-    Ok(LinkPlanItem {
-        target: job.target.clone(),
-        artifact_id: job.artifact_id.clone(),
-        profile: job.profile.clone(),
-        artifact_kind: job.artifact_kind,
-        method: job.method,
-        target_path: job.target_path.clone(),
-        desired: DesiredInstall::Junction {
-            source_path: source_path.clone(),
-        },
-    })
+    #[cfg(not(windows))]
+    {
+        Err(AgentStowError::Link {
+            message: "junction 仅支持 Windows".into(),
+        })
+    }
 }
 
 fn apply_copy(job: &LinkJob, opt: ApplyOptions) -> Result<LinkPlanItem> {

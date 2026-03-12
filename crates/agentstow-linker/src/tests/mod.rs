@@ -21,7 +21,7 @@ fn copy_file_should_write_bytes() {
     let plan = apply_job(&job, &store, ApplyOptions { force: false }).unwrap();
     assert_eq!(plan.method, InstallMethod::Copy);
 
-    let s = temp.child("out.txt").read_to_string().unwrap();
+    let s = std::fs::read_to_string(temp.child("out.txt").path()).unwrap();
     assert_eq!(s, "hello");
 }
 

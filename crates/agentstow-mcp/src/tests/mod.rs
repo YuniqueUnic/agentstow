@@ -1,7 +1,5 @@
 use std::collections::BTreeMap;
 
-use pretty_assertions::assert_eq;
-
 use super::*;
 
 #[test]

@@ -7,34 +7,24 @@ pub enum ArtifactKind {
     Dir,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum InstallMethod {
+    #[default]
     Symlink,
     Junction,
     Copy,
 }
 
-impl Default for InstallMethod {
-    fn default() -> Self {
-        Self::Symlink
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum ValidateAs {
+    #[default]
     None,
     Json,
     Toml,
     Markdown,
     Shell,
-}
-
-impl Default for ValidateAs {
-    fn default() -> Self {
-        Self::None
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -45,43 +35,41 @@ pub enum ShellKind {
     Fish,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+impl std::str::FromStr for ShellKind {
+    type Err = String;
+
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "bash" => Ok(Self::Bash),
+            "zsh" => Ok(Self::Zsh),
+            "fish" => Ok(Self::Fish),
+            other => Err(format!("不支持的 shell: {other}（可选: bash|zsh|fish）")),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum StdinMode {
+    #[default]
     None,
     Text,
     Json,
 }
 
-impl Default for StdinMode {
-    fn default() -> Self {
-        Self::None
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum OutputMode {
+    #[default]
     Passthrough,
     Capture,
     Json,
 }
 
-impl Default for OutputMode {
-    fn default() -> Self {
-        Self::Passthrough
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum CwdPolicy {
+    #[default]
     Workspace,
     Current,
-}
-
-impl Default for CwdPolicy {
-    fn default() -> Self {
-        Self::Workspace
-    }
 }

@@ -153,7 +153,7 @@ ORDER BY target_path
                     &updated_at,
                     &time::format_description::well_known::Rfc3339,
                 )
-                .unwrap_or_else(|_| OffsetDateTime::UNIX_EPOCH);
+                .unwrap_or(OffsetDateTime::UNIX_EPOCH);
 
                 Ok(LinkInstanceRecord {
                     workspace_root: PathBuf::from(workspace_root),
