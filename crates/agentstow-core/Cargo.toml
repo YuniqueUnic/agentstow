@@ -5,3 +5,10 @@ authors.workspace = true
 version.workspace = true
 
 [dependencies]
+anyhow.workspace = true
+directories.workspace = true
+dunce.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+time.workspace = true

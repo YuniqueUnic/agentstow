@@ -1,17 +1,42 @@
 [package]
-name = "cli"
+name = "agentstow-cli"
 authors.workspace = true
 version.workspace = true
 edition.workspace = true
 
 
 [[bin]]
-name = "agentstowx"
+name = "agentstow"
 path = "src/main.rs"
 
 [dependencies]
-anyhow.workspace=true
+agentstow-core = { path = "../agentstow-core" }
+agentstow-env = { path = "../agentstow-env" }
+agentstow-git = { path = "../agentstow-git" }
+agentstow-linker = { path = "../agentstow-linker" }
+agentstow-manifest = { path = "../agentstow-manifest" }
+agentstow-mcp = { path = "../agentstow-mcp" }
+agentstow-render = { path = "../agentstow-render" }
+agentstow-scripts = { path = "../agentstow-scripts" }
+agentstow-server = { path = "../agentstow-server" }
+agentstow-state = { path = "../agentstow-state" }
+agentstow-validate = { path = "../agentstow-validate" }
+anyhow.workspace = true
+clap.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
 
 [dev-dependencies]
-assert_fs.workspace=true
-rstest.workspace=true
+assert_cmd.workspace = true
+assert_fs.workspace = true
+insta.workspace = true
+predicates.workspace = true
+pretty_assertions.workspace = true
+proptest.workspace = true
+rstest.workspace = true
+snapbox.workspace = true
+temp-env.workspace = true
+trycmd.workspace = true

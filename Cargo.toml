@@ -6,7 +6,18 @@ edition = "2024"
 [workspace]
 resolver = "3"
 members = [
-    "crates/agentstow-cli", "crates/agentstow-core", "crates/agentstow-env", "crates/agentstow-git", "crates/agentstow-linker", "crates/agentstow-manifest", "crates/agentstow-mcp", "crates/agentstow-render", "crates/agentstow-scripts", "crates/agentstow-server", "crates/agentstow-state", "crates/agentstow-validate",
+    "crates/agentstow-cli",
+    "crates/agentstow-core",
+    "crates/agentstow-env",
+    "crates/agentstow-git",
+    "crates/agentstow-linker",
+    "crates/agentstow-manifest",
+    "crates/agentstow-mcp",
+    "crates/agentstow-render",
+    "crates/agentstow-scripts",
+    "crates/agentstow-server",
+    "crates/agentstow-state",
+    "crates/agentstow-validate",
 ]
 exclude = [
     "e2e/**",
@@ -18,9 +29,43 @@ exclude = [
 
 [workspace.dependencies]
 anyhow = "1"
-
-assert_fs= "1"
+assert_cmd = "2"
+assert_fs = "1"
+axum = "0.8"
+blake3 = "1"
+clap = { version = "4", features = ["derive", "env"] }
+command-group = { version = "5", features = ["with-tokio"] }
+directories = "6"
+dotenvy = "0.15"
+dunce = "1"
+fs-err = "3"
+ignore = "0.4"
+insta = { version = "1", features = ["json"] }
+jsonschema = "0.45"
+pathdiff = "0.2"
+predicates = "3"
+pretty_assertions = "1"
+proptest = "1"
+rusqlite = { version = "0.38", features = ["bundled"] }
 rstest = "0.26"
+schemars = { version = "1", features = ["serde_json"] }
+same-file = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serial_test = "3"
+shlex = "1"
+snapbox = "0.6"
+temp-env = "0.3"
+tempfile = "3"
+tera = "1.20.1"
+thiserror = "1"
+time = { version = "0.3", features = ["macros", "serde-human-readable"] }
+tokio = { version = "1", features = ["fs", "macros", "process", "rt-multi-thread", "signal", "time"] }
+toml = "1"
+tower-http = { version = "0.6", features = ["fs"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+trycmd = "0.15"
 
 
 [profile.release]

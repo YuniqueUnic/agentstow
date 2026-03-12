@@ -5,3 +5,14 @@ authors.workspace = true
 version.workspace = true
 
 [dependencies]
+agentstow-core = { path = "../agentstow-core" }
+agentstow-manifest = { path = "../agentstow-manifest" }
+agentstow-state = { path = "../agentstow-state" }
+anyhow.workspace = true
+axum.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tower-http.workspace = true
+tracing.workspace = true

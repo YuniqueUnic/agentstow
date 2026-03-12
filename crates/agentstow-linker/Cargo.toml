@@ -5,3 +5,16 @@ authors.workspace = true
 version.workspace = true
 
 [dependencies]
+agentstow-core = { path = "../agentstow-core" }
+anyhow.workspace = true
+blake3.workspace = true
+dunce.workspace = true
+fs-err.workspace = true
+pathdiff.workspace = true
+same-file.workspace = true
+tempfile.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+junction = "1"
