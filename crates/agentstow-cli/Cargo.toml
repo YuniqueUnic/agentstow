@@ -1,0 +1,17 @@
+[package]
+name = "cli"
+authors.workspace = true
+version.workspace = true
+edition.workspace = true
+
+
+[[bin]]
+name = "agentstowx"
+path = "src/main.rs"
+
+[dependencies]
+anyhow.workspace=true
+
+[dev-dependencies]
+assert_fs.workspace=true
+rstest.workspace=true

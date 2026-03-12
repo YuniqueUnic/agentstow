@@ -1,9 +1,14 @@
-[package]
+[workspace.package]
 name = "agentstow"
 authors = ["unic <yuniqueunic@gmail.com>"]
 version = "0.1.0"
 edition = "2024"
 
+[workspace]
+resolver = "3"
+members = [
+    "crates/agentstow-cli",
+]
 exclude = [
     "e2e/**",
     ".github/**",
@@ -12,13 +17,9 @@ exclude = [
     "target/**",
 ]
 
-
-[dependencies]
+[workspace.dependencies]
 anyhow = "1"
 
-
-
-[dev-dependencies]
 assert_fs= "1"
 rstest = "0.26"
 
@@ -33,7 +34,7 @@ strip = "debuginfo"
 
 
 # only works with cargo-release
-[package.metadata.release]
+[workspace.metadata.release]
 pre-release-replacements = [
     # Update inline-table dependency snippets like:
     # agentstow = { version = "0.2", features = ["custom"] }
