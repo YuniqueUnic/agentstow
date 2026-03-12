@@ -3,6 +3,50 @@
 version = 4
 
 [[package]]
+name = "agentstow-core"
+version = "0.1.0"
+
+[[package]]
+name = "agentstow-env"
+version = "0.1.0"
+
+[[package]]
+name = "agentstow-git"
+version = "0.1.0"
+
+[[package]]
+name = "agentstow-linker"
+version = "0.1.0"
+
+[[package]]
+name = "agentstow-manifest"
+version = "0.1.0"
+
+[[package]]
+name = "agentstow-mcp"
+version = "0.1.0"
+
+[[package]]
+name = "agentstow-render"
+version = "0.1.0"
+
+[[package]]
+name = "agentstow-scripts"
+version = "0.1.0"
+
+[[package]]
+name = "agentstow-server"
+version = "0.1.0"
+
+[[package]]
+name = "agentstow-state"
+version = "0.1.0"
+
+[[package]]
+name = "agentstow-validate"
+version = "0.1.0"
+
+[[package]]
 name = "aho-corasick"
 version = "1.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"

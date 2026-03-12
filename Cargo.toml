@@ -1,5 +1,4 @@
 [workspace.package]
-name = "agentstow"
 authors = ["unic <yuniqueunic@gmail.com>"]
 version = "0.1.0"
 edition = "2024"
@@ -7,7 +6,7 @@ edition = "2024"
 [workspace]
 resolver = "3"
 members = [
-    "crates/agentstow-cli",
+    "crates/agentstow-cli", "crates/agentstow-core", "crates/agentstow-env", "crates/agentstow-git", "crates/agentstow-linker", "crates/agentstow-manifest", "crates/agentstow-mcp", "crates/agentstow-render", "crates/agentstow-scripts", "crates/agentstow-server", "crates/agentstow-state", "crates/agentstow-validate",
 ]
 exclude = [
     "e2e/**",
