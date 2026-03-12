@@ -7,6 +7,7 @@ version.workspace = true
 [dependencies]
 agentstow-core = { path = "../agentstow-core" }
 agentstow-manifest = { path = "../agentstow-manifest" }
+agentstow-render = { path = "../agentstow-render" }
 agentstow-state = { path = "../agentstow-state" }
 anyhow.workspace = true
 axum.workspace = true

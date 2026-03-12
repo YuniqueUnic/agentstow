@@ -23,8 +23,11 @@ agentstow-state = { path = "../agentstow-state" }
 agentstow-validate = { path = "../agentstow-validate" }
 anyhow.workspace = true
 clap.workspace = true
+blake3.workspace = true
+fs-err.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+time.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true

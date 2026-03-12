@@ -1,0 +1,276 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AgentStow</title>
+    <style>
+      :root {
+        --md-sys-color-primary: #6750a4;
+        --md-sys-color-on-primary: #ffffff;
+        --md-sys-color-surface: #fffbfe;
+        --md-sys-color-on-surface: #1c1b1f;
+        --md-sys-color-surface-container: #f3edf7;
+        --md-sys-color-outline: #79747e;
+        --md-sys-elevation-1: 0 1px 2px rgba(0, 0, 0, 0.08), 0 1px 3px rgba(0, 0, 0, 0.06);
+        --md-sys-elevation-2: 0 2px 6px rgba(0, 0, 0, 0.08);
+        --radius-xl: 16px;
+        --radius-lg: 12px;
+        --space-1: 8px;
+        --space-2: 12px;
+        --space-3: 16px;
+        --space-4: 24px;
+        --font: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji",
+          "Segoe UI Emoji";
+      }
+      html,
+      body {
+        height: 100%;
+      }
+      body {
+        margin: 0;
+        font-family: var(--font);
+        color: var(--md-sys-color-on-surface);
+        background: var(--md-sys-color-surface);
+      }
+      header {
+        position: sticky;
+        top: 0;
+        z-index: 10;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: var(--space-2);
+        padding: var(--space-3) var(--space-4);
+        background: var(--md-sys-color-primary);
+        color: var(--md-sys-color-on-primary);
+        box-shadow: var(--md-sys-elevation-2);
+      }
+      header h1 {
+        font-size: 16px;
+        margin: 0;
+        letter-spacing: 0.2px;
+        font-weight: 600;
+      }
+      header .hint {
+        opacity: 0.9;
+        font-size: 12px;
+      }
+      .layout {
+        display: grid;
+        grid-template-columns: 320px 1fr;
+        gap: var(--space-4);
+        padding: var(--space-4);
+      }
+      .surface {
+        background: var(--md-sys-color-surface-container);
+        border-radius: var(--radius-xl);
+        box-shadow: var(--md-sys-elevation-1);
+        overflow: hidden;
+      }
+      .panel {
+        padding: var(--space-3);
+      }
+      .section-title {
+        font-size: 12px;
+        opacity: 0.8;
+        letter-spacing: 0.6px;
+        text-transform: uppercase;
+        margin: 0 0 var(--space-2) 0;
+      }
+      .list {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      button.item {
+        border: 1px solid rgba(0, 0, 0, 0.06);
+        background: rgba(255, 255, 255, 0.7);
+        border-radius: var(--radius-lg);
+        padding: 10px 12px;
+        cursor: pointer;
+        text-align: left;
+        font-size: 13px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 10px;
+      }
+      button.item:hover {
+        border-color: rgba(103, 80, 164, 0.35);
+      }
+      button.item .id {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+        font-size: 12px;
+        opacity: 0.9;
+      }
+      button.item .pill {
+        font-size: 11px;
+        padding: 3px 8px;
+        border-radius: 999px;
+        border: 1px solid rgba(0, 0, 0, 0.08);
+        opacity: 0.9;
+      }
+      .content {
+        display: flex;
+        flex-direction: column;
+        gap: var(--space-3);
+      }
+      .toolbar {
+        display: flex;
+        gap: var(--space-2);
+        align-items: center;
+        flex-wrap: wrap;
+      }
+      select,
+      input {
+        border-radius: 999px;
+        border: 1px solid rgba(0, 0, 0, 0.14);
+        background: rgba(255, 255, 255, 0.85);
+        padding: 10px 12px;
+        font-size: 13px;
+        outline: none;
+      }
+      .primary {
+        border: none;
+        background: var(--md-sys-color-primary);
+        color: var(--md-sys-color-on-primary);
+        border-radius: 999px;
+        padding: 10px 14px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      .primary:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+      }
+      pre {
+        margin: 0;
+        padding: var(--space-3);
+        background: rgba(255, 255, 255, 0.75);
+        border: 1px solid rgba(0, 0, 0, 0.08);
+        border-radius: var(--radius-xl);
+        overflow: auto;
+        font-size: 12px;
+        line-height: 1.45;
+      }
+      .status {
+        font-size: 12px;
+        opacity: 0.9;
+      }
+      @media (max-width: 980px) {
+        .layout {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>AgentStow</h1>
+      <div class="hint">本地 Web · artifacts / render / link status</div>
+    </header>
+    <main class="layout">
+      <aside class="surface">
+        <div class="panel">
+          <p class="section-title">Artifacts</p>
+          <div id="artifacts" class="list"></div>
+        </div>
+      </aside>
+      <section class="surface">
+        <div class="panel content">
+          <div class="toolbar">
+            <label class="status">Profile</label>
+            <select id="profiles"></select>
+            <button id="btnRender" class="primary" disabled>Render</button>
+            <span id="status" class="status"></span>
+          </div>
+          <pre id="output">(选择一个 artifact，然后点击 Render)</pre>
+        </div>
+      </section>
+    </main>
+
+    <script>
+      const state = {
+        manifest: null,
+        selectedArtifact: null
+      };
+
+      const elArtifacts = document.getElementById("artifacts");
+      const elProfiles = document.getElementById("profiles");
+      const elBtnRender = document.getElementById("btnRender");
+      const elOutput = document.getElementById("output");
+      const elStatus = document.getElementById("status");
+
+      function setStatus(text) {
+        elStatus.textContent = text || "";
+      }
+
+      function renderArtifactList(artifacts) {
+        elArtifacts.innerHTML = "";
+        for (const id of artifacts) {
+          const btn = document.createElement("button");
+          btn.className = "item";
+          btn.onclick = () => {
+            state.selectedArtifact = id;
+            elBtnRender.disabled = false;
+            setStatus(`已选择: ${id}`);
+          };
+          btn.innerHTML = `<span class="id">${id}</span><span class="pill">file</span>`;
+          elArtifacts.appendChild(btn);
+        }
+      }
+
+      function renderProfiles(profiles) {
+        elProfiles.innerHTML = "";
+        for (const p of profiles) {
+          const opt = document.createElement("option");
+          opt.value = p;
+          opt.textContent = p;
+          elProfiles.appendChild(opt);
+        }
+      }
+
+      async function loadManifest() {
+        setStatus("加载 manifest...");
+        const resp = await fetch("/api/manifest");
+        if (!resp.ok) {
+          const text = await resp.text();
+          throw new Error(text);
+        }
+        state.manifest = await resp.json();
+        renderArtifactList(state.manifest.artifacts);
+        renderProfiles(state.manifest.profiles);
+        setStatus("就绪");
+      }
+
+      elBtnRender.onclick = async () => {
+        if (!state.selectedArtifact) return;
+        const profile = elProfiles.value;
+        setStatus("渲染中...");
+        elBtnRender.disabled = true;
+        try {
+          const url = `/api/render?artifact=${encodeURIComponent(state.selectedArtifact)}&profile=${encodeURIComponent(profile)}`;
+          const resp = await fetch(url);
+          const data = await resp.json();
+          if (!resp.ok) {
+            throw new Error(data?.message || JSON.stringify(data));
+          }
+          elOutput.textContent = data.text || "";
+          setStatus("完成");
+        } catch (e) {
+          elOutput.textContent = String(e);
+          setStatus("失败");
+        } finally {
+          elBtnRender.disabled = false;
+        }
+      };
+
+      loadManifest().catch((e) => {
+        elOutput.textContent = String(e);
+        setStatus("无法加载");
+      });
+    </script>
+  </body>
+</html>
+

@@ -13,3 +13,8 @@ serde_json.workspace = true
 thiserror.workspace = true
 time.workspace = true
 tracing.workspace = true
+
+[dev-dependencies]
+assert_fs.workspace = true
+pretty_assertions.workspace = true
+temp-env.workspace = true

@@ -1,30 +1,127 @@
-use std::net::SocketAddr;
-
+use assert_cmd::Command;
 use assert_fs::prelude::*;
-use rstest::{fixture, rstest};
+use pretty_assertions::assert_eq;
 
-#[fixture]
-pub fn fixture() -> u32 {
-    42
-}
-
-#[rstest]
-fn should_success(fixture: u32) {
-    assert_eq!(fixture, 42);
-}
-
-#[rstest]
-#[should_panic(expected = "assertion `left != right` failed")]
-fn should_fail(fixture: u32) {
-    assert_ne!(fixture, 42);
-}
-
-#[rstest]
-#[case("1.2.3.4:8080", 8080)]
-#[case("127.0.0.1:9000", 9000)]
-fn check_port(#[case] addr: SocketAddr, #[case] expected: u16) {
-    // only for pass the clippy warning: warning: unused import: `assert_fs::prelude::*`
+#[test]
+fn render_dry_run_should_print_rendered_text() {
     let temp = assert_fs::TempDir::new().unwrap();
-    let _input_file = temp.child("foo.txt");
-    assert_eq!(expected, addr.port());
+    temp.child("artifacts").create_dir_all().unwrap();
+    temp.child("artifacts/hello.txt.tera")
+        .write_str("Hello {{ name }}!")
+        .unwrap();
+
+    temp.child("agentstow.toml")
+        .write_str(
+            r#"
+[profiles.base]
+vars = { name = "CLI" }
+
+[artifacts.hello]
+kind = "file"
+source = "artifacts/hello.txt.tera"
+template = true
+validate_as = "none"
+"#,
+        )
+        .unwrap();
+
+    let mut cmd = Command::cargo_bin("agentstow").unwrap();
+    cmd.arg("--cwd")
+        .arg(temp.path())
+        .arg("--profile")
+        .arg("base")
+        .arg("render")
+        .arg("--artifact")
+        .arg("hello")
+        .arg("--dry-run");
+
+    cmd.assert().success().stdout("Hello CLI!");
+}
+
+#[test]
+fn link_plan_json_should_be_machine_readable() {
+    let temp = assert_fs::TempDir::new().unwrap();
+    temp.child("artifacts").create_dir_all().unwrap();
+    temp.child("artifacts/hello.txt.tera")
+        .write_str("Hello {{ name }}!")
+        .unwrap();
+    temp.child("proj").create_dir_all().unwrap();
+
+    temp.child("agentstow.toml")
+        .write_str(
+            r#"
+[profiles.base]
+vars = { name = "Link" }
+
+[artifacts.hello]
+kind = "file"
+source = "artifacts/hello.txt.tera"
+template = true
+validate_as = "none"
+
+[targets.out]
+artifact = "hello"
+profile = "base"
+target_path = "proj/out.txt"
+method = "copy"
+"#,
+        )
+        .unwrap();
+
+    let mut cmd = Command::cargo_bin("agentstow").unwrap();
+    cmd.arg("--cwd")
+        .arg(temp.path())
+        .arg("--json")
+        .arg("link")
+        .arg("--plan");
+
+    let assert = cmd.assert().success();
+    let stdout = String::from_utf8(assert.get_output().stdout.clone()).unwrap();
+    let v: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    assert_eq!(v.as_array().unwrap().len(), 1);
+}
+
+#[test]
+fn link_apply_copy_should_write_target_and_record_state() {
+    let temp = assert_fs::TempDir::new().unwrap();
+    temp.child("artifacts").create_dir_all().unwrap();
+    temp.child("artifacts/hello.txt.tera")
+        .write_str("Hello {{ name }}!")
+        .unwrap();
+    temp.child("proj").create_dir_all().unwrap();
+    temp.child("home").create_dir_all().unwrap();
+
+    temp.child("agentstow.toml")
+        .write_str(
+            r#"
+[profiles.base]
+vars = { name = "State" }
+
+[artifacts.hello]
+kind = "file"
+source = "artifacts/hello.txt.tera"
+template = true
+validate_as = "none"
+
+[targets.out]
+artifact = "hello"
+profile = "base"
+target_path = "proj/out.txt"
+method = "copy"
+"#,
+        )
+        .unwrap();
+
+    let mut cmd = Command::cargo_bin("agentstow").unwrap();
+    cmd.arg("--cwd")
+        .arg(temp.path())
+        .env("AGENTSTOW_HOME", temp.child("home").path())
+        .arg("link");
+    cmd.assert().success();
+
+    let text = temp.child("proj/out.txt").read_to_string().unwrap();
+    assert_eq!(text, "Hello State!");
+
+    // state db should exist
+    assert!(temp.child("home/data/agentstow.db").path().exists());
 }
