@@ -1,0 +1,44 @@
+[package]
+name = "agentstow"
+authors = ["unic <yuniqueunic@gmail.com>"]
+version = "0.1.0"
+edition = "2024"
+
+exclude = [
+    "e2e/**",
+    ".github/**",
+    ".vscode/**",
+    ".pytest_cache/**",
+    "target/**",
+]
+
+
+[dependencies]
+anyhow = "1"
+
+
+
+[dev-dependencies]
+assert_fs= "1"
+rstest = "0.26"
+
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = "debuginfo"
+
+
+
+# only works with cargo-release
+[package.metadata.release]
+pre-release-replacements = [
+    # Update inline-table dependency snippets like:
+    # agentstow = { version = "0.2", features = ["custom"] }
+    { file = "README.md", search = "agentstow\\s*=\\s*\\{\\s*version\\s*=\\s*\"[0-9]+\\.[0-9]+(\\.[0-9]+)?(-[0-9A-Za-z.-]+)?\"", replace = "agentstow = { version = \"{{version}}\"" },
+    # Update plain dependency snippets like:
+    # agentstow = "0.2"
+    { file = "README.md", search = "agentstow\\s*=\\s*\"[0-9]+\\.[0-9]+(\\.[0-9]+)?(-[0-9A-Za-z.-]+)?\"", replace = "agentstow = \"{{version}}\"", min = 0 },
+]
