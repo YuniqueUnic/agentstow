@@ -6,6 +6,7 @@ version.workspace = true
 
 [dependencies]
 agentstow-core = { path = "../agentstow-core" }
+agentstow-manifest = { path = "../agentstow-manifest" }
 anyhow.workspace = true
 jsonschema.workspace = true
 serde.workspace = true

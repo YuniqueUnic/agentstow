@@ -54,18 +54,18 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 serial_test = "3"
 shlex = "1"
-snapbox = "0.6"
+snapbox = "1"
 temp-env = "0.3"
 tempfile = "3"
-tera = "1.20.1"
-thiserror = "1"
+tera = "1"
+thiserror = "2"
 time = { version = "0.3", features = ["macros", "serde-human-readable"] }
 tokio = { version = "1", features = ["fs", "macros", "process", "rt-multi-thread", "signal", "time"] }
-toml = "1"
+toml = "0.9"
 tower-http = { version = "0.6", features = ["fs"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
-trycmd = "0.15"
+trycmd = "1"
 
 
 [profile.release]
