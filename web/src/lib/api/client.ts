@@ -1,9 +1,14 @@
 import type {
+  ArtifactDetailResponse,
   ApiError,
+  ImpactAnalysisResponse,
   LinkRecordResponse,
   LinkStatusResponseItem,
   ManifestResponse,
+  ProfileDetailResponse,
   RenderResponse
+  ,
+  WorkspaceSummaryResponse
 } from '$lib/types';
 
 export class ApiClientError extends Error {
@@ -98,6 +103,25 @@ export function getLinks(): Promise<LinkRecordResponse[]> {
 
 export function getLinkStatus(): Promise<LinkStatusResponseItem[]> {
   return fetchJson<LinkStatusResponseItem[]>('/api/link-status');
+}
+
+export function getWorkspaceSummary(): Promise<WorkspaceSummaryResponse> {
+  return fetchJson<WorkspaceSummaryResponse>('/api/workspace-summary');
+}
+
+export function getArtifactDetail(artifact: string): Promise<ArtifactDetailResponse> {
+  return fetchJson<ArtifactDetailResponse>(`/api/artifacts/${encodeURIComponent(artifact)}`);
+}
+
+export function getProfileDetail(profile: string): Promise<ProfileDetailResponse> {
+  return fetchJson<ProfileDetailResponse>(`/api/profiles/${encodeURIComponent(profile)}`);
+}
+
+export function getImpactAnalysis(query: {
+  artifact?: string | null;
+  profile?: string | null;
+}): Promise<ImpactAnalysisResponse> {
+  return fetchJson<ImpactAnalysisResponse>('/api/impact', query);
 }
 
 export function renderArtifact(artifact: string, profile: string): Promise<RenderResponse> {

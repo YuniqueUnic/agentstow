@@ -27,6 +27,79 @@ validate_as = "none"
         .unwrap();
 }
 
+fn write_prd_workspace(temp: &assert_fs::TempDir) {
+    temp.child("artifacts/skills").create_dir_all().unwrap();
+    temp.child("artifacts/hello.txt.tera")
+        .write_str("Hello {{ name }} from {{ region }}!")
+        .unwrap();
+    temp.child("artifacts/skills/rule.md")
+        .write_str("Use the shared rule.")
+        .unwrap();
+    temp.child("agentstow.toml")
+        .write_str(
+            r#"
+[profiles.base]
+vars = { name = "AgentStow", region = "global" }
+
+[profiles.derived]
+extends = ["base"]
+vars = { region = "cn" }
+
+[artifacts.hello]
+kind = "file"
+source = "artifacts/hello.txt.tera"
+template = true
+validate_as = "none"
+
+[artifacts.skills]
+kind = "dir"
+source = "artifacts/skills"
+
+[targets.hello]
+artifact = "hello"
+profile = "derived"
+target_path = "proj/AGENTS.md"
+method = "copy"
+
+[targets.shared_skills]
+artifact = "skills"
+profile = "base"
+target_path = "proj/.agents/skills"
+method = "copy"
+
+[targets.ad_hoc]
+artifact = "hello"
+target_path = "proj/adhoc.md"
+method = "copy"
+
+[env_sets.default]
+vars = [
+  { key = "OPENAI_API_KEY", binding = { kind = "env", var = "OPENAI_API_KEY" } }
+]
+
+[scripts.sync]
+kind = "shell"
+entry = "echo"
+args = ["sync"]
+env = [
+  { key = "OPENAI_API_KEY", binding = { kind = "env", var = "OPENAI_API_KEY" } }
+]
+
+[mcp_servers.local]
+transport = { kind = "stdio", command = "npx", args = ["-y", "@modelcontextprotocol/server-filesystem", "."] }
+env = [
+  { key = "OPENAI_API_KEY", binding = { kind = "env", var = "OPENAI_API_KEY" } }
+]
+"#,
+        )
+        .unwrap();
+}
+
+fn with_test_home(temp: &assert_fs::TempDir, f: impl FnOnce()) {
+    temp.child("home").create_dir_all().unwrap();
+    temp_env::with_var("AGENTSTOW_HOME", Some(temp.child("home").path()), f);
+}
+
 fn write_ui_dist(temp: &assert_fs::TempDir) -> std::path::PathBuf {
     temp.child("web-dist/assets").create_dir_all().unwrap();
     temp.child("web-dist/index.html")
@@ -307,6 +380,146 @@ method = "copy"
             assert_eq!(body[0]["ok"], serde_json::json!(true));
             assert_eq!(body[0]["message"], serde_json::json!("healthy"));
             assert_eq!(body[0]["method"], serde_json::json!("copy"));
+        });
+    });
+}
+
+#[test]
+#[serial]
+fn api_workspace_summary_should_expose_prd_read_model() {
+    let temp = assert_fs::TempDir::new().unwrap();
+    write_prd_workspace(&temp);
+
+    with_test_home(&temp, || {
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        runtime.block_on(async {
+            let server = test_server(&temp, temp.child("missing-dist").path().to_path_buf());
+            let resp = server.get("/api/workspace-summary").await;
+
+            resp.assert_status_ok();
+            let body: serde_json::Value = resp.json();
+            assert_eq!(body["counts"]["profile_count"], serde_json::json!(2));
+            assert_eq!(body["counts"]["artifact_count"], serde_json::json!(2));
+            assert_eq!(body["counts"]["target_count"], serde_json::json!(3));
+            assert_eq!(body["counts"]["env_set_count"], serde_json::json!(1));
+            assert_eq!(body["counts"]["script_count"], serde_json::json!(1));
+            assert_eq!(body["counts"]["mcp_server_count"], serde_json::json!(1));
+            assert_eq!(body["issues"][0]["code"], serde_json::json!("target_profile_missing"));
+        });
+    });
+}
+
+#[test]
+#[serial]
+fn api_artifact_detail_should_include_targets_profiles_and_issues() {
+    let temp = assert_fs::TempDir::new().unwrap();
+    write_prd_workspace(&temp);
+    temp.child("proj").create_dir_all().unwrap();
+    temp.child("proj/AGENTS.md")
+        .write_str("Hello AgentStow from cn!")
+        .unwrap();
+
+    with_test_home(&temp, || {
+        let dirs = agentstow_core::AgentStowDirs::from_env().unwrap();
+        let db = agentstow_state::StateDb::open(&dirs).unwrap();
+        db.upsert_link_instance(&agentstow_state::LinkInstanceRecord {
+            workspace_root: temp.path().to_path_buf(),
+            artifact_id: agentstow_core::ArtifactId::new_unchecked("hello"),
+            profile: agentstow_core::ProfileName::new_unchecked("derived"),
+            target_path: temp.child("proj/AGENTS.md").path().to_path_buf(),
+            method: agentstow_core::InstallMethod::Copy,
+            rendered_path: None,
+            blake3: Some("abc123".to_string()),
+            updated_at: time::OffsetDateTime::UNIX_EPOCH,
+        })
+        .unwrap();
+
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        runtime.block_on(async {
+            let server = test_server(&temp, temp.child("missing-dist").path().to_path_buf());
+            let resp = server.get("/api/artifacts/hello").await;
+
+            resp.assert_status_ok();
+            let body: serde_json::Value = resp.json();
+            assert_eq!(body["artifact"]["id"], serde_json::json!("hello"));
+            assert_eq!(body["targets"].as_array().unwrap().len(), 2);
+            assert_eq!(body["profiles"].as_array().unwrap().len(), 1);
+            assert_eq!(
+                body["issues"][0]["code"],
+                serde_json::json!("target_profile_missing")
+            );
+        });
+    });
+}
+
+#[test]
+#[serial]
+fn api_profile_detail_should_include_merged_vars_and_artifacts() {
+    let temp = assert_fs::TempDir::new().unwrap();
+    write_prd_workspace(&temp);
+
+    with_test_home(&temp, || {
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        runtime.block_on(async {
+            let server = test_server(&temp, temp.child("missing-dist").path().to_path_buf());
+            let resp = server.get("/api/profiles/derived").await;
+
+            resp.assert_status_ok();
+            let body: serde_json::Value = resp.json();
+            assert_eq!(body["profile"]["id"], serde_json::json!("derived"));
+            assert_eq!(body["targets"].as_array().unwrap().len(), 1);
+            assert_eq!(body["artifacts"][0]["id"], serde_json::json!("hello"));
+            let merged_keys: Vec<_> = body["merged_vars"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|item| item["key"].as_str().unwrap())
+                .collect();
+            assert!(merged_keys.contains(&"name"));
+            assert!(merged_keys.contains(&"region"));
+        });
+    });
+}
+
+#[test]
+#[serial]
+fn api_impact_should_filter_by_artifact_and_include_link_status() {
+    let temp = assert_fs::TempDir::new().unwrap();
+    write_prd_workspace(&temp);
+    temp.child("proj").create_dir_all().unwrap();
+    temp.child("proj/AGENTS.md")
+        .write_str("Hello AgentStow from cn!")
+        .unwrap();
+
+    with_test_home(&temp, || {
+        let dirs = agentstow_core::AgentStowDirs::from_env().unwrap();
+        let db = agentstow_state::StateDb::open(&dirs).unwrap();
+        db.upsert_link_instance(&agentstow_state::LinkInstanceRecord {
+            workspace_root: temp.path().to_path_buf(),
+            artifact_id: agentstow_core::ArtifactId::new_unchecked("hello"),
+            profile: agentstow_core::ProfileName::new_unchecked("derived"),
+            target_path: temp.child("proj/AGENTS.md").path().to_path_buf(),
+            method: agentstow_core::InstallMethod::Copy,
+            rendered_path: None,
+            blake3: Some("abc123".to_string()),
+            updated_at: time::OffsetDateTime::UNIX_EPOCH,
+        })
+        .unwrap();
+
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        runtime.block_on(async {
+            let server = test_server(&temp, temp.child("missing-dist").path().to_path_buf());
+            let resp = server
+                .get("/api/impact")
+                .add_query_param("artifact", "hello")
+                .await;
+
+            resp.assert_status_ok();
+            let body: serde_json::Value = resp.json();
+            assert_eq!(body["subject_kind"], serde_json::json!("artifact"));
+            assert_eq!(body["affected_targets"].as_array().unwrap().len(), 2);
+            assert_eq!(body["affected_artifacts"].as_array().unwrap().len(), 1);
+            assert_eq!(body["link_status"].as_array().unwrap().len(), 1);
         });
     });
 }

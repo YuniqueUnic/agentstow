@@ -1,9 +1,27 @@
 export type {
+  ArtifactDetailResponse,
+  ArtifactKindResponse,
+  ArtifactSummaryResponse,
   ApiError,
+  EnvSetSummaryResponse,
+  EnvVarSummaryResponse,
   HealthResponse,
+  ImpactAnalysisResponse,
+  ImpactSubjectKindResponse,
   InstallMethodResponse,
   LinkRecordResponse,
   LinkStatusResponseItem,
   ManifestResponse,
-  RenderResponse
+  McpServerSummaryResponse,
+  McpTransportKindResponse,
+  ProfileDetailResponse,
+  ProfileSummaryResponse,
+  ProfileVarResponse,
+  RenderResponse,
+  ScriptSummaryResponse,
+  TargetSummaryResponse,
+  ValidateAsResponse,
+  ValidationIssueResponse,
+  WorkspaceCountsResponse,
+  WorkspaceSummaryResponse
 } from '$lib/bindings';
