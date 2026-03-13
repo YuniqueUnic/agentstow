@@ -32,6 +32,7 @@ anyhow = "1"
 assert_cmd = "2"
 assert_fs = "1"
 axum = "0.8"
+axum-test = "19"
 blake3 = "1"
 clap = { version = "4", features = ["derive", "env"] }
 command-group = { version = "5", features = ["with-tokio"] }

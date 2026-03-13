@@ -9,6 +9,7 @@ use agentstow_core::{
 use agentstow_manifest::Manifest;
 use agentstow_render::Renderer;
 use agentstow_state::StateDb;
+use agentstow_validate::Validator;
 use axum::Router;
 use axum::extract::{Query, State};
 use axum::http::StatusCode;
@@ -29,26 +30,35 @@ struct ServerState {
 }
 
 pub async fn serve(cfg: ServerConfig) -> Result<()> {
-    let state = ServerState {
-        workspace_root: cfg.workspace_root.clone(),
-    };
+    let ServerConfig {
+        workspace_root,
+        addr,
+    } = cfg;
+    let app = build_app(workspace_root);
 
-    let app = Router::new()
-        .route("/", get(ui_index))
-        .route("/api/health", get(api_health))
-        .route("/api/manifest", get(api_manifest))
-        .route("/api/render", get(api_render))
-        .route("/api/links", get(api_links))
-        .route("/api/link-status", get(api_link_status))
-        .with_state(Arc::new(state));
-
-    let listener = tokio::net::TcpListener::bind(cfg.addr)
+    let listener = tokio::net::TcpListener::bind(addr)
         .await
         .map_err(AgentStowError::from)?;
     axum::serve(listener, app)
         .await
         .map_err(|e| AgentStowError::Other(anyhow::anyhow!("axum serve 失败: {e}")))?;
     Ok(())
+}
+
+pub fn build_app(workspace_root: PathBuf) -> Router {
+    let state = ServerState { workspace_root };
+    app_router(Arc::new(state))
+}
+
+fn app_router(state: Arc<ServerState>) -> Router {
+    Router::new()
+        .route("/", get(ui_index))
+        .route("/api/health", get(api_health))
+        .route("/api/manifest", get(api_manifest))
+        .route("/api/render", get(api_render))
+        .route("/api/links", get(api_links))
+        .route("/api/link-status", get(api_link_status))
+        .with_state(state)
 }
 
 async fn ui_index() -> Html<&'static str> {
@@ -61,7 +71,12 @@ struct ApiError {
 }
 
 fn api_error(status: StatusCode, message: impl ToString) -> impl IntoResponse {
-    (status, Json(ApiError { message: message.to_string() }))
+    (
+        status,
+        Json(ApiError {
+            message: message.to_string(),
+        }),
+    )
 }
 
 #[derive(Debug, Serialize)]
@@ -118,14 +133,20 @@ async fn api_render(
         Ok(p) => p,
         Err(e) => return api_error(StatusCode::BAD_REQUEST, e).into_response(),
     };
-    let out = match Renderer::render_file(
-        &manifest,
-        &artifact_id,
-        &profile,
-    ) {
+    let out = match Renderer::render_file(&manifest, &artifact_id, &profile) {
         Ok(o) => o,
         Err(e) => return api_error(StatusCode::BAD_REQUEST, e).into_response(),
     };
+
+    let artifact_def = match manifest.artifacts.get(&artifact_id) {
+        Some(def) => def,
+        None => {
+            return api_error(StatusCode::BAD_REQUEST, "artifact 不存在").into_response();
+        }
+    };
+    if let Err(e) = Validator::validate_rendered_file(artifact_def, &out.bytes) {
+        return api_error(StatusCode::BAD_REQUEST, e).into_response();
+    }
 
     let s = String::from_utf8_lossy(&out.bytes).to_string();
     Json(serde_json::json!({ "text": s })).into_response()
@@ -198,7 +219,9 @@ async fn api_link_status(State(st): State<Arc<ServerState>>) -> impl IntoRespons
 
         let ok = match rec.method {
             InstallMethod::Symlink => match rec.rendered_path.as_ref() {
-                Some(src) => agentstow_linker::check_symlink(&rec.target_path, src).unwrap_or(false),
+                Some(src) => {
+                    agentstow_linker::check_symlink(&rec.target_path, src).unwrap_or(false)
+                }
                 None => false,
             },
             InstallMethod::Junction => match rec.rendered_path.as_ref() {
@@ -248,7 +271,11 @@ async fn api_link_status(State(st): State<Arc<ServerState>>) -> impl IntoRespons
                         existing == desired
                     }
                 }
-                agentstow_core::ArtifactKind::Dir => rec.target_path.is_dir(),
+                agentstow_core::ArtifactKind::Dir => {
+                    let desired_source = artifact_def.source_path(&manifest.workspace_root);
+                    agentstow_linker::check_copy_dir(&rec.target_path, &desired_source)
+                        .unwrap_or(false)
+                }
             },
         };
 
@@ -264,3 +291,6 @@ async fn api_link_status(State(st): State<Arc<ServerState>>) -> impl IntoRespons
 
     Json(out).into_response()
 }
+
+#[cfg(test)]
+mod tests;

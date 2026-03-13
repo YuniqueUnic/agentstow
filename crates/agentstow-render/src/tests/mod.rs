@@ -36,3 +36,38 @@ validate_as = "none"
 
     assert_eq!(String::from_utf8(out.bytes).unwrap(), "Hello AgentStow!");
 }
+
+#[test]
+fn render_should_fail_when_template_variable_is_missing() {
+    let temp = assert_fs::TempDir::new().unwrap();
+    temp.child("artifacts").create_dir_all().unwrap();
+    temp.child("artifacts/hello.txt.tera")
+        .write_str("Hello {{ missing_name }}!")
+        .unwrap();
+
+    temp.child("agentstow.toml")
+        .write_str(
+            r#"
+[profiles.base]
+vars = { name = "AgentStow" }
+
+[artifacts.hello]
+kind = "file"
+source = "artifacts/hello.txt.tera"
+template = true
+validate_as = "none"
+"#,
+        )
+        .unwrap();
+
+    let manifest = Manifest::load_from_path(temp.child("agentstow.toml").path()).unwrap();
+    let err = Renderer::render_file(
+        &manifest,
+        &ArtifactId::new_unchecked("hello"),
+        &ProfileName::new_unchecked("base"),
+    )
+    .unwrap_err();
+
+    assert_eq!(err.exit_code(), agentstow_core::ExitCode::InvalidConfig);
+    assert!(err.to_string().contains("missing_name"));
+}

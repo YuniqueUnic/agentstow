@@ -243,6 +243,10 @@ impl Manifest {
 }
 
 fn validate_manifest(m: &ManifestToml) -> Result<()> {
+    for profile in m.profiles.values() {
+        profile.merged_vars(&m.profiles)?;
+    }
+
     for (target_name, target) in &m.targets {
         if !m.artifacts.contains_key(&target.artifact) {
             return Err(AgentStowError::Manifest {

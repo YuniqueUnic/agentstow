@@ -1,6 +1,8 @@
 use std::path::Path;
 
-use agentstow_core::{AgentStowError, ArtifactId, ArtifactKind, ProfileName, Result};
+use agentstow_core::{
+    AgentStowError, ArtifactId, ArtifactKind, ProfileName, Result, normalize_for_display,
+};
 use agentstow_manifest::Manifest;
 use tera::Context;
 use tracing::instrument;
@@ -60,7 +62,11 @@ fn render_tera_template_file(path: &Path, ctx: &Context) -> Result<Vec<u8>> {
     let template = fs_err::read_to_string(path).map_err(AgentStowError::from)?;
     let rendered =
         tera::Tera::one_off(&template, ctx, false).map_err(|e| AgentStowError::Render {
-            message: format!("Tera render 失败: {e}").into(),
+            message: format!(
+                "Tera render 失败: path={}, {e}; detail={e:?}",
+                normalize_for_display(path)
+            )
+            .into(),
         })?;
     Ok(rendered.into_bytes())
 }

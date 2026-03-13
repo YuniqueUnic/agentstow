@@ -1,4 +1,4 @@
-use agentstow_core::{Result, ShellKind};
+use agentstow_core::{AgentStowError, Result, ShellKind};
 use agentstow_manifest::{EnvSet, EnvVarDef};
 use tracing::instrument;
 
@@ -9,6 +9,7 @@ impl Env {
     pub fn resolve_env_set(env_set: &EnvSet) -> Result<Vec<(String, String)>> {
         let mut out = Vec::with_capacity(env_set.vars.len());
         for EnvVarDef { key, binding } in &env_set.vars {
+            validate_env_key(key)?;
             let value = binding.resolve()?;
             out.push((key.clone(), value));
         }
@@ -48,6 +49,26 @@ fn posix_single_quote(s: &str) -> String {
     }
     out.push('\'');
     out
+}
+
+fn validate_env_key(key: &str) -> Result<()> {
+    let mut chars = key.chars();
+    let Some(first) = chars.next() else {
+        return Err(AgentStowError::Manifest {
+            message: "env key 不能为空".into(),
+        });
+    };
+    if !(first.is_ascii_alphabetic() || first == '_') {
+        return Err(AgentStowError::Manifest {
+            message: format!("env key 非法: {key}（必须匹配 [A-Za-z_][A-Za-z0-9_]*）").into(),
+        });
+    }
+    if chars.any(|ch| !(ch.is_ascii_alphanumeric() || ch == '_')) {
+        return Err(AgentStowError::Manifest {
+            message: format!("env key 非法: {key}（必须匹配 [A-Za-z_][A-Za-z0-9_]*）").into(),
+        });
+    }
+    Ok(())
 }
 
 #[cfg(test)]

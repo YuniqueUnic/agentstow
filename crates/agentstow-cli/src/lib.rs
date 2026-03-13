@@ -191,20 +191,22 @@ pub struct ServeArgs {
 
 pub async fn run() -> i32 {
     let cli = Cli::parse();
+    let json = cli.json;
 
     let _ = init_tracing();
 
     if let Some(cwd) = &cli.cwd
         && let Err(e) = std::env::set_current_dir(cwd)
     {
-        eprintln!("{e}");
-        return AgentStowError::from(e).exit_code().as_i32();
+        let err = AgentStowError::from(e);
+        emit_error(json, &err);
+        return err.exit_code().as_i32();
     }
 
     match run_cli(cli).await {
         Ok(()) => 0,
         Err(e) => {
-            eprintln!("{e}");
+            emit_error(json, &e);
             e.exit_code().as_i32()
         }
     }
@@ -233,7 +235,7 @@ async fn run_cli(cli: Cli) -> Result<()> {
         cwd: _,
         workspace,
         profile,
-        timeout: _,
+        timeout,
         command,
     } = cli;
 
@@ -264,11 +266,7 @@ async fn run_cli(cli: Cli) -> Result<()> {
             let profile =
                 resolve_profile(profile.as_deref(), args.profile.as_deref(), Some(&manifest))?;
             let artifact_id = ArtifactId::parse(args.artifact)?;
-            let rendered = Renderer::render_file(
-                &manifest,
-                &artifact_id,
-                &profile,
-            )?;
+            let rendered = Renderer::render_file(&manifest, &artifact_id, &profile)?;
             let artifact_def = manifest.artifacts.get(&rendered.artifact_id).unwrap();
             Validator::validate_rendered_file(artifact_def, &rendered.bytes)?;
 
@@ -297,11 +295,7 @@ async fn run_cli(cli: Cli) -> Result<()> {
             let profile =
                 resolve_profile(profile.as_deref(), args.profile.as_deref(), Some(&manifest))?;
             let artifact_id = ArtifactId::parse(args.artifact)?;
-            let rendered = Renderer::render_file(
-                &manifest,
-                &artifact_id,
-                &profile,
-            )?;
+            let rendered = Renderer::render_file(&manifest, &artifact_id, &profile)?;
             let artifact_def = manifest.artifacts.get(&rendered.artifact_id).unwrap();
             Validator::validate_rendered_file(artifact_def, &rendered.bytes)?;
             if json {
@@ -352,21 +346,25 @@ async fn run_cli(cli: Cli) -> Result<()> {
             let manifest = load_manifest(&cwd, workspace.as_deref())?;
             match args.cmd {
                 ScriptsSubcommand::Run { id, dry_run, stdin } => {
-                    let script =
-                        manifest
-                            .scripts
-                            .get(&id)
-                            .ok_or_else(|| AgentStowError::Manifest {
-                                message: format!("script 不存在: {id}").into(),
-                            })?;
+                    let mut script = manifest
+                        .scripts
+                        .get(&id)
+                        .ok_or_else(|| AgentStowError::Manifest {
+                            message: format!("script 不存在: {id}").into(),
+                        })?
+                        .clone();
                     if dry_run {
                         print_json(&script)?;
                         return Ok(());
                     }
 
+                    if let Some(timeout_ms) = timeout {
+                        script.timeout_ms = Some(timeout_ms);
+                    }
+
                     let out = ScriptRunner::run(ScriptRunRequest {
                         workspace_root: manifest.workspace_root.clone(),
-                        script: script.clone(),
+                        script,
                         stdin_text: stdin,
                     })
                     .await?;
@@ -463,18 +461,18 @@ async fn link_apply_or_plan(
     let selected: Vec<(&TargetName, &agentstow_manifest::TargetDef)> = if only_targets.is_empty() {
         manifest.targets.iter().collect()
     } else {
-            only_targets
-                .iter()
-                .map(|t| {
-                    let name = TargetName::parse(t.clone())?;
-                    let (k, def) = manifest.targets.get_key_value(&name).ok_or_else(|| {
-                        AgentStowError::Manifest {
-                            message: format!("target 不存在: {t}").into(),
-                        }
-                    })?;
-                    Ok((k, def))
-                })
-                .collect::<Result<Vec<_>>>()?
+        only_targets
+            .iter()
+            .map(|t| {
+                let name = TargetName::parse(t.clone())?;
+                let (k, def) = manifest.targets.get_key_value(&name).ok_or_else(|| {
+                    AgentStowError::Manifest {
+                        message: format!("target 不存在: {t}").into(),
+                    }
+                })?;
+                Ok((k, def))
+            })
+            .collect::<Result<Vec<_>>>()?
     };
 
     for (target_name, target) in selected {
@@ -609,7 +607,9 @@ async fn link_status(manifest: &Manifest, json: bool) -> Result<()> {
     for rec in records {
         let ok = match rec.method {
             InstallMethod::Symlink => match rec.rendered_path.as_ref() {
-                Some(src) => agentstow_linker::check_symlink(&rec.target_path, src).unwrap_or(false),
+                Some(src) => {
+                    agentstow_linker::check_symlink(&rec.target_path, src).unwrap_or(false)
+                }
                 None => false,
             },
             InstallMethod::Junction => match rec.rendered_path.as_ref() {
@@ -618,15 +618,7 @@ async fn link_status(manifest: &Manifest, json: bool) -> Result<()> {
                 }
                 None => false,
             },
-            InstallMethod::Copy => {
-                if !rec.target_path.is_file() {
-                    false
-                } else {
-                    let existing = fs_err::read(&rec.target_path).map_err(AgentStowError::from)?;
-                    let desired = Renderer::render_file(manifest, &rec.artifact_id, &rec.profile)?;
-                    existing == desired.bytes
-                }
-            }
+            InstallMethod::Copy => check_copy_target_health(manifest, &rec)?,
         };
         out.push(LinkStatusItem {
             target_path: normalize_for_display(&rec.target_path),
@@ -649,6 +641,27 @@ async fn link_status(manifest: &Manifest, json: bool) -> Result<()> {
         println!("[{tag}] {} ({:?})", item.target_path, item.method);
     }
     Ok(())
+}
+
+fn check_copy_target_health(manifest: &Manifest, rec: &LinkInstanceRecord) -> Result<bool> {
+    let Some(artifact_def) = manifest.artifacts.get(&rec.artifact_id) else {
+        return Ok(false);
+    };
+
+    match artifact_def.kind {
+        agentstow_core::ArtifactKind::File => {
+            if !rec.target_path.is_file() {
+                return Ok(false);
+            }
+            let existing = fs_err::read(&rec.target_path).map_err(AgentStowError::from)?;
+            let desired = Renderer::render_file(manifest, &rec.artifact_id, &rec.profile)?;
+            Ok(existing == desired.bytes)
+        }
+        agentstow_core::ArtifactKind::Dir => {
+            let source_dir = artifact_def.source_path(&manifest.workspace_root);
+            agentstow_linker::check_copy_dir(&rec.target_path, &source_dir)
+        }
+    }
 }
 
 async fn link_repair(
@@ -708,6 +721,20 @@ fn print_json<T: Serialize>(v: &T) -> Result<()> {
         serde_json::to_string_pretty(v).map_err(|e| AgentStowError::Other(e.into()))?
     );
     Ok(())
+}
+
+fn emit_error(json: bool, err: &AgentStowError) {
+    if json {
+        let payload = serde_json::json!({
+            "error": err.to_string(),
+            "exit_code": err.exit_code().as_i32(),
+        });
+        if print_json(&payload).is_ok() {
+            return;
+        }
+    }
+
+    eprintln!("{err}");
 }
 
 #[cfg(test)]

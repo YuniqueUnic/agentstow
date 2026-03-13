@@ -71,13 +71,15 @@ impl ScriptRunner {
         })?;
 
         if matches!(req.script.stdin_mode, StdinMode::Text | StdinMode::Json)
-            && let Some(stdin_text) = &req.stdin_text
             && let Some(mut stdin) = child.inner().stdin.take()
         {
-            stdin
-                .write_all(stdin_text.as_bytes())
-                .await
-                .map_err(AgentStowError::from)?;
+            if let Some(stdin_text) = &req.stdin_text {
+                stdin
+                    .write_all(stdin_text.as_bytes())
+                    .await
+                    .map_err(AgentStowError::from)?;
+            }
+            drop(stdin);
         }
 
         let mut stdout_buf = Vec::new();

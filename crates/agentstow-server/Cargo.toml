@@ -10,6 +10,7 @@ agentstow-linker = { path = "../agentstow-linker" }
 agentstow-manifest = { path = "../agentstow-manifest" }
 agentstow-render = { path = "../agentstow-render" }
 agentstow-state = { path = "../agentstow-state" }
+agentstow-validate = { path = "../agentstow-validate" }
 anyhow.workspace = true
 axum.workspace = true
 fs-err.workspace = true
@@ -19,3 +20,11 @@ thiserror.workspace = true
 tokio.workspace = true
 tower-http.workspace = true
 tracing.workspace = true
+
+[dev-dependencies]
+assert_fs.workspace = true
+axum-test = "19"
+pretty_assertions.workspace = true
+serial_test.workspace = true
+temp-env.workspace = true
+time.workspace = true

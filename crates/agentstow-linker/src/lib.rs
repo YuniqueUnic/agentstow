@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
 use agentstow_core::{
@@ -376,11 +378,8 @@ fn apply_copy(job: &LinkJob, opt: ApplyOptions) -> Result<LinkPlanItem> {
             }
             if job.target_path.exists() && !opt.force {
                 return Err(AgentStowError::LinkConflict {
-                    message: format!(
-                        "target 已存在: {}",
-                        normalize_for_display(&job.target_path)
-                    )
-                    .into(),
+                    message: format!("target 已存在: {}", normalize_for_display(&job.target_path))
+                        .into(),
                 });
             }
             ensure_parent_dir(&job.target_path)?;
@@ -448,6 +447,14 @@ pub fn check_junction(target: &Path, desired_source: &Path) -> Result<bool> {
     }
 }
 
+pub fn check_copy_dir(target: &Path, desired_source: &Path) -> Result<bool> {
+    if !target.is_dir() || !desired_source.is_dir() {
+        return Ok(false);
+    }
+
+    compare_dir_trees(desired_source, target)
+}
+
 fn relative_or_absolute_link_target(target_path: &Path, source_path: &Path) -> PathBuf {
     let parent = target_path.parent().unwrap_or_else(|| Path::new("."));
     pathdiff::diff_paths(source_path, parent).unwrap_or_else(|| source_path.to_path_buf())
@@ -473,21 +480,15 @@ fn rename_into_place(
     if target_path.exists() {
         if !opt.force {
             return Err(AgentStowError::LinkConflict {
-                message: format!(
-                    "target 已存在: {}",
-                    normalize_for_display(target_path)
-                )
-                .into(),
+                message: format!("target 已存在: {}", normalize_for_display(target_path)).into(),
             });
         }
 
         #[cfg(unix)]
         {
             // For file-like targets, we prefer atomic rename-over when possible.
-            if !target_is_dir_like {
-                if fs_err::rename(tmp_path, target_path).is_ok() {
-                    return Ok(());
-                }
+            if !target_is_dir_like && fs_err::rename(tmp_path, target_path).is_ok() {
+                return Ok(());
             }
         }
 
@@ -572,6 +573,49 @@ fn copy_dir_recursive(source: &Path, dest: &Path) -> Result<()> {
         }
     }
     Ok(())
+}
+
+fn compare_dir_trees(source: &Path, target: &Path) -> Result<bool> {
+    let mut source_entries = HashSet::<OsString>::new();
+
+    for entry in fs_err::read_dir(source).map_err(AgentStowError::from)? {
+        let entry = entry.map_err(AgentStowError::from)?;
+        let file_name = entry.file_name();
+        source_entries.insert(file_name.clone());
+
+        let source_path = entry.path();
+        let target_path = target.join(&file_name);
+        if !target_path.exists() {
+            return Ok(false);
+        }
+
+        let file_type = entry.file_type().map_err(AgentStowError::from)?;
+        if file_type.is_dir() {
+            if !target_path.is_dir() || !compare_dir_trees(&source_path, &target_path)? {
+                return Ok(false);
+            }
+        } else if file_type.is_file() {
+            if !target_path.is_file() {
+                return Ok(false);
+            }
+            let source_bytes = fs_err::read(&source_path).map_err(AgentStowError::from)?;
+            let target_bytes = fs_err::read(&target_path).map_err(AgentStowError::from)?;
+            if source_bytes != target_bytes {
+                return Ok(false);
+            }
+        } else {
+            return Ok(false);
+        }
+    }
+
+    for entry in fs_err::read_dir(target).map_err(AgentStowError::from)? {
+        let entry = entry.map_err(AgentStowError::from)?;
+        if !source_entries.contains(&entry.file_name()) {
+            return Ok(false);
+        }
+    }
+
+    Ok(true)
 }
 
 #[cfg(test)]

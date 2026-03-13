@@ -165,6 +165,31 @@ fn copy_dir_force_should_overwrite_existing_dir() {
     );
 }
 
+#[test]
+fn check_copy_dir_should_fail_when_target_has_extra_file() {
+    let temp = assert_fs::TempDir::new().unwrap();
+    temp.child("src").create_dir_all().unwrap();
+    temp.child("src/a.txt").write_str("ok").unwrap();
+    temp.child("dst").create_dir_all().unwrap();
+    temp.child("dst/a.txt").write_str("ok").unwrap();
+    temp.child("dst/extra.txt").write_str("noise").unwrap();
+
+    let ok = check_copy_dir(temp.child("dst").path(), temp.child("src").path()).unwrap();
+    assert!(!ok);
+}
+
+#[test]
+fn check_copy_dir_should_fail_when_nested_content_differs() {
+    let temp = assert_fs::TempDir::new().unwrap();
+    temp.child("src/nested").create_dir_all().unwrap();
+    temp.child("src/nested/a.txt").write_str("ok").unwrap();
+    temp.child("dst/nested").create_dir_all().unwrap();
+    temp.child("dst/nested/a.txt").write_str("drift").unwrap();
+
+    let ok = check_copy_dir(temp.child("dst").path(), temp.child("src").path()).unwrap();
+    assert!(!ok);
+}
+
 #[cfg(windows)]
 #[test]
 fn junction_health_check_should_work() {

@@ -1,5 +1,6 @@
 use assert_cmd::Command;
 use assert_fs::prelude::*;
+use predicates::prelude::*;
 use pretty_assertions::assert_eq;
 
 #[test]
@@ -123,4 +124,125 @@ method = "copy"
     assert_eq!(text, "Hello State!");
 
     assert!(temp.child("home/data/agentstow.db").path().exists());
+}
+
+#[test]
+fn render_with_json_should_emit_structured_error_for_invalid_args() {
+    let temp = assert_fs::TempDir::new().unwrap();
+    temp.child("agentstow.toml")
+        .write_str(
+            r#"
+[profiles.base]
+vars = { name = "CLI" }
+
+[artifacts.hello]
+kind = "file"
+source = "artifacts/hello.txt.tera"
+template = false
+validate_as = "none"
+"#,
+        )
+        .unwrap();
+    temp.child("artifacts").create_dir_all().unwrap();
+    temp.child("artifacts/hello.txt.tera")
+        .write_str("hello")
+        .unwrap();
+
+    let mut cmd = Command::cargo_bin("agentstow").unwrap();
+    cmd.arg("--cwd")
+        .arg(temp.path())
+        .arg("--json")
+        .arg("render")
+        .arg("--artifact")
+        .arg("bad/name");
+
+    cmd.assert().failure().code(2).stdout(
+        predicate::str::contains("\"error\"").and(predicate::str::contains("\"exit_code\": 2")),
+    );
+}
+
+#[test]
+fn scripts_run_should_honor_global_timeout_override() {
+    let temp = assert_fs::TempDir::new().unwrap();
+    temp.child("agentstow.toml")
+        .write_str(
+            r#"
+[scripts.sleepy]
+kind = "shell"
+entry = "bash"
+args = ["-lc", "sleep 1"]
+cwd_policy = "current"
+stdin_mode = "none"
+stdout_mode = "capture"
+stderr_mode = "capture"
+timeout_ms = 5000
+expected_exit_codes = [0]
+"#,
+        )
+        .unwrap();
+
+    let mut cmd = Command::cargo_bin("agentstow").unwrap();
+    cmd.arg("--cwd")
+        .arg(temp.path())
+        .arg("--timeout")
+        .arg("50")
+        .arg("scripts")
+        .arg("run")
+        .arg("--id")
+        .arg("sleepy");
+
+    cmd.assert()
+        .failure()
+        .code(7)
+        .stderr(predicate::str::contains("脚本超时（50ms）"));
+}
+
+#[test]
+fn link_status_should_report_copy_dir_as_healthy() {
+    let temp = assert_fs::TempDir::new().unwrap();
+    temp.child("artifacts/skills").create_dir_all().unwrap();
+    temp.child("artifacts/skills/rule.md")
+        .write_str("hello")
+        .unwrap();
+    temp.child("proj").create_dir_all().unwrap();
+    temp.child("home").create_dir_all().unwrap();
+
+    temp.child("agentstow.toml")
+        .write_str(
+            r#"
+[profiles.base]
+vars = { name = "Dir" }
+
+[artifacts.skills]
+kind = "dir"
+source = "artifacts/skills"
+
+[targets.skills]
+artifact = "skills"
+profile = "base"
+target_path = "proj/.agents/skills"
+method = "copy"
+"#,
+        )
+        .unwrap();
+
+    let mut link = Command::cargo_bin("agentstow").unwrap();
+    link.arg("--cwd")
+        .arg(temp.path())
+        .env("AGENTSTOW_HOME", temp.child("home").path())
+        .arg("link");
+    link.assert().success();
+
+    let mut status = Command::cargo_bin("agentstow").unwrap();
+    status
+        .arg("--cwd")
+        .arg(temp.path())
+        .env("AGENTSTOW_HOME", temp.child("home").path())
+        .arg("link")
+        .arg("status");
+
+    status
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("[ok]").and(predicate::str::contains(".agents/skills")));
 }

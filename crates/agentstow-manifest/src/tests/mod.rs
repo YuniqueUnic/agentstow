@@ -1,5 +1,6 @@
 use super::*;
 use agentstow_core::ProfileName;
+use assert_fs::prelude::*;
 use pretty_assertions::assert_eq;
 
 #[test]
@@ -67,4 +68,135 @@ fn profile_cycle_should_error() {
         .unwrap_err();
 
     assert_eq!(err.exit_code(), agentstow_core::ExitCode::InvalidConfig);
+}
+
+#[test]
+fn find_from_should_error_when_manifest_is_missing() {
+    let temp = assert_fs::TempDir::new().unwrap();
+    temp.child("nested/work").create_dir_all().unwrap();
+
+    let err = Manifest::find_from(temp.child("nested/work").path()).unwrap_err();
+    assert_eq!(err.exit_code(), agentstow_core::ExitCode::InvalidConfig);
+    assert!(err.to_string().contains("未找到 agentstow.toml"));
+}
+
+#[test]
+fn load_should_error_when_target_references_missing_artifact() {
+    let temp = assert_fs::TempDir::new().unwrap();
+    temp.child("agentstow.toml")
+        .write_str(
+            r#"
+[profiles.base]
+vars = {}
+
+[targets.missing]
+artifact = "ghost"
+profile = "base"
+target_path = "out.txt"
+method = "copy"
+"#,
+        )
+        .unwrap();
+
+    let err = Manifest::load_from_path(temp.child("agentstow.toml").path()).unwrap_err();
+    assert_eq!(err.exit_code(), agentstow_core::ExitCode::InvalidConfig);
+    assert!(err.to_string().contains("target 引用不存在的 artifact"));
+}
+
+#[test]
+fn load_should_error_when_profile_extends_missing_profile() {
+    let temp = assert_fs::TempDir::new().unwrap();
+    temp.child("agentstow.toml")
+        .write_str(
+            r#"
+[profiles.base]
+extends = ["ghost"]
+vars = {}
+"#,
+        )
+        .unwrap();
+
+    let err = Manifest::load_from_path(temp.child("agentstow.toml").path()).unwrap_err();
+    assert_eq!(err.exit_code(), agentstow_core::ExitCode::InvalidConfig);
+    assert!(err.to_string().contains("profile extends 不存在"));
+}
+
+#[test]
+fn load_should_error_when_profiles_have_cycle() {
+    let temp = assert_fs::TempDir::new().unwrap();
+    temp.child("agentstow.toml")
+        .write_str(
+            r#"
+[profiles.a]
+extends = ["b"]
+vars = {}
+
+[profiles.b]
+extends = ["a"]
+vars = {}
+"#,
+        )
+        .unwrap();
+
+    let err = Manifest::load_from_path(temp.child("agentstow.toml").path()).unwrap_err();
+    assert_eq!(err.exit_code(), agentstow_core::ExitCode::InvalidConfig);
+    assert!(err.to_string().contains("循环引用"));
+}
+
+#[test]
+fn load_should_error_when_target_references_missing_profile() {
+    let temp = assert_fs::TempDir::new().unwrap();
+    temp.child("agentstow.toml")
+        .write_str(
+            r#"
+[artifacts.hello]
+kind = "file"
+source = "hello.txt"
+template = false
+validate_as = "none"
+
+[targets.out]
+artifact = "hello"
+profile = "ghost"
+target_path = "out.txt"
+method = "copy"
+"#,
+        )
+        .unwrap();
+
+    let err = Manifest::load_from_path(temp.child("agentstow.toml").path()).unwrap_err();
+    assert_eq!(err.exit_code(), agentstow_core::ExitCode::InvalidConfig);
+    assert!(err.to_string().contains("target 引用不存在的 profile"));
+}
+
+#[test]
+fn load_should_error_for_invalid_toml_syntax() {
+    let temp = assert_fs::TempDir::new().unwrap();
+    temp.child("agentstow.toml")
+        .write_str("[profiles.base\nvars = {}")
+        .unwrap();
+
+    let err = Manifest::load_from_path(temp.child("agentstow.toml").path()).unwrap_err();
+    assert_eq!(err.exit_code(), agentstow_core::ExitCode::InvalidConfig);
+    assert!(err.to_string().contains("解析 manifest 失败"));
+}
+
+#[test]
+fn profile_vars_should_error_when_profile_is_missing() {
+    let temp = assert_fs::TempDir::new().unwrap();
+    temp.child("agentstow.toml")
+        .write_str(
+            r#"
+[profiles.base]
+vars = {}
+"#,
+        )
+        .unwrap();
+
+    let manifest = Manifest::load_from_path(temp.child("agentstow.toml").path()).unwrap();
+    let err = manifest
+        .profile_vars(&ProfileName::new_unchecked("ghost"))
+        .unwrap_err();
+    assert_eq!(err.exit_code(), agentstow_core::ExitCode::InvalidConfig);
+    assert!(err.to_string().contains("profile 不存在"));
 }
