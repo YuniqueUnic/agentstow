@@ -1,10 +1,15 @@
 [project]
-name = "e2e"
+name = "agentstow-e2e"
 version = "0.1.0"
-description = "e2e testing"
+description = "AgentStow e2e and BDD tests"
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
     "pytest>=9",
-    "behave>=1.3"
+    "pytest-bdd>=8.1.0",
 ]
+
+[tool.pytest.ini_options]
+addopts = "-q --tb=short"
+testpaths = ["tests"]
+
