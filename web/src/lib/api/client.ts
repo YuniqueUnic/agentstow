@@ -7,6 +7,7 @@ import type {
   ManifestResponse,
   ProfileDetailResponse,
   RenderResponse,
+  WatchStatusResponse,
   WorkspaceSummaryResponse
 } from '$lib/types';
 
@@ -23,6 +24,10 @@ export class ApiClientError extends Error {
 }
 
 type QueryValue = string | number | boolean | null | undefined;
+type WatchStatusPayload = Omit<WatchStatusResponse, 'revision' | 'poll_interval_ms'> & {
+  revision: bigint | number | string;
+  poll_interval_ms: bigint | number | string | null;
+};
 
 const API_BASE = (import.meta.env.VITE_AGENTSTOW_API_BASE ?? '').replace(/\/$/, '');
 
@@ -102,6 +107,15 @@ export function getLinks(): Promise<LinkRecordResponse[]> {
 
 export function getLinkStatus(): Promise<LinkStatusResponseItem[]> {
   return fetchJson<LinkStatusResponseItem[]>('/api/link-status');
+}
+
+export function getWatchStatus(): Promise<WatchStatusResponse> {
+  return fetchJson<WatchStatusPayload>('/api/watch-status').then((payload) => ({
+    ...payload,
+    revision: BigInt(payload.revision),
+    poll_interval_ms:
+      payload.poll_interval_ms === null ? null : BigInt(payload.poll_interval_ms)
+  }));
 }
 
 export function getWorkspaceSummary(): Promise<WorkspaceSummaryResponse> {

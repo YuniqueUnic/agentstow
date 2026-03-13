@@ -10,6 +10,7 @@ use tower_http::services::ServeDir;
 mod api;
 mod services;
 mod ui;
+mod watch;
 
 use services::WorkspaceQueryService;
 
@@ -22,6 +23,7 @@ pub struct ServerConfig {
 #[derive(Clone)]
 pub(crate) struct ServerState {
     pub(crate) queries: WorkspaceQueryService,
+    pub(crate) watch: watch::WatchStatusHandle,
     pub(crate) ui_dist_dir: PathBuf,
 }
 
@@ -47,9 +49,19 @@ pub fn build_app(workspace_root: PathBuf) -> Router {
 }
 
 pub(crate) fn build_app_with_ui_dist(workspace_root: PathBuf, ui_dist_dir: PathBuf) -> Router {
+    let watch = watch::WatchStatusHandle::start(workspace_root.clone());
+    build_app_with_ui_dist_and_watch(workspace_root, ui_dist_dir, watch)
+}
+
+pub(crate) fn build_app_with_ui_dist_and_watch(
+    workspace_root: PathBuf,
+    ui_dist_dir: PathBuf,
+    watch: watch::WatchStatusHandle,
+) -> Router {
     let assets_dir = ui_dist_dir.join("assets");
     let state = Arc::new(ServerState {
         queries: WorkspaceQueryService::new(workspace_root),
+        watch,
         ui_dist_dir,
     });
 
@@ -63,6 +75,8 @@ pub(crate) fn build_app_with_ui_dist(workspace_root: PathBuf, ui_dist_dir: PathB
 
 #[cfg(test)]
 pub(crate) use ui::ui_dist_missing_page;
+#[cfg(test)]
+pub(crate) use watch::{WatchMode, WatchStatusHandle, WatchStatusSnapshot};
 
 #[cfg(test)]
 mod tests;

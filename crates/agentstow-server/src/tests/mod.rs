@@ -4,7 +4,10 @@ use axum_test::TestServer;
 use pretty_assertions::assert_eq;
 use serial_test::serial;
 
-use super::{build_app_with_ui_dist, ui_dist_missing_page};
+use super::{
+    WatchMode, WatchStatusHandle, WatchStatusSnapshot, build_app_with_ui_dist_and_watch,
+    ui_dist_missing_page,
+};
 
 fn write_minimal_workspace(temp: &assert_fs::TempDir) {
     temp.child("artifacts").create_dir_all().unwrap();
@@ -113,10 +116,23 @@ fn write_ui_dist(temp: &assert_fs::TempDir) -> std::path::PathBuf {
     temp.child("web-dist").path().to_path_buf()
 }
 
+fn default_watch_status(temp: &assert_fs::TempDir) -> WatchStatusSnapshot {
+    WatchStatusSnapshot::manual(vec![temp.path().display().to_string()], None)
+}
+
 fn test_server(temp: &assert_fs::TempDir, ui_dist_dir: std::path::PathBuf) -> TestServer {
-    TestServer::new(build_app_with_ui_dist(
+    test_server_with_watch(temp, ui_dist_dir, default_watch_status(temp))
+}
+
+fn test_server_with_watch(
+    temp: &assert_fs::TempDir,
+    ui_dist_dir: std::path::PathBuf,
+    watch_status: WatchStatusSnapshot,
+) -> TestServer {
+    TestServer::new(build_app_with_ui_dist_and_watch(
         temp.path().to_path_buf(),
         ui_dist_dir,
+        WatchStatusHandle::from_snapshot(watch_status),
     ))
 }
 
@@ -180,6 +196,66 @@ async fn api_health_should_return_ok() {
     resp.assert_status_ok();
     let body: serde_json::Value = resp.json();
     assert_eq!(body, serde_json::json!({ "ok": true }));
+}
+
+#[tokio::test]
+async fn api_watch_status_should_return_manual_snapshot() {
+    let temp = assert_fs::TempDir::new().unwrap();
+    write_minimal_workspace(&temp);
+    let watch_status = WatchStatusSnapshot::manual(
+        vec![temp.path().display().to_string()],
+        Some("native watcher 不可用".to_string()),
+    );
+    let server = test_server_with_watch(
+        &temp,
+        temp.child("missing-dist").path().to_path_buf(),
+        watch_status,
+    );
+
+    let resp = server.get("/api/watch-status").await;
+
+    resp.assert_status_ok();
+    let body: serde_json::Value = resp.json();
+    assert_eq!(body["mode"], serde_json::json!("manual"));
+    assert_eq!(body["healthy"], serde_json::json!(false));
+    assert_eq!(body["revision"], serde_json::json!(0));
+    assert_eq!(
+        body["watch_roots"],
+        serde_json::json!([temp.path().display().to_string()])
+    );
+}
+
+#[tokio::test]
+async fn api_watch_status_should_expose_poll_fallback_details() {
+    let temp = assert_fs::TempDir::new().unwrap();
+    write_minimal_workspace(&temp);
+    let server = test_server_with_watch(
+        &temp,
+        temp.child("missing-dist").path().to_path_buf(),
+        WatchStatusSnapshot {
+            mode: WatchMode::Poll,
+            healthy: true,
+            revision: 7,
+            poll_interval_ms: Some(2_000),
+            last_event: Some("Modify(Data) · agentstow.toml".to_string()),
+            last_event_at: Some("2026-03-13T12:00:00Z".to_string()),
+            last_error: Some("native watcher 不可用，已回退到 polling".to_string()),
+            watch_roots: vec![temp.path().display().to_string()],
+        },
+    );
+
+    let resp = server.get("/api/watch-status").await;
+
+    resp.assert_status_ok();
+    let body: serde_json::Value = resp.json();
+    assert_eq!(body["mode"], serde_json::json!("poll"));
+    assert_eq!(body["healthy"], serde_json::json!(true));
+    assert_eq!(body["revision"], serde_json::json!(7));
+    assert_eq!(body["poll_interval_ms"], serde_json::json!(2_000));
+    assert_eq!(
+        body["last_error"],
+        serde_json::json!("native watcher 不可用，已回退到 polling")
+    );
 }
 
 #[tokio::test]

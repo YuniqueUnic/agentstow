@@ -109,11 +109,13 @@ pub struct LinkStatusResponseItem {
 #[ts(export)]
 pub struct WatchStatusResponse {
     pub mode: WatchModeResponse,
+    pub healthy: bool,
     pub revision: u64,
     pub poll_interval_ms: Option<u64>,
     pub last_event: Option<String>,
     pub last_event_at: Option<String>,
     pub last_error: Option<String>,
+    pub watch_roots: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]

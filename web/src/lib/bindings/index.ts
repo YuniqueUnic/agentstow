@@ -21,5 +21,7 @@ export type { ScriptSummaryResponse } from './ScriptSummaryResponse';
 export type { TargetSummaryResponse } from './TargetSummaryResponse';
 export type { ValidateAsResponse } from './ValidateAsResponse';
 export type { ValidationIssueResponse } from './ValidationIssueResponse';
+export type { WatchModeResponse } from './WatchModeResponse';
+export type { WatchStatusResponse } from './WatchStatusResponse';
 export type { WorkspaceCountsResponse } from './WorkspaceCountsResponse';
 export type { WorkspaceSummaryResponse } from './WorkspaceSummaryResponse';

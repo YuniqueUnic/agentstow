@@ -18,6 +18,7 @@ pub(crate) fn routes() -> Router<Arc<ServerState>> {
         .route("/api/render", get(api_render))
         .route("/api/links", get(api_links))
         .route("/api/link-status", get(api_link_status))
+        .route("/api/watch-status", get(api_watch_status))
         .route("/api/workspace-summary", get(api_workspace_summary))
         .route("/api/artifacts/{artifact}", get(api_artifact_detail))
         .route("/api/profiles/{profile}", get(api_profile_detail))
@@ -90,6 +91,10 @@ async fn api_link_status(State(st): State<Arc<ServerState>>) -> Response {
         Ok(status) => Json(status).into_response(),
         Err(error) => api_error(StatusCode::INTERNAL_SERVER_ERROR, error),
     }
+}
+
+async fn api_watch_status(State(st): State<Arc<ServerState>>) -> Response {
+    Json(crate::services::watch_status_response(st.watch.snapshot())).into_response()
 }
 
 async fn api_workspace_summary(State(st): State<Arc<ServerState>>) -> Response {

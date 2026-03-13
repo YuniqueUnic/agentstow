@@ -22,6 +22,8 @@ export type {
   TargetSummaryResponse,
   ValidateAsResponse,
   ValidationIssueResponse,
+  WatchModeResponse,
+  WatchStatusResponse,
   WorkspaceCountsResponse,
   WorkspaceSummaryResponse
 } from '$lib/bindings';

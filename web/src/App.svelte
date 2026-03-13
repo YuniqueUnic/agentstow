@@ -6,12 +6,14 @@
     getLinkStatus,
     getLinks,
     getManifest,
+    getWatchStatus,
     renderArtifact
   } from '$lib/api/client';
   import type {
     LinkRecordResponse,
     LinkStatusResponseItem,
-    ManifestResponse
+    ManifestResponse,
+    WatchStatusResponse
   } from '$lib/types';
   import {
     basenameFromPath,
@@ -23,6 +25,7 @@
     manifest: boolean;
     links: boolean;
     linkStatus: boolean;
+    watchStatus: boolean;
     render: boolean;
     copy: boolean;
   };
@@ -31,22 +34,26 @@
     manifest: string | null;
     links: string | null;
     linkStatus: string | null;
+    watchStatus: string | null;
     render: string | null;
   };
 
   let manifest = $state<ManifestResponse | null>(null);
   let links = $state<LinkRecordResponse[]>([]);
   let linkStatus = $state<LinkStatusResponseItem[]>([]);
+  let watchStatus = $state<WatchStatusResponse | null>(null);
   let renderedText = $state('');
   let filterText = $state('');
   let selectedArtifact = $state<string | null>(null);
   let selectedProfile = $state<string | null>(null);
   let statusMessage = $state('等待连接到 AgentStow 工作区…');
+  let lastSeenWatchRevision = $state<bigint | null>(null);
 
   let loading = $state<LoadingState>({
     manifest: false,
     links: false,
     linkStatus: false,
+    watchStatus: false,
     render: false,
     copy: false
   });
@@ -55,6 +62,7 @@
     manifest: null,
     links: null,
     linkStatus: null,
+    watchStatus: null,
     render: null
   });
 
@@ -74,12 +82,31 @@
   const canRender = $derived(
     Boolean(selectedArtifact && selectedProfile) && !loading.render && !loading.manifest
   );
+  const watchModeLabel = $derived(
+    watchStatus
+      ? watchStatus.mode === 'native'
+        ? 'native watcher'
+        : watchStatus.mode === 'poll'
+          ? 'poll fallback'
+          : 'manual refresh'
+      : 'watcher 未连接'
+  );
+  const autoRefreshLabel = $derived(
+    watchStatus?.healthy && watchStatus.mode !== 'manual' ? '自动刷新已启用' : '仅支持手动刷新'
+  );
+  const watchActivityLabel = $derived(
+    watchStatus?.last_event
+      ? `${watchStatus.last_event} · ${formatRelativeTime(watchStatus.last_event_at)}`
+      : '等待文件变化'
+  );
   const filteredStatus = $derived.by(() => filterCollection(linkStatus, filterText));
   const filteredLinks = $derived.by(() =>
     [...filterCollection(links, filterText)].sort((left, right) =>
       right.updated_at.localeCompare(left.updated_at)
     )
   );
+  let refreshInFlight = false;
+  let watchPollInFlight = false;
 
   function filterCollection<T extends Record<string, unknown>>(items: T[], query: string): T[] {
     const normalized = query.trim().toLowerCase();
@@ -197,19 +224,50 @@
     }
   }
 
-  async function refreshAll(): Promise<void> {
-    statusMessage = '正在同步 manifest、links 与健康状态…';
+  async function loadWatchStatus(options: { quiet?: boolean } = {}): Promise<boolean> {
+    loading.watchStatus = true;
+    errors.watchStatus = null;
 
-    const [manifestOk, linksOk, statusOk] = await Promise.all([
-      loadManifest(),
-      loadLinks(),
-      loadLinkStatus()
-    ]);
+    try {
+      watchStatus = await getWatchStatus();
+      return true;
+    } catch (error) {
+      errors.watchStatus = describeError(error, '无法读取 watcher 状态。');
+      if (!options.quiet) {
+        statusMessage = errors.watchStatus;
+      }
+      return false;
+    } finally {
+      loading.watchStatus = false;
+    }
+  }
 
-    statusMessage =
-      manifestOk && linksOk && statusOk
-        ? '工作区数据已刷新。'
-        : '部分数据刷新失败，请查看各面板提示。';
+  async function refreshAll(options: { quiet?: boolean } = {}): Promise<boolean> {
+    if (refreshInFlight) {
+      return false;
+    }
+
+    refreshInFlight = true;
+    if (!options.quiet) {
+      statusMessage = '正在同步 manifest、links、watcher 与健康状态…';
+    }
+
+    try {
+      const [manifestOk, linksOk, statusOk, watchOk] = await Promise.all([
+        loadManifest(),
+        loadLinks(),
+        loadLinkStatus(),
+        loadWatchStatus({ quiet: true })
+      ]);
+
+      const ok = manifestOk && linksOk && statusOk && watchOk;
+      if (!options.quiet) {
+        statusMessage = ok ? '工作区数据已刷新。' : '部分数据刷新失败，请查看各面板提示。';
+      }
+      return ok;
+    } finally {
+      refreshInFlight = false;
+    }
   }
 
   async function runRender(): Promise<void> {
@@ -253,7 +311,57 @@
   }
 
   onMount(() => {
-    void refreshAll();
+    let disposed = false;
+    let watchTimer: number | null = null;
+
+    async function bootstrap(): Promise<void> {
+      const ok = await refreshAll();
+      if (!disposed && ok) {
+        lastSeenWatchRevision = watchStatus?.revision ?? null;
+      }
+    }
+
+    async function pollWatchStatus(): Promise<void> {
+      if (disposed || watchPollInFlight) {
+        return;
+      }
+
+      watchPollInFlight = true;
+      try {
+        const ok = await loadWatchStatus({ quiet: true });
+        if (!ok || !watchStatus) {
+          return;
+        }
+
+        const nextRevision = watchStatus.revision;
+        const autoRefreshReady = watchStatus.healthy && watchStatus.mode !== 'manual';
+        if (
+          autoRefreshReady &&
+          lastSeenWatchRevision !== null &&
+          nextRevision > lastSeenWatchRevision
+        ) {
+          statusMessage = `检测到工作区变更（rev ${nextRevision}），正在自动刷新…`;
+          const refreshed = await refreshAll({ quiet: true });
+          statusMessage = refreshed ? '检测到工作区变更，已自动刷新。' : '检测到工作区变更，但自动刷新失败。';
+        }
+
+        lastSeenWatchRevision = watchStatus.revision;
+      } finally {
+        watchPollInFlight = false;
+      }
+    }
+
+    void bootstrap();
+    watchTimer = window.setInterval(() => {
+      void pollWatchStatus();
+    }, 2_000);
+
+    return () => {
+      disposed = true;
+      if (watchTimer !== null) {
+        window.clearInterval(watchTimer);
+      }
+    };
   });
 </script>
 
@@ -315,7 +423,7 @@
           onkeydown={(event) => triggerOnEnterOrSpace(event, () => void refreshAll())}
           role="button"
           tabindex="0"
-          disabled={loading.manifest || loading.links || loading.linkStatus}
+          disabled={loading.manifest || loading.links || loading.linkStatus || loading.watchStatus}
         >
           刷新数据
         </md-outlined-button>
@@ -330,6 +438,27 @@
         </md-filled-tonal-button>
       </div>
 
+      <div class="watch-strip" aria-label="文件监听状态">
+        <span
+          class={[
+            'pill',
+            watchStatus?.healthy ? 'pill--ok' : watchStatus?.mode === 'poll' ? 'pill--warn' : 'pill--neutral'
+          ]}
+        >
+          {watchModeLabel}
+        </span>
+        <span>{autoRefreshLabel}</span>
+        <span title={watchActivityLabel}>{truncateMiddle(watchActivityLabel, 20)}</span>
+        {#if watchStatus?.watch_roots.length}
+          <span title={watchStatus.watch_roots.join('\n')}>
+            roots {watchStatus.watch_roots.length}
+          </span>
+        {/if}
+      </div>
+
+      {#if errors.watchStatus}
+        <p class="notice notice--error">{errors.watchStatus}</p>
+      {/if}
       <p class="status-line" aria-live="polite">{statusMessage}</p>
     </div>
   </header>
@@ -690,11 +819,21 @@
     gap: 0.75rem;
   }
 
+  .watch-strip {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6rem 0.9rem;
+    font-size: 0.84rem;
+    color: var(--ink-soft);
+    align-items: center;
+  }
+
   .status-line {
     min-height: 1.5rem;
     font-size: 0.92rem;
     color: var(--ink-soft);
   }
+
 
   .workspace {
     display: grid;

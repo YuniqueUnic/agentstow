@@ -15,10 +15,12 @@ use agentstow_web_types::{
     InstallMethodResponse, LinkRecordResponse, LinkStatusResponseItem, ManifestResponse,
     McpServerSummaryResponse, McpTransportKindResponse, ProfileDetailResponse,
     ProfileSummaryResponse, ProfileVarResponse, RenderResponse, ScriptSummaryResponse,
-    TargetSummaryResponse, ValidateAsResponse, ValidationIssueResponse, WorkspaceCountsResponse,
-    WorkspaceSummaryResponse,
+    TargetSummaryResponse, ValidateAsResponse, ValidationIssueResponse, WatchModeResponse,
+    WatchStatusResponse, WorkspaceCountsResponse, WorkspaceSummaryResponse,
 };
 use time::format_description::well_known::Rfc3339;
+
+use crate::watch::{WatchMode, WatchStatusSnapshot};
 
 #[derive(Debug, Clone)]
 pub(crate) struct WorkspaceQueryService {
@@ -761,5 +763,22 @@ fn validate_as_response(validate_as: ValidateAs) -> ValidateAsResponse {
         ValidateAs::Toml => ValidateAsResponse::Toml,
         ValidateAs::Markdown => ValidateAsResponse::Markdown,
         ValidateAs::Shell => ValidateAsResponse::Shell,
+    }
+}
+
+pub(crate) fn watch_status_response(snapshot: WatchStatusSnapshot) -> WatchStatusResponse {
+    WatchStatusResponse {
+        mode: match snapshot.mode {
+            WatchMode::Native => WatchModeResponse::Native,
+            WatchMode::Poll => WatchModeResponse::Poll,
+            WatchMode::Manual => WatchModeResponse::Manual,
+        },
+        healthy: snapshot.healthy,
+        revision: snapshot.revision,
+        poll_interval_ms: snapshot.poll_interval_ms,
+        last_event: snapshot.last_event,
+        last_event_at: snapshot.last_event_at,
+        last_error: snapshot.last_error,
+        watch_roots: snapshot.watch_roots,
     }
 }
