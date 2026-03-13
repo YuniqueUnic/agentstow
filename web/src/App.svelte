@@ -76,7 +76,7 @@
   );
   const filteredStatus = $derived.by(() => filterCollection(linkStatus, filterText));
   const filteredLinks = $derived.by(() =>
-    filterCollection(links, filterText).sort((left, right) =>
+    [...filterCollection(links, filterText)].sort((left, right) =>
       right.updated_at.localeCompare(left.updated_at)
     )
   );
