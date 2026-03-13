@@ -6,11 +6,13 @@ version.workspace = true
 
 [dependencies]
 agentstow-core = { path = "../agentstow-core" }
+agentstow-linker = { path = "../agentstow-linker" }
 agentstow-manifest = { path = "../agentstow-manifest" }
 agentstow-render = { path = "../agentstow-render" }
 agentstow-state = { path = "../agentstow-state" }
 anyhow.workspace = true
 axum.workspace = true
+fs-err.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true

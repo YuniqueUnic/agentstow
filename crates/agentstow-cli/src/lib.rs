@@ -241,7 +241,13 @@ async fn run_cli(cli: Cli) -> Result<()> {
         Commands::Workspace(args) => match args.cmd {
             WorkspaceSubcommand::Status => {
                 let info = Git::detect(&cwd).await?;
-                print_json_or_pretty(json, &info)?;
+                if json {
+                    print_json(&info)?;
+                    return Ok(());
+                }
+                println!("Repo root: {}", normalize_for_display(&info.repo_root));
+                println!("HEAD: {}", info.head);
+                println!("Dirty: {}", info.dirty);
                 Ok(())
             }
         },
@@ -257,9 +263,10 @@ async fn run_cli(cli: Cli) -> Result<()> {
             let manifest = load_manifest(&cwd, workspace.as_deref())?;
             let profile =
                 resolve_profile(profile.as_deref(), args.profile.as_deref(), Some(&manifest))?;
+            let artifact_id = ArtifactId::parse(args.artifact)?;
             let rendered = Renderer::render_file(
                 &manifest,
-                &ArtifactId::new_unchecked(args.artifact),
+                &artifact_id,
                 &profile,
             )?;
             let artifact_def = manifest.artifacts.get(&rendered.artifact_id).unwrap();
@@ -289,14 +296,19 @@ async fn run_cli(cli: Cli) -> Result<()> {
             let manifest = load_manifest(&cwd, workspace.as_deref())?;
             let profile =
                 resolve_profile(profile.as_deref(), args.profile.as_deref(), Some(&manifest))?;
+            let artifact_id = ArtifactId::parse(args.artifact)?;
             let rendered = Renderer::render_file(
                 &manifest,
-                &ArtifactId::new_unchecked(args.artifact),
+                &artifact_id,
                 &profile,
             )?;
             let artifact_def = manifest.artifacts.get(&rendered.artifact_id).unwrap();
             Validator::validate_rendered_file(artifact_def, &rendered.bytes)?;
-            print_json_or_pretty(json, &serde_json::json!({ "ok": true }))?;
+            if json {
+                print_json(&serde_json::json!({ "ok": true }))?;
+            } else {
+                println!("ok");
+            }
             Ok(())
         }
         Commands::Env(args) => {
@@ -348,7 +360,7 @@ async fn run_cli(cli: Cli) -> Result<()> {
                                 message: format!("script 不存在: {id}").into(),
                             })?;
                     if dry_run {
-                        print_json_or_pretty(json, &script)?;
+                        print_json(&script)?;
                         return Ok(());
                     }
 
@@ -358,7 +370,17 @@ async fn run_cli(cli: Cli) -> Result<()> {
                         stdin_text: stdin,
                     })
                     .await?;
-                    print_json_or_pretty(json, &out)?;
+                    if json {
+                        print_json(&out)?;
+                    } else {
+                        if let Some(stdout) = &out.stdout {
+                            print!("{stdout}");
+                        }
+                        if let Some(stderr) = &out.stderr {
+                            eprint!("{stderr}");
+                        }
+                        println!("\n(exit={})", out.exit_code);
+                    }
                     Ok(())
                 }
             }
@@ -370,7 +392,11 @@ async fn run_cli(cli: Cli) -> Result<()> {
                     for (name, server) in &manifest.mcp_servers {
                         Mcp::validate_server(name, server)?;
                     }
-                    print_json_or_pretty(json, &serde_json::json!({ "ok": true }))?;
+                    if json {
+                        print_json(&serde_json::json!({ "ok": true }))?;
+                    } else {
+                        println!("ok");
+                    }
                     Ok(())
                 }
                 McpSubcommand::Render { stdout, out } => {
@@ -437,18 +463,18 @@ async fn link_apply_or_plan(
     let selected: Vec<(&TargetName, &agentstow_manifest::TargetDef)> = if only_targets.is_empty() {
         manifest.targets.iter().collect()
     } else {
-        only_targets
-            .iter()
-            .map(|t| {
-                let name = TargetName::new_unchecked(t.clone());
-                let (k, def) = manifest.targets.get_key_value(&name).ok_or_else(|| {
-                    AgentStowError::Manifest {
-                        message: format!("target 不存在: {t}").into(),
-                    }
-                })?;
-                Ok((k, def))
-            })
-            .collect::<Result<Vec<_>>>()?
+            only_targets
+                .iter()
+                .map(|t| {
+                    let name = TargetName::parse(t.clone())?;
+                    let (k, def) = manifest.targets.get_key_value(&name).ok_or_else(|| {
+                        AgentStowError::Manifest {
+                            message: format!("target 不存在: {t}").into(),
+                        }
+                    })?;
+                    Ok((k, def))
+                })
+                .collect::<Result<Vec<_>>>()?
     };
 
     for (target_name, target) in selected {
@@ -582,9 +608,13 @@ async fn link_status(manifest: &Manifest, json: bool) -> Result<()> {
     let mut out = Vec::new();
     for rec in records {
         let ok = match rec.method {
-            InstallMethod::Symlink | InstallMethod::Junction => match rec.rendered_path.as_ref() {
+            InstallMethod::Symlink => match rec.rendered_path.as_ref() {
+                Some(src) => agentstow_linker::check_symlink(&rec.target_path, src).unwrap_or(false),
+                None => false,
+            },
+            InstallMethod::Junction => match rec.rendered_path.as_ref() {
                 Some(src) => {
-                    agentstow_linker::check_symlink(&rec.target_path, src).unwrap_or(false)
+                    agentstow_linker::check_junction(&rec.target_path, src).unwrap_or(false)
                 }
                 None => false,
             },
@@ -610,7 +640,14 @@ async fn link_status(manifest: &Manifest, json: bool) -> Result<()> {
         });
     }
 
-    print_json_or_pretty(json, &out)?;
+    if json {
+        print_json(&out)?;
+        return Ok(());
+    }
+    for item in &out {
+        let tag = if item.ok { "ok" } else { "bad" };
+        println!("[{tag}] {} ({:?})", item.target_path, item.method);
+    }
     Ok(())
 }
 
@@ -654,7 +691,7 @@ fn resolve_profile(
         .ok_or_else(|| AgentStowError::InvalidArgs {
             message: "需要指定 --profile（或在 target 内配置 profile）".into(),
         })?;
-    let p = ProfileName::new_unchecked(chosen);
+    let p = ProfileName::parse(chosen)?;
     if let Some(m) = manifest
         && !m.profiles.contains_key(&p)
     {
@@ -665,18 +702,11 @@ fn resolve_profile(
     Ok(p)
 }
 
-fn print_json_or_pretty<T: Serialize>(json: bool, v: &T) -> Result<()> {
-    if json {
-        println!(
-            "{}",
-            serde_json::to_string_pretty(v).map_err(|e| AgentStowError::Other(e.into()))?
-        );
-    } else {
-        println!(
-            "{}",
-            serde_json::to_string_pretty(v).map_err(|e| AgentStowError::Other(e.into()))?
-        );
-    }
+fn print_json<T: Serialize>(v: &T) -> Result<()> {
+    println!(
+        "{}",
+        serde_json::to_string_pretty(v).map_err(|e| AgentStowError::Other(e.into()))?
+    );
     Ok(())
 }
 

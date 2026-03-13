@@ -171,11 +171,13 @@ name = "agentstow-server"
 version = "0.1.0"
 dependencies = [
  "agentstow-core",
+ "agentstow-linker",
  "agentstow-manifest",
  "agentstow-render",
  "agentstow-state",
  "anyhow",
  "axum",
+ "fs-err",
  "serde",
  "serde_json",
  "thiserror 2.0.18",

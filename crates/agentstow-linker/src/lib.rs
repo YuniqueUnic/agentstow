@@ -213,11 +213,21 @@ fn apply_symlink(
                 .into(),
             });
         }
-        remove_existing(&job.target_path)?;
     }
 
+    let parent = job.target_path.parent().unwrap_or_else(|| Path::new("."));
+    let tmp_path = create_unused_path(parent, ".agentstow.link.")?;
     let link_target = relative_or_absolute_link_target(&job.target_path, &source_path);
-    create_symlink(&link_target, &job.target_path, job.artifact_kind)?;
+    create_symlink(&link_target, &tmp_path, job.artifact_kind)?;
+    if let Err(e) = rename_into_place(
+        &tmp_path,
+        &job.target_path,
+        opt,
+        job.artifact_kind == ArtifactKind::Dir,
+    ) {
+        let _ = remove_existing(&tmp_path);
+        return Err(e);
+    }
 
     Ok(LinkPlanItem {
         target: job.target.clone(),
@@ -245,7 +255,7 @@ fn apply_junction(job: &LinkJob, opt: ApplyOptions) -> Result<LinkPlanItem> {
     ensure_parent_dir(&job.target_path)?;
 
     if job.target_path.exists() {
-        if is_correct_symlink(&job.target_path, source_path).unwrap_or(false) {
+        if check_junction(&job.target_path, source_path).unwrap_or(false) {
             return Ok(LinkPlanItem {
                 target: job.target.clone(),
                 artifact_id: job.artifact_id.clone(),
@@ -267,12 +277,17 @@ fn apply_junction(job: &LinkJob, opt: ApplyOptions) -> Result<LinkPlanItem> {
                 .into(),
             });
         }
-        remove_existing(&job.target_path)?;
     }
 
     #[cfg(windows)]
     {
-        junction::create(source_path, &job.target_path).map_err(AgentStowError::from)?;
+        let parent = job.target_path.parent().unwrap_or_else(|| Path::new("."));
+        let tmp_path = create_unused_path(parent, ".agentstow.junction.")?;
+        junction::create(source_path, &tmp_path).map_err(AgentStowError::from)?;
+        if let Err(e) = rename_into_place(&tmp_path, &job.target_path, opt, true) {
+            let _ = remove_existing(&tmp_path);
+            return Err(e);
+        }
         return Ok(LinkPlanItem {
             target: job.target.clone(),
             artifact_id: job.artifact_id.clone(),
@@ -359,19 +374,23 @@ fn apply_copy(job: &LinkJob, opt: ApplyOptions) -> Result<LinkPlanItem> {
                         .into(),
                 });
             }
-            if job.target_path.exists() {
-                if !opt.force {
-                    return Err(AgentStowError::LinkConflict {
-                        message: format!(
-                            "target 已存在: {}",
-                            normalize_for_display(&job.target_path)
-                        )
-                        .into(),
-                    });
-                }
-                remove_existing(&job.target_path)?;
+            if job.target_path.exists() && !opt.force {
+                return Err(AgentStowError::LinkConflict {
+                    message: format!(
+                        "target 已存在: {}",
+                        normalize_for_display(&job.target_path)
+                    )
+                    .into(),
+                });
             }
-            copy_dir_recursive(source_dir, &job.target_path)?;
+            ensure_parent_dir(&job.target_path)?;
+            let parent = job.target_path.parent().unwrap_or_else(|| Path::new("."));
+            let staging = tempfile::Builder::new()
+                .prefix(".agentstow.dir.")
+                .tempdir_in(parent)
+                .map_err(AgentStowError::from)?;
+            copy_dir_recursive(source_dir, staging.path())?;
+            rename_into_place(staging.path(), &job.target_path, opt, true)?;
             Ok(LinkPlanItem {
                 target: job.target.clone(),
                 artifact_id: job.artifact_id.clone(),
@@ -410,9 +429,73 @@ pub fn check_symlink(target: &Path, desired_source: &Path) -> Result<bool> {
     is_correct_symlink(target, desired_source)
 }
 
+pub fn check_junction(target: &Path, desired_source: &Path) -> Result<bool> {
+    #[cfg(windows)]
+    {
+        if !target.exists() || !desired_source.exists() {
+            return Ok(false);
+        }
+        if !target.is_dir() || !desired_source.is_dir() {
+            return Ok(false);
+        }
+        return same_file::is_same_file(target, desired_source).map_err(AgentStowError::from);
+    }
+
+    #[cfg(not(windows))]
+    {
+        let _ = (target, desired_source);
+        Ok(false)
+    }
+}
+
 fn relative_or_absolute_link_target(target_path: &Path, source_path: &Path) -> PathBuf {
     let parent = target_path.parent().unwrap_or_else(|| Path::new("."));
     pathdiff::diff_paths(source_path, parent).unwrap_or_else(|| source_path.to_path_buf())
+}
+
+fn create_unused_path(parent: &Path, prefix: &str) -> Result<PathBuf> {
+    let tmp = tempfile::Builder::new()
+        .prefix(prefix)
+        .tempfile_in(parent)
+        .map_err(AgentStowError::from)?;
+    let path = tmp.path().to_path_buf();
+    tmp.close().map_err(AgentStowError::from)?;
+    Ok(path)
+}
+
+fn rename_into_place(
+    tmp_path: &Path,
+    target_path: &Path,
+    opt: ApplyOptions,
+    target_is_dir_like: bool,
+) -> Result<()> {
+    // Must handle Windows semantics (rename() doesn't overwrite) and directory replacement cases.
+    if target_path.exists() {
+        if !opt.force {
+            return Err(AgentStowError::LinkConflict {
+                message: format!(
+                    "target 已存在: {}",
+                    normalize_for_display(target_path)
+                )
+                .into(),
+            });
+        }
+
+        #[cfg(unix)]
+        {
+            // For file-like targets, we prefer atomic rename-over when possible.
+            if !target_is_dir_like {
+                if fs_err::rename(tmp_path, target_path).is_ok() {
+                    return Ok(());
+                }
+            }
+        }
+
+        remove_existing(target_path)?;
+    }
+
+    fs_err::rename(tmp_path, target_path).map_err(AgentStowError::from)?;
+    Ok(())
 }
 
 fn create_symlink(link_target: &Path, target_path: &Path, kind: ArtifactKind) -> Result<()> {
@@ -468,7 +551,8 @@ fn atomic_write_file(path: &Path, bytes: &[u8], sync: bool) -> Result<()> {
 
     // Best effort overwrite semantics:
     // - Unix rename() overwrites atomically.
-    // - Windows requires removing existing first (caller handles via force path).
+    // - Windows：`tempfile::NamedTempFile::persist` 底层使用 MoveFileEx(REPLACE_EXISTING)
+    //   来原子替换已存在目标（详见 tempfile 文档/实现）。
     tmp.persist(path).map_err(|e| AgentStowError::Io(e.error))?;
     Ok(())
 }

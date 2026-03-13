@@ -2,7 +2,10 @@ use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use agentstow_core::{AgentStowDirs, AgentStowError, ArtifactId, ProfileName, Result};
+use agentstow_core::{
+    AgentStowDirs, AgentStowError, ArtifactId, InstallMethod, ProfileName, Result,
+    normalize_for_display,
+};
 use agentstow_manifest::Manifest;
 use agentstow_render::Renderer;
 use agentstow_state::StateDb;
@@ -36,6 +39,7 @@ pub async fn serve(cfg: ServerConfig) -> Result<()> {
         .route("/api/manifest", get(api_manifest))
         .route("/api/render", get(api_render))
         .route("/api/links", get(api_links))
+        .route("/api/link-status", get(api_link_status))
         .with_state(Arc::new(state));
 
     let listener = tokio::net::TcpListener::bind(cfg.addr)
@@ -49,6 +53,15 @@ pub async fn serve(cfg: ServerConfig) -> Result<()> {
 
 async fn ui_index() -> Html<&'static str> {
     Html(include_str!("ui/index.html"))
+}
+
+#[derive(Debug, Serialize)]
+struct ApiError {
+    message: String,
+}
+
+fn api_error(status: StatusCode, message: impl ToString) -> impl IntoResponse {
+    (status, Json(ApiError { message: message.to_string() }))
 }
 
 #[derive(Debug, Serialize)]
@@ -78,7 +91,7 @@ async fn api_manifest(State(st): State<Arc<ServerState>>) -> impl IntoResponse {
             targets: m.targets.keys().map(|t| t.as_str().to_string()).collect(),
         })
         .into_response(),
-        Err(e) => (StatusCode::BAD_REQUEST, e.to_string()).into_response(),
+        Err(e) => api_error(StatusCode::BAD_REQUEST, e).into_response(),
     }
 }
 
@@ -95,15 +108,23 @@ async fn api_render(
 ) -> impl IntoResponse {
     let manifest = match Manifest::load_from_dir(&st.workspace_root) {
         Ok(m) => m,
-        Err(e) => return (StatusCode::BAD_REQUEST, e.to_string()).into_response(),
+        Err(e) => return api_error(StatusCode::BAD_REQUEST, e).into_response(),
+    };
+    let artifact_id = match ArtifactId::parse(q.artifact) {
+        Ok(a) => a,
+        Err(e) => return api_error(StatusCode::BAD_REQUEST, e).into_response(),
+    };
+    let profile = match ProfileName::parse(q.profile) {
+        Ok(p) => p,
+        Err(e) => return api_error(StatusCode::BAD_REQUEST, e).into_response(),
     };
     let out = match Renderer::render_file(
         &manifest,
-        &ArtifactId::new_unchecked(q.artifact),
-        &ProfileName::new_unchecked(q.profile),
+        &artifact_id,
+        &profile,
     ) {
         Ok(o) => o,
-        Err(e) => return (StatusCode::BAD_REQUEST, e.to_string()).into_response(),
+        Err(e) => return api_error(StatusCode::BAD_REQUEST, e).into_response(),
     };
 
     let s = String::from_utf8_lossy(&out.bytes).to_string();
@@ -114,16 +135,132 @@ async fn api_render(
 async fn api_links(State(st): State<Arc<ServerState>>) -> impl IntoResponse {
     let dirs = match AgentStowDirs::from_env() {
         Ok(d) => d,
-        Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+        Err(e) => return api_error(StatusCode::INTERNAL_SERVER_ERROR, e).into_response(),
     };
     let db = match StateDb::open(&dirs) {
         Ok(db) => db,
-        Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+        Err(e) => return api_error(StatusCode::INTERNAL_SERVER_ERROR, e).into_response(),
     };
     let records = match db.list_link_instances(&st.workspace_root) {
         Ok(r) => r,
-        Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+        Err(e) => return api_error(StatusCode::INTERNAL_SERVER_ERROR, e).into_response(),
     };
 
     Json(records).into_response()
+}
+
+#[derive(Debug, Serialize)]
+struct LinkStatusRespItem {
+    artifact_id: String,
+    profile: String,
+    target_path: String,
+    method: InstallMethod,
+    ok: bool,
+    message: String,
+}
+
+#[instrument(skip_all)]
+async fn api_link_status(State(st): State<Arc<ServerState>>) -> impl IntoResponse {
+    let manifest = match Manifest::load_from_dir(&st.workspace_root) {
+        Ok(m) => m,
+        Err(e) => return api_error(StatusCode::BAD_REQUEST, e).into_response(),
+    };
+
+    let dirs = match AgentStowDirs::from_env() {
+        Ok(d) => d,
+        Err(e) => return api_error(StatusCode::INTERNAL_SERVER_ERROR, e).into_response(),
+    };
+    let db = match StateDb::open(&dirs) {
+        Ok(db) => db,
+        Err(e) => return api_error(StatusCode::INTERNAL_SERVER_ERROR, e).into_response(),
+    };
+    let records = match db.list_link_instances(&st.workspace_root) {
+        Ok(r) => r,
+        Err(e) => return api_error(StatusCode::INTERNAL_SERVER_ERROR, e).into_response(),
+    };
+
+    let mut out = Vec::new();
+    for rec in records {
+        let artifact_def = match manifest.artifacts.get(&rec.artifact_id) {
+            Some(a) => a,
+            None => {
+                out.push(LinkStatusRespItem {
+                    artifact_id: rec.artifact_id.as_str().to_string(),
+                    profile: rec.profile.as_str().to_string(),
+                    target_path: normalize_for_display(&rec.target_path),
+                    method: rec.method,
+                    ok: false,
+                    message: "artifact_missing".to_string(),
+                });
+                continue;
+            }
+        };
+
+        let ok = match rec.method {
+            InstallMethod::Symlink => match rec.rendered_path.as_ref() {
+                Some(src) => agentstow_linker::check_symlink(&rec.target_path, src).unwrap_or(false),
+                None => false,
+            },
+            InstallMethod::Junction => match rec.rendered_path.as_ref() {
+                Some(src) => {
+                    agentstow_linker::check_junction(&rec.target_path, src).unwrap_or(false)
+                }
+                None => false,
+            },
+            InstallMethod::Copy => match artifact_def.kind {
+                agentstow_core::ArtifactKind::File => {
+                    if !rec.target_path.is_file() {
+                        false
+                    } else {
+                        let existing =
+                            match fs_err::read(&rec.target_path).map_err(AgentStowError::from) {
+                                Ok(b) => b,
+                                Err(_) => {
+                                    out.push(LinkStatusRespItem {
+                                        artifact_id: rec.artifact_id.as_str().to_string(),
+                                        profile: rec.profile.as_str().to_string(),
+                                        target_path: normalize_for_display(&rec.target_path),
+                                        method: rec.method,
+                                        ok: false,
+                                        message: "read_failed".to_string(),
+                                    });
+                                    continue;
+                                }
+                            };
+                        let desired = match Renderer::render_file(
+                            &manifest,
+                            &rec.artifact_id,
+                            &rec.profile,
+                        ) {
+                            Ok(r) => r.bytes,
+                            Err(_) => {
+                                out.push(LinkStatusRespItem {
+                                    artifact_id: rec.artifact_id.as_str().to_string(),
+                                    profile: rec.profile.as_str().to_string(),
+                                    target_path: normalize_for_display(&rec.target_path),
+                                    method: rec.method,
+                                    ok: false,
+                                    message: "render_failed".to_string(),
+                                });
+                                continue;
+                            }
+                        };
+                        existing == desired
+                    }
+                }
+                agentstow_core::ArtifactKind::Dir => rec.target_path.is_dir(),
+            },
+        };
+
+        out.push(LinkStatusRespItem {
+            artifact_id: rec.artifact_id.as_str().to_string(),
+            profile: rec.profile.as_str().to_string(),
+            target_path: normalize_for_display(&rec.target_path),
+            method: rec.method,
+            ok,
+            message: if ok { "healthy" } else { "unhealthy" }.to_string(),
+        });
+    }
+
+    Json(out).into_response()
 }

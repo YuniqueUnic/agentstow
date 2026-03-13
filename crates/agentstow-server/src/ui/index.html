@@ -11,6 +11,9 @@
         --md-sys-color-surface: #fffbfe;
         --md-sys-color-on-surface: #1c1b1f;
         --md-sys-color-surface-container: #f3edf7;
+        --md-sys-color-error: #b3261e;
+        --md-sys-color-error-container: #f9dedc;
+        --md-sys-color-on-error-container: #410e0b;
         --md-sys-color-outline: #79747e;
         --md-sys-elevation-1: 0 1px 2px rgba(0, 0, 0, 0.08), 0 1px 3px rgba(0, 0, 0, 0.06);
         --md-sys-elevation-2: 0 2px 6px rgba(0, 0, 0, 0.08);
@@ -83,33 +86,45 @@
         flex-direction: column;
         gap: 6px;
       }
-      button.item {
+      .item {
         border: 1px solid rgba(0, 0, 0, 0.06);
         background: rgba(255, 255, 255, 0.7);
         border-radius: var(--radius-lg);
         padding: 10px 12px;
-        cursor: pointer;
-        text-align: left;
         font-size: 13px;
         display: flex;
         justify-content: space-between;
         align-items: center;
         gap: 10px;
       }
+      button.item {
+        cursor: pointer;
+        text-align: left;
+      }
       button.item:hover {
         border-color: rgba(103, 80, 164, 0.35);
       }
-      button.item .id {
+      .item .id {
         font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
         font-size: 12px;
         opacity: 0.9;
       }
-      button.item .pill {
+      .item .pill {
         font-size: 11px;
         padding: 3px 8px;
         border-radius: 999px;
         border: 1px solid rgba(0, 0, 0, 0.08);
         opacity: 0.9;
+        white-space: nowrap;
+      }
+      .pill.ok {
+        background: rgba(103, 80, 164, 0.08);
+        border-color: rgba(103, 80, 164, 0.25);
+      }
+      .pill.bad {
+        background: var(--md-sys-color-error-container);
+        border-color: rgba(179, 38, 30, 0.28);
+        color: var(--md-sys-color-on-error-container);
       }
       .content {
         display: flex;
@@ -121,6 +136,9 @@
         gap: var(--space-2);
         align-items: center;
         flex-wrap: wrap;
+      }
+      .toolbar.compact {
+        gap: 10px;
       }
       select,
       input {
@@ -143,6 +161,15 @@
       .primary:disabled {
         opacity: 0.6;
         cursor: not-allowed;
+      }
+      .secondary {
+        border: 1px solid rgba(0, 0, 0, 0.14);
+        background: rgba(255, 255, 255, 0.85);
+        color: var(--md-sys-color-on-surface);
+        border-radius: 999px;
+        padding: 10px 14px;
+        font-weight: 600;
+        cursor: pointer;
       }
       pre {
         margin: 0;
@@ -172,9 +199,19 @@
     </header>
     <main class="layout">
       <aside class="surface">
-        <div class="panel">
-          <p class="section-title">Artifacts</p>
-          <div id="artifacts" class="list"></div>
+        <div class="panel content">
+          <div class="toolbar compact">
+            <input id="filter" placeholder="过滤（artifact / path）" />
+            <button id="btnRefresh" class="secondary">Refresh</button>
+          </div>
+          <div>
+            <p class="section-title">Artifacts</p>
+            <div id="artifacts" class="list"></div>
+          </div>
+          <div>
+            <p class="section-title">Links</p>
+            <div id="links" class="list"></div>
+          </div>
         </div>
       </aside>
       <section class="surface">
@@ -193,12 +230,16 @@
     <script>
       const state = {
         manifest: null,
-        selectedArtifact: null
+        selectedArtifact: null,
+        linkStatus: []
       };
 
       const elArtifacts = document.getElementById("artifacts");
+      const elLinks = document.getElementById("links");
       const elProfiles = document.getElementById("profiles");
       const elBtnRender = document.getElementById("btnRender");
+      const elBtnRefresh = document.getElementById("btnRefresh");
+      const elFilter = document.getElementById("filter");
       const elOutput = document.getElementById("output");
       const elStatus = document.getElementById("status");
 
@@ -206,9 +247,24 @@
         elStatus.textContent = text || "";
       }
 
+      function normalizeText(s) {
+        return String(s || "").toLowerCase();
+      }
+
+      async function readErrorMessage(resp) {
+        try {
+          const data = await resp.json();
+          return data?.message || JSON.stringify(data);
+        } catch (_) {
+          return await resp.text();
+        }
+      }
+
       function renderArtifactList(artifacts) {
         elArtifacts.innerHTML = "";
+        const q = normalizeText(elFilter.value);
         for (const id of artifacts) {
+          if (q && !normalizeText(id).includes(q)) continue;
           const btn = document.createElement("button");
           btn.className = "item";
           btn.onclick = () => {
@@ -216,7 +272,7 @@
             elBtnRender.disabled = false;
             setStatus(`已选择: ${id}`);
           };
-          btn.innerHTML = `<span class="id">${id}</span><span class="pill">file</span>`;
+          btn.innerHTML = `<span class="id">${id}</span><span class="pill ok">artifact</span>`;
           elArtifacts.appendChild(btn);
         }
       }
@@ -231,18 +287,71 @@
         }
       }
 
+      function renderLinks(items) {
+        elLinks.innerHTML = "";
+        const q = normalizeText(elFilter.value);
+        for (const it of items) {
+          const hay = `${it.artifact_id} ${it.profile} ${it.target_path} ${it.method}`.toLowerCase();
+          if (q && !hay.includes(q)) continue;
+          const row = document.createElement("div");
+          row.className = "item";
+
+          const left = document.createElement("div");
+          const top = document.createElement("div");
+          top.className = "id";
+          top.textContent = it.target_path;
+          const sub = document.createElement("div");
+          sub.style.fontSize = "12px";
+          sub.style.opacity = "0.85";
+          sub.textContent = `${it.artifact_id}@${it.profile} · ${it.method}`;
+          left.appendChild(top);
+          left.appendChild(sub);
+
+          const pill = document.createElement("span");
+          pill.className = `pill ${it.ok ? "ok" : "bad"}`;
+          pill.textContent = it.ok ? "healthy" : "unhealthy";
+
+          row.appendChild(left);
+          row.appendChild(pill);
+          elLinks.appendChild(row);
+        }
+      }
+
+      async function loadLinkStatus() {
+        const resp = await fetch("/api/link-status");
+        if (!resp.ok) {
+          throw new Error(await readErrorMessage(resp));
+        }
+        state.linkStatus = await resp.json();
+        renderLinks(state.linkStatus);
+      }
+
       async function loadManifest() {
         setStatus("加载 manifest...");
         const resp = await fetch("/api/manifest");
         if (!resp.ok) {
-          const text = await resp.text();
-          throw new Error(text);
+          throw new Error(await readErrorMessage(resp));
         }
         state.manifest = await resp.json();
         renderArtifactList(state.manifest.artifacts);
         renderProfiles(state.manifest.profiles);
+        await loadLinkStatus();
         setStatus("就绪");
       }
+
+      elBtnRefresh.onclick = () => {
+        loadManifest().catch((e) => {
+          elOutput.textContent = String(e);
+          setStatus("无法刷新");
+        });
+      };
+
+      elFilter.oninput = () => {
+        if (state.manifest) {
+          renderArtifactList(state.manifest.artifacts || []);
+        }
+        renderLinks(state.linkStatus || []);
+      };
 
       elBtnRender.onclick = async () => {
         if (!state.selectedArtifact) return;
@@ -252,10 +361,13 @@
         try {
           const url = `/api/render?artifact=${encodeURIComponent(state.selectedArtifact)}&profile=${encodeURIComponent(profile)}`;
           const resp = await fetch(url);
-          const data = await resp.json();
-          if (!resp.ok) {
-            throw new Error(data?.message || JSON.stringify(data));
+          let data;
+          try {
+            data = await resp.json();
+          } catch (_) {
+            throw new Error(await resp.text());
           }
+          if (!resp.ok) throw new Error(data?.message || JSON.stringify(data));
           elOutput.textContent = data.text || "";
           setStatus("完成");
         } catch (e) {
@@ -273,4 +385,3 @@
     </script>
   </body>
 </html>
-

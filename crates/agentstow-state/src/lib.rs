@@ -9,6 +9,8 @@ use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 use tracing::instrument;
 
+const SCHEMA_VERSION: i32 = 1;
+
 #[derive(Debug)]
 pub struct StateDb {
     db_path: PathBuf,
@@ -53,6 +55,22 @@ impl StateDb {
                 r#"
 PRAGMA journal_mode = WAL;
 PRAGMA synchronous = NORMAL;
+"#,
+            )
+            .map_err(|e| AgentStowError::State {
+                message: format!("初始化 sqlite pragma 失败: {e}").into(),
+            })?;
+
+        let user_version = self
+            .conn
+            .query_row("PRAGMA user_version;", [], |row| row.get::<_, i32>(0))
+            .unwrap_or(0);
+
+        // 开发期策略：不做迁移，schema 变更允许直接删库重建。
+        // 为避免旧 schema 残留导致运行时错误：当 user_version 不匹配时，直接 drop + recreate。
+        let schema_sql: String = if user_version == SCHEMA_VERSION {
+            r#"
+BEGIN;
 
 CREATE TABLE IF NOT EXISTS link_instances (
   workspace_root TEXT NOT NULL,
@@ -69,8 +87,43 @@ CREATE TABLE IF NOT EXISTS link_instances (
 
 CREATE INDEX IF NOT EXISTS idx_link_instances_artifact
   ON link_instances (workspace_root, artifact_id);
-"#,
+
+COMMIT;
+"#
+            .to_string()
+        } else {
+            // 破坏性重建：不保留旧数据
+            format!(
+                r#"
+BEGIN;
+
+DROP TABLE IF EXISTS link_instances;
+DROP INDEX IF EXISTS idx_link_instances_artifact;
+
+CREATE TABLE link_instances (
+  workspace_root TEXT NOT NULL,
+  target_path    TEXT NOT NULL,
+  artifact_id    TEXT NOT NULL,
+  profile        TEXT NOT NULL,
+  method         TEXT NOT NULL,
+  rendered_path  TEXT,
+  blake3         TEXT,
+  updated_at     TEXT NOT NULL,
+
+  PRIMARY KEY (workspace_root, target_path)
+);
+
+CREATE INDEX idx_link_instances_artifact
+  ON link_instances (workspace_root, artifact_id);
+
+PRAGMA user_version = {SCHEMA_VERSION};
+COMMIT;
+"#
             )
+        };
+
+        self.conn
+            .execute_batch(&schema_sql)
             .map_err(|e| AgentStowError::State {
                 message: format!("初始化 sqlite schema 失败: {e}").into(),
             })?;
