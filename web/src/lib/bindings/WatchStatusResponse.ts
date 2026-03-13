@@ -4,8 +4,8 @@ import type { WatchModeResponse } from "./WatchModeResponse";
 export type WatchStatusResponse = {
   mode: WatchModeResponse;
   healthy: boolean;
-  revision: bigint;
-  poll_interval_ms: bigint | null;
+  revision: number;
+  poll_interval_ms: number | null;
   last_event: string | null;
   last_event_at: string | null;
   last_error: string | null;

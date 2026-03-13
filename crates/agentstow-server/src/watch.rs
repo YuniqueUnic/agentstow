@@ -69,10 +69,12 @@ enum WatcherGuard {
 }
 
 #[derive(Debug, Clone)]
-struct WatchPlan {
+pub(crate) struct WatchPlan {
     specs: Vec<WatchSpec>,
     tracked_files: Vec<PathBuf>,
     tracked_dirs: Vec<PathBuf>,
+    ignored_files: Vec<PathBuf>,
+    ignored_dirs: Vec<PathBuf>,
     display_roots: Vec<String>,
 }
 
@@ -220,10 +222,12 @@ impl WatchStatusHandle {
 }
 
 impl WatchPlan {
-    fn discover(workspace_root: &Path) -> Self {
+    pub(crate) fn discover(workspace_root: &Path) -> Self {
         let manifest_path = workspace_root.join(DEFAULT_MANIFEST_FILE);
         let mut tracked_files = vec![manifest_path];
         let mut tracked_dirs = Vec::new();
+        let mut ignored_files = Vec::new();
+        let mut ignored_dirs = Vec::new();
         let mut specs = Vec::new();
 
         add_watch_spec(
@@ -242,9 +246,22 @@ impl WatchPlan {
                     artifact,
                 );
             }
+
+            add_overlapping_target_ignores(
+                &manifest,
+                workspace_root,
+                &tracked_files,
+                &tracked_dirs,
+                &mut ignored_files,
+                &mut ignored_dirs,
+            );
         }
 
         collapse_watch_specs(&mut specs);
+        dedupe_paths(&mut tracked_files);
+        dedupe_paths(&mut tracked_dirs);
+        dedupe_paths(&mut ignored_files);
+        dedupe_paths(&mut ignored_dirs);
         let display_roots = specs
             .iter()
             .map(|spec| normalize_for_display(&spec.path))
@@ -254,16 +271,47 @@ impl WatchPlan {
             specs,
             tracked_files,
             tracked_dirs,
+            ignored_files,
+            ignored_dirs,
             display_roots,
         }
     }
 
-    fn matches_path(&self, path: &Path) -> bool {
+    #[cfg(test)]
+    pub(crate) fn for_test(
+        tracked_files: Vec<PathBuf>,
+        tracked_dirs: Vec<PathBuf>,
+        ignored_files: Vec<PathBuf>,
+        ignored_dirs: Vec<PathBuf>,
+    ) -> Self {
+        Self {
+            specs: Vec::new(),
+            tracked_files,
+            tracked_dirs,
+            ignored_files,
+            ignored_dirs,
+            display_roots: Vec::new(),
+        }
+    }
+
+    pub(crate) fn matches_path(&self, path: &Path) -> bool {
+        if self.ignores_path(path) {
+            return false;
+        }
+
         self.tracked_files.iter().any(|tracked| tracked == path)
             || self
                 .tracked_dirs
                 .iter()
                 .any(|tracked| path == tracked || path.starts_with(tracked))
+    }
+
+    fn ignores_path(&self, path: &Path) -> bool {
+        self.ignored_files.iter().any(|ignored| ignored == path)
+            || self
+                .ignored_dirs
+                .iter()
+                .any(|ignored| path == ignored || path.starts_with(ignored))
     }
 }
 
@@ -323,6 +371,42 @@ fn add_artifact_sources(
     }
 }
 
+fn add_overlapping_target_ignores(
+    manifest: &Manifest,
+    workspace_root: &Path,
+    tracked_files: &[PathBuf],
+    tracked_dirs: &[PathBuf],
+    ignored_files: &mut Vec<PathBuf>,
+    ignored_dirs: &mut Vec<PathBuf>,
+) {
+    for target in manifest.targets.values() {
+        let Some(artifact) = manifest.artifacts.get(&target.artifact) else {
+            continue;
+        };
+
+        let target_path = target.absolute_target_path(workspace_root);
+        match artifact.kind {
+            ArtifactKind::Dir => {
+                if tracked_dirs
+                    .iter()
+                    .any(|tracked| target_path == *tracked || target_path.starts_with(tracked))
+                {
+                    ignored_dirs.push(target_path);
+                }
+            }
+            ArtifactKind::File => {
+                if tracked_files.iter().any(|tracked| tracked == &target_path)
+                    || tracked_dirs
+                        .iter()
+                        .any(|tracked| target_path.starts_with(tracked))
+                {
+                    ignored_files.push(target_path);
+                }
+            }
+        }
+    }
+}
+
 fn add_watch_spec(specs: &mut Vec<WatchSpec>, path: PathBuf, recursive_mode: RecursiveMode) {
     if let Some(existing) = specs.iter_mut().find(|spec| spec.path == path) {
         if matches!(recursive_mode, RecursiveMode::Recursive) {
@@ -362,6 +446,11 @@ fn collapse_watch_specs(specs: &mut Vec<WatchSpec>) {
     *specs = collapsed;
 }
 
+fn dedupe_paths(paths: &mut Vec<PathBuf>) {
+    paths.sort();
+    paths.dedup();
+}
+
 fn nearest_existing_ancestor(path: &Path, fallback: &Path) -> PathBuf {
     let mut current = Some(path);
     while let Some(candidate) = current {
@@ -389,7 +478,7 @@ where
     Ok(())
 }
 
-fn summarize_events(
+pub(crate) fn summarize_events(
     plan: &WatchPlan,
     events: &[notify_debouncer_full::DebouncedEvent],
 ) -> Option<String> {
@@ -398,6 +487,10 @@ fn summarize_events(
     let mut paths = BTreeSet::new();
 
     for event in events {
+        if event.kind.is_access() {
+            continue;
+        }
+
         let matched_paths: Vec<_> = event
             .paths
             .iter()

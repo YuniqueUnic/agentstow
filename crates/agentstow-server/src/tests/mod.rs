@@ -1,3 +1,5 @@
+mod watch;
+
 use assert_fs::prelude::*;
 use axum::http::StatusCode;
 use axum_test::TestServer;

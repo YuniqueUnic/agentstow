@@ -110,7 +110,9 @@ pub struct LinkStatusResponseItem {
 pub struct WatchStatusResponse {
     pub mode: WatchModeResponse,
     pub healthy: bool,
+    #[ts(type = "number")]
     pub revision: u64,
+    #[ts(type = "number | null")]
     pub poll_interval_ms: Option<u64>,
     pub last_event: Option<String>,
     pub last_event_at: Option<String>,
@@ -193,6 +195,7 @@ pub struct ScriptSummaryResponse {
     pub entry: String,
     pub args: Vec<String>,
     pub env_keys: Vec<String>,
+    #[ts(type = "number | null")]
     pub timeout_ms: Option<u64>,
 }
 

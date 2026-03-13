@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use agentstow_core::{
     AgentStowError, ArtifactId, ArtifactKind, CwdPolicy, InstallMethod, OutputMode, ProfileName,
-    Result, SecretBinding, StdinMode, TargetName, ValidateAs, absolutize,
+    Result, SecretBinding, StdinMode, TargetName, ValidateAs, absolutize, normalize_for_display,
 };
 use serde::{Deserialize, Serialize};
 
@@ -193,7 +193,7 @@ impl Manifest {
             message: "manifest path 没有 parent".into(),
         })?;
 
-        validate_manifest(&parsed)?;
+        validate_manifest(&parsed, workspace_root)?;
 
         Ok(Self {
             workspace_root: workspace_root.to_path_buf(),
@@ -242,13 +242,13 @@ impl Manifest {
     }
 }
 
-fn validate_manifest(m: &ManifestToml) -> Result<()> {
+fn validate_manifest(m: &ManifestToml, workspace_root: &Path) -> Result<()> {
     for profile in m.profiles.values() {
         profile.merged_vars(&m.profiles)?;
     }
 
     for (target_name, target) in &m.targets {
-        if !m.artifacts.contains_key(&target.artifact) {
+        let Some(artifact) = m.artifacts.get(&target.artifact) else {
             return Err(AgentStowError::Manifest {
                 message: format!(
                     "target 引用不存在的 artifact: {target_name} -> {}",
@@ -256,7 +256,7 @@ fn validate_manifest(m: &ManifestToml) -> Result<()> {
                 )
                 .into(),
             });
-        }
+        };
         if let Some(profile) = &target.profile
             && !m.profiles.contains_key(profile)
         {
@@ -264,8 +264,26 @@ fn validate_manifest(m: &ManifestToml) -> Result<()> {
                 message: format!("target 引用不存在的 profile: {target_name} -> {profile}").into(),
             });
         }
+
+        let source_path = artifact.source_path(workspace_root);
+        let target_path = target.absolute_target_path(workspace_root);
+        if paths_overlap(&source_path, &target_path) {
+            return Err(AgentStowError::Manifest {
+                message: format!(
+                    "target 路径与 artifact source 重叠: {target_name} -> {} (source={}, target={})",
+                    target.artifact,
+                    normalize_for_display(&source_path),
+                    normalize_for_display(&target_path),
+                )
+                .into(),
+            });
+        }
     }
     Ok(())
+}
+
+fn paths_overlap(left: &Path, right: &Path) -> bool {
+    left == right || left.starts_with(right) || right.starts_with(left)
 }
 
 #[cfg(test)]

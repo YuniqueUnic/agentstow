@@ -47,7 +47,7 @@
   let selectedArtifact = $state<string | null>(null);
   let selectedProfile = $state<string | null>(null);
   let statusMessage = $state('等待连接到 AgentStow 工作区…');
-  let lastSeenWatchRevision = $state<bigint | null>(null);
+  let lastSeenWatchRevision = $state<number | null>(null);
 
   let loading = $state<LoadingState>({
     manifest: false,

@@ -6,5 +6,5 @@ export type ScriptSummaryResponse = {
   entry: string;
   args: Array<string>;
   env_keys: Array<string>;
-  timeout_ms: bigint | null;
+  timeout_ms: number | null;
 };

@@ -170,6 +170,32 @@ method = "copy"
 }
 
 #[test]
+fn load_should_error_when_target_path_overlaps_artifact_source() {
+    let temp = assert_fs::TempDir::new().unwrap();
+    temp.child("agentstow.toml")
+        .write_str(
+            r#"
+[artifacts.skills]
+kind = "dir"
+source = "artifacts/skills"
+
+[targets.bad]
+artifact = "skills"
+target_path = "artifacts/skills/project-output"
+method = "copy"
+"#,
+        )
+        .unwrap();
+
+    let err = Manifest::load_from_path(temp.child("agentstow.toml").path()).unwrap_err();
+    assert_eq!(err.exit_code(), agentstow_core::ExitCode::InvalidConfig);
+    assert!(
+        err.to_string()
+            .contains("target 路径与 artifact source 重叠")
+    );
+}
+
+#[test]
 fn load_should_error_for_invalid_toml_syntax() {
     let temp = assert_fs::TempDir::new().unwrap();
     temp.child("agentstow.toml")

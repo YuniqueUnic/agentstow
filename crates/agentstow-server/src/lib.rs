@@ -76,7 +76,9 @@ pub(crate) fn build_app_with_ui_dist_and_watch(
 #[cfg(test)]
 pub(crate) use ui::ui_dist_missing_page;
 #[cfg(test)]
-pub(crate) use watch::{WatchMode, WatchStatusHandle, WatchStatusSnapshot};
+pub(crate) use watch::{
+    WatchMode, WatchPlan, WatchStatusHandle, WatchStatusSnapshot, summarize_events,
+};
 
 #[cfg(test)]
 mod tests;
