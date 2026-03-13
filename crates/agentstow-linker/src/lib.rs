@@ -114,7 +114,7 @@ pub fn plan_job(job: &LinkJob, render_store: &RenderStore) -> Result<LinkPlanIte
             },
             (kind, _) => {
                 return Err(AgentStowError::Link {
-                    message: format!("symlink 不支持的 artifact kind/source 组合: {kind:?}").into(),
+                    message: format!("symlink 不支持的 artifact kind/source 组合：{kind:?}").into(),
                 });
             }
         },
@@ -183,7 +183,7 @@ fn apply_symlink(
         ),
         (kind, _) => {
             return Err(AgentStowError::Link {
-                message: format!("symlink 不支持的 artifact kind/source 组合: {kind:?}").into(),
+                message: format!("symlink 不支持的 artifact kind/source 组合：{kind:?}").into(),
             });
         }
     };
@@ -193,7 +193,7 @@ fn apply_symlink(
     if job.target_path.exists() {
         if is_correct_symlink(&job.target_path, &source_path)? {
             info!(
-                "target 已是正确 symlink，跳过: {}",
+                "target 已是正确 symlink，跳过：{}",
                 normalize_for_display(&job.target_path)
             );
             return Ok(LinkPlanItem {
@@ -336,7 +336,7 @@ fn apply_copy(job: &LinkJob, opt: ApplyOptions) -> Result<LinkPlanItem> {
                 if !opt.force {
                     return Err(AgentStowError::LinkConflict {
                         message: format!(
-                            "target 已存在且内容不同: {}",
+                            "target 已存在且内容不同：{}",
                             normalize_for_display(&job.target_path)
                         )
                         .into(),
@@ -345,7 +345,7 @@ fn apply_copy(job: &LinkJob, opt: ApplyOptions) -> Result<LinkPlanItem> {
             } else if job.target_path.exists() && !opt.force {
                 return Err(AgentStowError::LinkConflict {
                     message: format!(
-                        "target 已存在且不是文件: {}",
+                        "target 已存在且不是文件：{}",
                         normalize_for_display(&job.target_path)
                     )
                     .into(),
@@ -372,13 +372,13 @@ fn apply_copy(job: &LinkJob, opt: ApplyOptions) -> Result<LinkPlanItem> {
         (ArtifactKind::Dir, InstallSource::Path(source_dir)) => {
             if !source_dir.is_dir() {
                 return Err(AgentStowError::Link {
-                    message: format!("source 不是目录: {}", normalize_for_display(source_dir))
+                    message: format!("source 不是目录：{}", normalize_for_display(source_dir))
                         .into(),
                 });
             }
             if job.target_path.exists() && !opt.force {
                 return Err(AgentStowError::LinkConflict {
-                    message: format!("target 已存在: {}", normalize_for_display(&job.target_path))
+                    message: format!("target 已存在：{}", normalize_for_display(&job.target_path))
                         .into(),
                 });
             }
@@ -480,7 +480,7 @@ fn rename_into_place(
     if target_path.exists() {
         if !opt.force {
             return Err(AgentStowError::LinkConflict {
-                message: format!("target 已存在: {}", normalize_for_display(target_path)).into(),
+                message: format!("target 已存在：{}", normalize_for_display(target_path)).into(),
             });
         }
 

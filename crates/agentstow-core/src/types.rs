@@ -48,7 +48,7 @@ impl std::str::FromStr for ShellKind {
             "powershell" | "powershell.exe" | "pwsh" | "pwsh.exe" => Ok(Self::Powershell),
             "cmd" | "cmd.exe" => Ok(Self::Cmd),
             other => Err(format!(
-                "不支持的 shell: {other}（可选: bash|zsh|fish|powershell|cmd）"
+                "不支持的 shell: {other}（可选：bash|zsh|fish|powershell|cmd）"
             )),
         }
     }

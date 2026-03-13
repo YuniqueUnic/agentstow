@@ -41,4 +41,3 @@ def _run_render(render_workspace: Path, run_cli):
         "hello",
         "--dry-run",
     )
-

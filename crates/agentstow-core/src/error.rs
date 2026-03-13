@@ -23,34 +23,34 @@ impl ExitCode {
 
 #[derive(Debug, Error)]
 pub enum AgentStowError {
-    #[error("参数错误: {message}")]
+    #[error("参数错误：{message}")]
     InvalidArgs { message: Cow<'static, str> },
 
-    #[error("配置/manifest 错误: {message}")]
+    #[error("配置/manifest 错误：{message}")]
     Manifest { message: Cow<'static, str> },
 
-    #[error("渲染失败: {message}")]
+    #[error("渲染失败：{message}")]
     Render { message: Cow<'static, str> },
 
-    #[error("校验失败: {message}")]
+    #[error("校验失败：{message}")]
     Validate { message: Cow<'static, str> },
 
-    #[error("链接冲突: {message}")]
+    #[error("链接冲突：{message}")]
     LinkConflict { message: Cow<'static, str> },
 
-    #[error("链接/安装失败: {message}")]
+    #[error("链接/安装失败：{message}")]
     Link { message: Cow<'static, str> },
 
-    #[error("状态库失败: {message}")]
+    #[error("状态库失败：{message}")]
     State { message: Cow<'static, str> },
 
-    #[error("Git 操作失败: {message}")]
+    #[error("Git 操作失败：{message}")]
     Git { message: Cow<'static, str> },
 
-    #[error("脚本执行失败: {message}")]
+    #[error("脚本执行失败：{message}")]
     Script { message: Cow<'static, str> },
 
-    #[error("MCP 失败: {message}")]
+    #[error("MCP 失败：{message}")]
     Mcp { message: Cow<'static, str> },
 
     #[error(transparent)]

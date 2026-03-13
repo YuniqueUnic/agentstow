@@ -12,4 +12,3 @@ dependencies = [
 [tool.pytest.ini_options]
 addopts = "-q --tb=short"
 testpaths = ["tests"]
-

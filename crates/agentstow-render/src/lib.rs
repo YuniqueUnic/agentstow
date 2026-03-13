@@ -29,7 +29,7 @@ impl Renderer {
                 .artifacts
                 .get(artifact_id)
                 .ok_or_else(|| AgentStowError::Manifest {
-                    message: format!("artifact 不存在: {artifact_id}").into(),
+                    message: format!("artifact 不存在：{artifact_id}").into(),
                 })?;
 
         if artifact.kind != ArtifactKind::File {
@@ -40,7 +40,7 @@ impl Renderer {
 
         let vars = manifest.profile_vars(profile)?;
         let ctx = Context::from_serialize(&vars).map_err(|e| AgentStowError::Render {
-            message: format!("构建 Tera context 失败: {e}").into(),
+            message: format!("构建 Tera context 失败：{e}").into(),
         })?;
 
         let source_path = artifact.source_path(&manifest.workspace_root);
@@ -63,7 +63,7 @@ fn render_tera_template_file(path: &Path, ctx: &Context) -> Result<Vec<u8>> {
     let rendered =
         tera::Tera::one_off(&template, ctx, false).map_err(|e| AgentStowError::Render {
             message: format!(
-                "Tera render 失败: path={}, {e}; detail={e:?}",
+                "Tera render 失败：path={}, {e}; detail={e:?}",
                 normalize_for_display(path)
             )
             .into(),

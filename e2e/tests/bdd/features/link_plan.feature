@@ -5,4 +5,3 @@ Feature: Link Plan CLI
     When I run link plan as json
     Then the command succeeds
     And stdout is a json array with 1 item
-

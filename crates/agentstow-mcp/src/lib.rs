@@ -86,7 +86,7 @@ impl Mcp {
 
         let file = McpJsonFile { mcp_servers: out };
         serde_json::to_string_pretty(&file).map_err(|e| AgentStowError::Mcp {
-            message: format!("序列化 MCP JSON 失败: {e}").into(),
+            message: format!("序列化 MCP JSON 失败：{e}").into(),
         })
     }
 }

@@ -35,12 +35,12 @@ async fn run_git(cwd: &Path, args: &[&str]) -> Result<String> {
         .output()
         .await
         .map_err(|e| AgentStowError::Git {
-            message: format!("执行 git 失败: {e}").into(),
+            message: format!("执行 git 失败：{e}").into(),
         })?;
     if !out.status.success() {
         return Err(AgentStowError::Git {
             message: format!(
-                "git {:?} 失败: exit={:?}, stderr={}",
+                "git {:?} 失败：exit={:?}, stderr={}",
                 args,
                 out.status.code(),
                 String::from_utf8_lossy(&out.stderr)

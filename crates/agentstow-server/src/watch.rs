@@ -105,7 +105,7 @@ impl WatchStatusHandle {
                 handle.record_error(
                     WatchMode::Native,
                     None,
-                    format!("native watcher 挂载失败: {error}"),
+                    format!("native watcher 挂载失败：{error}"),
                 );
             } else {
                 handle.install_native(debouncer);
@@ -120,7 +120,7 @@ impl WatchStatusHandle {
                     handle.record_error(
                         WatchMode::Poll,
                         Some(poll_interval_ms),
-                        format!("poll watcher 挂载失败: {error}"),
+                        format!("poll watcher 挂载失败：{error}"),
                     );
                 } else {
                     handle.install_poll(debouncer, poll_interval_ms);
@@ -131,7 +131,7 @@ impl WatchStatusHandle {
                 handle.record_error(
                     WatchMode::Poll,
                     Some(poll_interval_ms),
-                    format!("poll watcher 创建失败: {error}"),
+                    format!("poll watcher 创建失败：{error}"),
                 );
             }
         }

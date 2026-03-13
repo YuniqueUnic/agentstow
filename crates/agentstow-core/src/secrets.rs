@@ -16,7 +16,7 @@ impl SecretBinding {
         match self {
             Self::Literal { value } => Ok(value.clone()),
             Self::Env { var } => std::env::var(var).map_err(|_| AgentStowError::Validate {
-                message: format!("缺少环境变量: {var}").into(),
+                message: format!("缺少环境变量：{var}").into(),
             }),
         }
     }

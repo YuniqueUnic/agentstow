@@ -42,4 +42,3 @@ def _run_sleepy_script(scripts_workspace: Path, run_cli, timeout: str):
         "--id",
         "sleepy",
     )
-

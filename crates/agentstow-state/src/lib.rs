@@ -35,7 +35,7 @@ impl StateDb {
         let db_path = dirs.data_dir.join("agentstow.db");
         let conn = Connection::open(&db_path).map_err(|e| AgentStowError::State {
             message: format!(
-                "打开 sqlite 失败: {e}; path={}",
+                "打开 sqlite 失败：{e}; path={}",
                 normalize_for_display(&db_path)
             )
             .into(),
@@ -58,7 +58,7 @@ PRAGMA synchronous = NORMAL;
 "#,
             )
             .map_err(|e| AgentStowError::State {
-                message: format!("初始化 sqlite pragma 失败: {e}").into(),
+                message: format!("初始化 sqlite pragma 失败：{e}").into(),
             })?;
 
         let user_version = self
@@ -125,7 +125,7 @@ COMMIT;
         self.conn
             .execute_batch(&schema_sql)
             .map_err(|e| AgentStowError::State {
-                message: format!("初始化 sqlite schema 失败: {e}").into(),
+                message: format!("初始化 sqlite schema 失败：{e}").into(),
             })?;
         Ok(())
     }
@@ -171,7 +171,7 @@ ON CONFLICT(workspace_root, target_path) DO UPDATE SET
                 ],
             )
             .map_err(|e| AgentStowError::State {
-                message: format!("写入 link instance 失败: {e}").into(),
+                message: format!("写入 link instance 失败：{e}").into(),
             })?;
         Ok(())
     }
@@ -188,7 +188,7 @@ ORDER BY target_path
 "#,
             )
             .map_err(|e| AgentStowError::State {
-                message: format!("prepare 失败: {e}").into(),
+                message: format!("prepare 失败：{e}").into(),
             })?;
 
         let rows = stmt
@@ -220,13 +220,13 @@ ORDER BY target_path
                 })
             })
             .map_err(|e| AgentStowError::State {
-                message: format!("query_map 失败: {e}").into(),
+                message: format!("query_map 失败：{e}").into(),
             })?;
 
         let mut out = Vec::new();
         for row in rows {
             out.push(row.map_err(|e| AgentStowError::State {
-                message: format!("row parse 失败: {e}").into(),
+                message: format!("row parse 失败：{e}").into(),
             })?);
         }
         Ok(out)

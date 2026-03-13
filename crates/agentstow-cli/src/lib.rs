@@ -319,7 +319,7 @@ async fn run_cli(cli: Cli) -> Result<()> {
                             .env_sets
                             .get(&set)
                             .ok_or_else(|| AgentStowError::Manifest {
-                                message: format!("env set 不存在: {set}").into(),
+                                message: format!("env set 不存在：{set}").into(),
                             })?;
                     let vars = Env::resolve_env_set(env_set)?;
                     let script = Env::emit_shell(shell, &vars)?;
@@ -349,7 +349,7 @@ async fn run_cli(cli: Cli) -> Result<()> {
                         .scripts
                         .get(&id)
                         .ok_or_else(|| AgentStowError::Manifest {
-                            message: format!("script 不存在: {id}").into(),
+                            message: format!("script 不存在：{id}").into(),
                         })?
                         .clone();
                     if dry_run {
@@ -466,7 +466,7 @@ async fn link_apply_or_plan(
                 let name = TargetName::parse(t.clone())?;
                 let (k, def) = manifest.targets.get_key_value(&name).ok_or_else(|| {
                     AgentStowError::Manifest {
-                        message: format!("target 不存在: {t}").into(),
+                        message: format!("target 不存在：{t}").into(),
                     }
                 })?;
                 Ok((k, def))
@@ -708,7 +708,7 @@ fn resolve_profile(
         && !m.profiles.contains_key(&p)
     {
         return Err(AgentStowError::Manifest {
-            message: format!("profile 不存在: {}", p.as_str()).into(),
+            message: format!("profile 不存在：{}", p.as_str()).into(),
         });
     }
     Ok(p)

@@ -67,7 +67,7 @@ impl ScriptRunner {
         });
 
         let mut child = cmd.group_spawn().map_err(|e| AgentStowError::Script {
-            message: format!("spawn 失败: {e}").into(),
+            message: format!("spawn 失败：{e}").into(),
         })?;
 
         if matches!(req.script.stdin_mode, StdinMode::Text | StdinMode::Json)
@@ -107,7 +107,7 @@ impl ScriptRunner {
 
         let wait_fut = async {
             let status = child.wait().await.map_err(|e| AgentStowError::Script {
-                message: format!("wait 失败: {e}").into(),
+                message: format!("wait 失败：{e}").into(),
             })?;
             Ok::<std::process::ExitStatus, AgentStowError>(status)
         };
@@ -142,7 +142,7 @@ impl ScriptRunner {
         };
         if !expected.contains(&code) {
             return Err(AgentStowError::Script {
-                message: format!("exit code 不符合预期: code={code}, expected={expected:?}").into(),
+                message: format!("exit code 不符合预期：code={code}, expected={expected:?}").into(),
             });
         }
 

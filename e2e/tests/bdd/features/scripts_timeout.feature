@@ -5,4 +5,3 @@ Feature: Scripts CLI
     When I run the sleepy script with global timeout "50"
     Then the command fails with exit code 7
     And stderr contains "脚本超时（50ms）"
-

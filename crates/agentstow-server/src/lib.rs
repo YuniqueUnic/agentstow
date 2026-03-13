@@ -39,7 +39,7 @@ pub async fn serve(cfg: ServerConfig) -> Result<()> {
         .map_err(AgentStowError::from)?;
     axum::serve(listener, app)
         .await
-        .map_err(|error| AgentStowError::Other(anyhow::anyhow!("axum serve 失败: {error}")))?;
+        .map_err(|error| AgentStowError::Other(anyhow::anyhow!("axum serve 失败：{error}")))?;
     Ok(())
 }
 

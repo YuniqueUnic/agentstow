@@ -47,4 +47,3 @@ export function formatRelativeTime(input: string | null | undefined): string {
     minute: '2-digit'
   }).format(timestamp);
 }
-

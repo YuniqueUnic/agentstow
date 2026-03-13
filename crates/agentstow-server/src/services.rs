@@ -66,7 +66,7 @@ impl WorkspaceQueryService {
                 .artifacts
                 .get(artifact_id)
                 .ok_or_else(|| AgentStowError::Manifest {
-                    message: format!("artifact 不存在: {}", artifact_id.as_str()).into(),
+                    message: format!("artifact 不存在：{}", artifact_id.as_str()).into(),
                 })?;
         Validator::validate_rendered_file(artifact_def, &rendered.bytes)?;
         Ok(RenderResponse {
@@ -138,7 +138,7 @@ impl WorkspaceQueryService {
             .find(|artifact| artifact.id == artifact_id.as_str())
             .cloned()
             .ok_or_else(|| AgentStowError::Manifest {
-                message: format!("artifact 不存在: {}", artifact_id.as_str()).into(),
+                message: format!("artifact 不存在：{}", artifact_id.as_str()).into(),
             })?;
         let artifact_targets: Vec<_> = targets
             .iter()
@@ -184,7 +184,7 @@ impl WorkspaceQueryService {
             .find(|profile| profile.id == profile_name.as_str())
             .cloned()
             .ok_or_else(|| AgentStowError::Manifest {
-                message: format!("profile 不存在: {}", profile_name.as_str()).into(),
+                message: format!("profile 不存在：{}", profile_name.as_str()).into(),
             })?;
         let merged_vars = build_profile_vars(&manifest, profile_name)?;
         let profile_targets: Vec<_> = targets
@@ -238,14 +238,14 @@ impl WorkspaceQueryService {
             && !manifest.artifacts.contains_key(artifact_id)
         {
             return Err(AgentStowError::Manifest {
-                message: format!("artifact 不存在: {}", artifact_id.as_str()).into(),
+                message: format!("artifact 不存在：{}", artifact_id.as_str()).into(),
             });
         }
         if let Some(profile_name) = profile
             && !manifest.profiles.contains_key(profile_name)
         {
             return Err(AgentStowError::Manifest {
-                message: format!("profile 不存在: {}", profile_name.as_str()).into(),
+                message: format!("profile 不存在：{}", profile_name.as_str()).into(),
             });
         }
 
@@ -588,7 +588,7 @@ fn collect_workspace_issues(
             subject_id,
             "link_unhealthy",
             format!(
-                "target `{}` 当前 link 状态不健康: {}",
+                "target `{}` 当前 link 状态不健康：{}",
                 status.target_path, status.message
             ),
         ));

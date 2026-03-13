@@ -62,4 +62,3 @@ e2e/
 - `env emit --stdout`
 - MCP validate / render
 - 容器化场景（后续结合 `testcontainers-python`）
-

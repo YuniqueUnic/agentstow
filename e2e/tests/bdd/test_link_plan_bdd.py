@@ -47,4 +47,3 @@ def _stdout_is_json_array(result):
     payload = json.loads(result.stdout)
     assert isinstance(payload, list)
     assert len(payload) == 1
-

@@ -5,4 +5,3 @@ Feature: Render CLI
     When I run render dry-run for artifact "hello"
     Then the command succeeds
     And stdout contains "Hello BDD!"
-

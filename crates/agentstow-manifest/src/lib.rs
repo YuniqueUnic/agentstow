@@ -50,11 +50,11 @@ fn merge_profile_vars(
         let parent = all
             .get(parent_name)
             .ok_or_else(|| AgentStowError::Manifest {
-                message: format!("profile extends 不存在: {parent_name}").into(),
+                message: format!("profile extends 不存在：{parent_name}").into(),
             })?;
         if visited.contains(parent_name) {
             return Err(AgentStowError::Manifest {
-                message: format!("profile extends 存在循环引用: {parent_name}").into(),
+                message: format!("profile extends 存在循环引用：{parent_name}").into(),
             });
         }
         visited.insert(parent_name.clone());
@@ -186,7 +186,7 @@ impl Manifest {
         let content = std::fs::read_to_string(path).map_err(AgentStowError::from)?;
         let parsed: ManifestToml =
             toml::from_str(&content).map_err(|e| AgentStowError::Manifest {
-                message: format!("解析 manifest 失败: {e}").into(),
+                message: format!("解析 manifest 失败：{e}").into(),
             })?;
 
         let workspace_root = path.parent().ok_or_else(|| AgentStowError::Manifest {
@@ -236,7 +236,7 @@ impl Manifest {
             .profiles
             .get(name)
             .ok_or_else(|| AgentStowError::Manifest {
-                message: format!("profile 不存在: {name}").into(),
+                message: format!("profile 不存在：{name}").into(),
             })?;
         profile.merged_vars(&self.profiles)
     }
@@ -270,7 +270,7 @@ fn validate_manifest(m: &ManifestToml, workspace_root: &Path) -> Result<()> {
         if paths_overlap(&source_path, &target_path) {
             return Err(AgentStowError::Manifest {
                 message: format!(
-                    "target 路径与 artifact source 重叠: {target_name} -> {} (source={}, target={})",
+                    "target 路径与 artifact source 重叠：{target_name} -> {} (source={}, target={})",
                     target.artifact,
                     normalize_for_display(&source_path),
                     normalize_for_display(&target_path),
