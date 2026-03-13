@@ -33,6 +33,8 @@ pub enum ShellKind {
     Bash,
     Zsh,
     Fish,
+    Powershell,
+    Cmd,
 }
 
 impl std::str::FromStr for ShellKind {
@@ -43,7 +45,11 @@ impl std::str::FromStr for ShellKind {
             "bash" => Ok(Self::Bash),
             "zsh" => Ok(Self::Zsh),
             "fish" => Ok(Self::Fish),
-            other => Err(format!("不支持的 shell: {other}（可选: bash|zsh|fish）")),
+            "powershell" | "powershell.exe" | "pwsh" | "pwsh.exe" => Ok(Self::Powershell),
+            "cmd" | "cmd.exe" => Ok(Self::Cmd),
+            other => Err(format!(
+                "不支持的 shell: {other}（可选: bash|zsh|fish|powershell|cmd）"
+            )),
         }
     }
 }

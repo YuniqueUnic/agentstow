@@ -34,10 +34,23 @@ init-e2e:
 init-e2e:
     Set-Location "e2e"; try { uv venv .venv --allow-existing } catch { uv venv .venv }; uv sync
 
+# formatting / lint / build
+fmt:
+    cargo fmt --all
+
+fmt-check:
+    cargo fmt --all --check
+
+check *ARGS="--workspace --all-features":
+    cargo check {{ARGS}}
+
+clippy *ARGS="--workspace --all-targets --all-features -- -D warnings":
+    cargo clippy {{ARGS}}
+
 # test related things
 # if nextest exists, use nextest instead of cargo test
 [unix]
-test *ARGS="--no-tests=pass":
+test *ARGS="":
     #!/usr/bin/env sh
     set -eu
     if command -v cargo-nextest >/dev/null 2>&1; then
@@ -47,25 +60,53 @@ test *ARGS="--no-tests=pass":
     fi
 
 [windows]
-test:
-    if (Get-Command cargo-nextest -ErrorAction SilentlyContinue) { cargo nextest run --workspace --all-features } else { cargo test --workspace --all-features }
+test *ARGS="":
+    if (Get-Command cargo-nextest -ErrorAction SilentlyContinue) { cargo nextest run --workspace --all-features {{ARGS}} } else { cargo test --workspace --all-features {{ARGS}} }
 
 
 # e2e tests (pytest)
 [unix]
-e2e:
+e2e *ARGS="":
     cd "e2e" && uv run -- pytest -v --tb=short
     # TODO: behave should be included
 
 # e2e tests (pytest)
 [windows]
-e2e:
-    Set-Location "e2e"; uv run -- pytest -v --tb=short
+e2e *ARGS="":
+    Set-Location "e2e"; uv run -- pytest -v --tb=short {{ARGS}}
     # TODO: behave should be included
 
-# build --workspcae default
-build *ARGS="--workspace":
-    cargo build {{ARGS}} --all-features
+# build / run
+build *ARGS="--workspace --all-features":
+    cargo build {{ARGS}}
+
+build-release *ARGS="--workspace --all-features":
+    cargo build --release {{ARGS}}
+
+run *ARGS="workspace status":
+    cargo run -p agentstow-cli -- {{ARGS}}
+
+serve addr="127.0.0.1:8787" *ARGS="":
+    cargo run -p agentstow-cli -- serve --addr {{addr}} {{ARGS}}
+
+web-install:
+    cd web && bun install
+
+web-dev *ARGS="":
+    cd web && bun run dev -- {{ARGS}}
+
+web-build:
+    cd web && bun run build
+
+web-preview *ARGS="":
+    cd web && bun run preview -- {{ARGS}}
+
+web-check:
+    cd web && bun run typecheck
+
+dev addr="127.0.0.1:8787":
+    just web-build
+    cargo run -p agentstow-cli -- serve --addr {{addr}}
 
 # run prek
 prek *ARGS="-a":
@@ -76,6 +117,17 @@ happy:
     cargo clippy --fix --allow-dirty --tests --workspace --all-targets --all-features -- -D warnings
     cargo fmt --all
     just prek
+
+qa:
+    just fmt-check
+    just check
+    just test
+    just clippy
+    just web-check
+
+ci:
+    just qa
+    just web-build
 
 alias pre-commit := prek
 alias lint := happy

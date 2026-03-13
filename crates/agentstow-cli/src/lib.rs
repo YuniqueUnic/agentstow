@@ -325,8 +325,7 @@ async fn run_cli(cli: Cli) -> Result<()> {
                     let script = Env::emit_shell(shell, &vars)?;
 
                     if json {
-                        let out =
-                            serde_json::json!({ "shell": format!("{shell:?}"), "script": script });
+                        let out = serde_json::json!({ "shell": shell, "script": script });
                         println!("{}", serde_json::to_string_pretty(&out).unwrap());
                         return Ok(());
                     }
