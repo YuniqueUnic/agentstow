@@ -24,6 +24,58 @@ pub struct ManifestResponse {
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
+pub struct WorkspaceStateResponse {
+    pub workspace_root: Option<String>,
+    pub manifest_present: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct WorkspaceSelectRequest {
+    pub workspace_root: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct WorkspaceSelectResponse {
+    pub workspace_root: String,
+    pub manifest_present: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct WorkspaceInitRequest {
+    pub workspace_root: String,
+    pub git_init: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct WorkspaceInitResponse {
+    pub workspace_root: String,
+    pub manifest_path: String,
+    pub created: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct ArtifactSourceResponse {
+    pub artifact_id: String,
+    pub kind: ArtifactKindResponse,
+    pub source_path: String,
+    pub template: bool,
+    pub validate_as: ValidateAsResponse,
+    pub content: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct ArtifactSourceUpdateRequest {
+    pub content: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct RenderResponse {
     pub text: String,
 }
@@ -268,6 +320,13 @@ pub fn export_bindings() -> Result<(), ts_rs::ExportError> {
     ApiError::export_all(&config)?;
     HealthResponse::export_all(&config)?;
     ManifestResponse::export_all(&config)?;
+    WorkspaceStateResponse::export_all(&config)?;
+    WorkspaceSelectRequest::export_all(&config)?;
+    WorkspaceSelectResponse::export_all(&config)?;
+    WorkspaceInitRequest::export_all(&config)?;
+    WorkspaceInitResponse::export_all(&config)?;
+    ArtifactSourceResponse::export_all(&config)?;
+    ArtifactSourceUpdateRequest::export_all(&config)?;
     RenderResponse::export_all(&config)?;
     InstallMethodResponse::export_all(&config)?;
     ArtifactKindResponse::export_all(&config)?;

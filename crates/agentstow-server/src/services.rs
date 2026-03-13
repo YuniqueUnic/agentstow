@@ -10,8 +10,8 @@ use agentstow_render::Renderer;
 use agentstow_state::{LinkInstanceRecord, StateDb};
 use agentstow_validate::Validator;
 use agentstow_web_types::{
-    ArtifactDetailResponse, ArtifactKindResponse, ArtifactSummaryResponse, EnvSetSummaryResponse,
-    EnvVarSummaryResponse, ImpactAnalysisResponse, ImpactSubjectKindResponse,
+    ArtifactDetailResponse, ArtifactKindResponse, ArtifactSourceResponse, ArtifactSummaryResponse,
+    EnvSetSummaryResponse, EnvVarSummaryResponse, ImpactAnalysisResponse, ImpactSubjectKindResponse,
     InstallMethodResponse, LinkRecordResponse, LinkStatusResponseItem, ManifestResponse,
     McpServerSummaryResponse, McpTransportKindResponse, ProfileDetailResponse,
     ProfileSummaryResponse, ProfileVarResponse, RenderResponse, ScriptSummaryResponse,
@@ -71,6 +71,71 @@ impl WorkspaceQueryService {
         Validator::validate_rendered_file(artifact_def, &rendered.bytes)?;
         Ok(RenderResponse {
             text: String::from_utf8_lossy(&rendered.bytes).to_string(),
+        })
+    }
+
+    pub(crate) fn artifact_source(&self, artifact_id: &ArtifactId) -> Result<ArtifactSourceResponse> {
+        let manifest = self.load_manifest()?;
+        let artifact_def =
+            manifest
+                .artifacts
+                .get(artifact_id)
+                .ok_or_else(|| AgentStowError::Manifest {
+                    message: format!("artifact 不存在：{}", artifact_id.as_str()).into(),
+                })?;
+
+        if artifact_def.kind != ArtifactKind::File {
+            return Err(AgentStowError::InvalidArgs {
+                message: "仅支持读取 file artifact 的 source".into(),
+            });
+        }
+
+        ensure_safe_workspace_relative_path(&artifact_def.source)?;
+        let source_path = artifact_def.source_path(&manifest.workspace_root);
+        let content = fs_err::read_to_string(&source_path).map_err(AgentStowError::from)?;
+
+        Ok(ArtifactSourceResponse {
+            artifact_id: artifact_id.as_str().to_string(),
+            kind: artifact_kind_response(artifact_def.kind),
+            source_path: normalize_for_display(&source_path),
+            template: artifact_def.template,
+            validate_as: validate_as_response(artifact_def.validate_as),
+            content,
+        })
+    }
+
+    pub(crate) fn update_artifact_source(
+        &self,
+        artifact_id: &ArtifactId,
+        content: &str,
+    ) -> Result<ArtifactSourceResponse> {
+        let manifest = self.load_manifest()?;
+        let artifact_def =
+            manifest
+                .artifacts
+                .get(artifact_id)
+                .ok_or_else(|| AgentStowError::Manifest {
+                    message: format!("artifact 不存在：{}", artifact_id.as_str()).into(),
+                })?;
+
+        if artifact_def.kind != ArtifactKind::File {
+            return Err(AgentStowError::InvalidArgs {
+                message: "仅支持更新 file artifact 的 source".into(),
+            });
+        }
+
+        ensure_safe_workspace_relative_path(&artifact_def.source)?;
+        let source_path = artifact_def.source_path(&manifest.workspace_root);
+        agentstow_core::ensure_parent_dir(&source_path)?;
+        fs_err::write(&source_path, content).map_err(AgentStowError::from)?;
+
+        Ok(ArtifactSourceResponse {
+            artifact_id: artifact_id.as_str().to_string(),
+            kind: artifact_kind_response(artifact_def.kind),
+            source_path: normalize_for_display(&source_path),
+            template: artifact_def.template,
+            validate_as: validate_as_response(artifact_def.validate_as),
+            content: content.to_string(),
         })
     }
 
@@ -351,6 +416,29 @@ impl WorkspaceQueryService {
             .map(|record| link_status_item(manifest, &record))
             .collect())
     }
+}
+
+fn ensure_safe_workspace_relative_path(path: &std::path::Path) -> Result<()> {
+    use std::path::Component;
+
+    if path.is_absolute() {
+        return Err(AgentStowError::InvalidArgs {
+            message: "不允许编辑绝对路径 source（请改为 workspace 内相对路径）".into(),
+        });
+    }
+
+    for component in path.components() {
+        match component {
+            Component::ParentDir | Component::RootDir | Component::Prefix(_) => {
+                return Err(AgentStowError::InvalidArgs {
+                    message: "artifact source 仅允许 workspace 内的安全相对路径（禁止 ..）".into(),
+                });
+            }
+            Component::CurDir | Component::Normal(_) => {}
+        }
+    }
+
+    Ok(())
 }
 
 fn build_target_summaries(manifest: &Manifest) -> Vec<TargetSummaryResponse> {

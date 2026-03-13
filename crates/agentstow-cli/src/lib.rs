@@ -254,7 +254,7 @@ async fn run_cli(cli: Cli) -> Result<()> {
             }
         },
         Commands::Serve(args) => {
-            let workspace_root = resolve_workspace_root(&cwd, workspace.as_deref())?;
+            let workspace_root = resolve_workspace_root_optional(&cwd, workspace.as_deref())?;
             agentstow_server::serve(agentstow_server::ServerConfig {
                 workspace_root,
                 addr: args.addr,
@@ -685,6 +685,27 @@ fn resolve_workspace_root(cwd: &Path, override_workspace: Option<&Path>) -> Resu
             message: "manifest path 没有 parent".into(),
         })?
         .to_path_buf())
+}
+
+fn resolve_workspace_root_optional(
+    cwd: &Path,
+    override_workspace: Option<&Path>,
+) -> Result<Option<PathBuf>> {
+    if let Some(p) = override_workspace {
+        return Ok(Some(p.to_path_buf()));
+    }
+
+    match Manifest::find_from(cwd) {
+        Ok(manifest_path) => Ok(Some(
+            manifest_path
+                .parent()
+                .ok_or_else(|| AgentStowError::Manifest {
+                    message: "manifest path 没有 parent".into(),
+                })?
+                .to_path_buf(),
+        )),
+        Err(_) => Ok(None),
+    }
 }
 
 fn load_manifest(cwd: &Path, override_workspace: Option<&Path>) -> Result<Manifest> {

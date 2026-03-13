@@ -13,7 +13,10 @@
   },
   "dependencies": {
     "@material/web": "^2.4.1",
-    "svelte": "^5.53.11"
+    "@codemirror/lang-jinja": "^6.0.0",
+    "codemirror": "^6.0.1",
+    "svelte": "^5.53.11",
+    "svelte-splitpanes": "^8.0.12"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^7.0.0",

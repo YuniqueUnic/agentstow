@@ -1,7 +1,9 @@
 export type {
   ArtifactDetailResponse,
   ArtifactKindResponse,
+  ArtifactSourceResponse,
   ArtifactSummaryResponse,
+  ArtifactSourceUpdateRequest,
   ApiError,
   EnvSetSummaryResponse,
   EnvVarSummaryResponse,
@@ -25,5 +27,10 @@ export type {
   WatchModeResponse,
   WatchStatusResponse,
   WorkspaceCountsResponse,
+  WorkspaceInitRequest,
+  WorkspaceInitResponse,
+  WorkspaceSelectRequest,
+  WorkspaceSelectResponse,
+  WorkspaceStateResponse,
   WorkspaceSummaryResponse
 } from '$lib/bindings';

@@ -5,6 +5,7 @@ use std::sync::Arc;
 use agentstow_core::{AgentStowError, Result};
 use axum::Router;
 use axum::routing::get;
+use tokio::sync::RwLock;
 use tower_http::services::ServeDir;
 
 mod api;
@@ -12,18 +13,15 @@ mod services;
 mod ui;
 mod watch;
 
-use services::WorkspaceQueryService;
-
 #[derive(Debug, Clone)]
 pub struct ServerConfig {
-    pub workspace_root: PathBuf,
+    pub workspace_root: Option<PathBuf>,
     pub addr: SocketAddr,
 }
 
-#[derive(Clone)]
 pub(crate) struct ServerState {
-    pub(crate) queries: WorkspaceQueryService,
-    pub(crate) watch: watch::WatchStatusHandle,
+    pub(crate) workspace_root: RwLock<Option<PathBuf>>,
+    pub(crate) watch: RwLock<watch::WatchStatusHandle>,
     pub(crate) ui_dist_dir: PathBuf,
 }
 
@@ -43,25 +41,34 @@ pub async fn serve(cfg: ServerConfig) -> Result<()> {
     Ok(())
 }
 
-pub fn build_app(workspace_root: PathBuf) -> Router {
-    let ui_dist_dir = ui::default_ui_dist_dir(&workspace_root);
+pub fn build_app(workspace_root: Option<PathBuf>) -> Router {
+    let ui_dist_dir = ui::default_ui_dist_dir();
     build_app_with_ui_dist(workspace_root, ui_dist_dir)
 }
 
-pub(crate) fn build_app_with_ui_dist(workspace_root: PathBuf, ui_dist_dir: PathBuf) -> Router {
-    let watch = watch::WatchStatusHandle::start(workspace_root.clone());
+pub(crate) fn build_app_with_ui_dist(
+    workspace_root: Option<PathBuf>,
+    ui_dist_dir: PathBuf,
+) -> Router {
+    let watch = match workspace_root.as_ref() {
+        Some(root) => watch::WatchStatusHandle::start(root.clone()),
+        None => watch::WatchStatusHandle::manual(
+            Vec::new(),
+            Some("workspace 未选择（可在 Web UI 中选择或通过 CLI --workspace 指定）".to_string()),
+        ),
+    };
     build_app_with_ui_dist_and_watch(workspace_root, ui_dist_dir, watch)
 }
 
 pub(crate) fn build_app_with_ui_dist_and_watch(
-    workspace_root: PathBuf,
+    workspace_root: Option<PathBuf>,
     ui_dist_dir: PathBuf,
     watch: watch::WatchStatusHandle,
 ) -> Router {
     let assets_dir = ui_dist_dir.join("assets");
     let state = Arc::new(ServerState {
-        queries: WorkspaceQueryService::new(workspace_root),
-        watch,
+        workspace_root: RwLock::new(workspace_root),
+        watch: RwLock::new(watch),
         ui_dist_dir,
     });
 
@@ -73,6 +80,8 @@ pub(crate) fn build_app_with_ui_dist_and_watch(
         .with_state(state)
 }
 
+#[cfg(test)]
+pub(crate) use ui::resolve_ui_dist_dir_for_test;
 #[cfg(test)]
 pub(crate) use ui::ui_dist_missing_page;
 #[cfg(test)]

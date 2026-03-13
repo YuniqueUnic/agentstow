@@ -8,7 +8,7 @@ use serial_test::serial;
 
 use super::{
     WatchMode, WatchStatusHandle, WatchStatusSnapshot, build_app_with_ui_dist_and_watch,
-    ui_dist_missing_page,
+    resolve_ui_dist_dir_for_test, ui_dist_missing_page,
 };
 
 fn write_minimal_workspace(temp: &assert_fs::TempDir) {
@@ -132,9 +132,17 @@ fn test_server_with_watch(
     watch_status: WatchStatusSnapshot,
 ) -> TestServer {
     TestServer::new(build_app_with_ui_dist_and_watch(
-        temp.path().to_path_buf(),
+        Some(temp.path().to_path_buf()),
         ui_dist_dir,
         WatchStatusHandle::from_snapshot(watch_status),
+    ))
+}
+
+fn test_server_unconfigured(ui_dist_dir: std::path::PathBuf) -> TestServer {
+    TestServer::new(build_app_with_ui_dist_and_watch(
+        None,
+        ui_dist_dir,
+        WatchStatusHandle::manual(Vec::new(), Some("workspace 未选择".to_string())),
     ))
 }
 
@@ -185,6 +193,56 @@ async fn ui_should_return_helpful_message_when_dist_is_missing() {
 
     resp.assert_status(StatusCode::SERVICE_UNAVAILABLE);
     resp.assert_text(ui_dist_missing_page(&missing_dist.join("index.html")));
+}
+
+#[test]
+fn ui_dist_resolver_should_honor_env_override() {
+    let temp = assert_fs::TempDir::new().unwrap();
+    temp.child("override-dist/index.html")
+        .write_str("<!doctype html>")
+        .unwrap();
+    let override_dir = temp.child("override-dist").path().to_path_buf();
+
+    let resolved = resolve_ui_dist_dir_for_test(
+        Some(override_dir.clone()),
+        Some(temp.child("repo/target/debug/agentstow").path().to_path_buf()),
+        temp.child("repo").path().to_path_buf(),
+    );
+
+    assert_eq!(resolved, override_dir);
+}
+
+#[test]
+fn ui_dist_resolver_should_find_web_dist_from_current_exe_ancestors() {
+    let temp = assert_fs::TempDir::new().unwrap();
+    temp.child("repo/web/dist/index.html")
+        .write_str("<!doctype html>")
+        .unwrap();
+
+    let exe_path = temp.child("repo/target/debug/agentstow").path().to_path_buf();
+
+    let resolved = resolve_ui_dist_dir_for_test(
+        None,
+        Some(exe_path),
+        temp.child("repo").path().to_path_buf(),
+    );
+
+    assert_eq!(resolved, temp.child("repo/web/dist").path().to_path_buf());
+}
+
+#[test]
+fn ui_dist_resolver_should_fallback_to_repo_root_web_dist() {
+    let temp = assert_fs::TempDir::new().unwrap();
+    let repo_root = temp.child("repo");
+    repo_root.create_dir_all().unwrap();
+
+    let resolved = resolve_ui_dist_dir_for_test(
+        None,
+        Some(temp.child("bin/agentstow").path().to_path_buf()),
+        repo_root.path().to_path_buf(),
+    );
+
+    assert_eq!(resolved, repo_root.child("web/dist").path().to_path_buf());
 }
 
 #[tokio::test]
@@ -289,6 +347,36 @@ async fn api_manifest_should_return_json_error_when_manifest_is_missing() {
 }
 
 #[tokio::test]
+async fn api_workspace_should_start_unconfigured_then_select_workspace() {
+    let workspace = assert_fs::TempDir::new().unwrap();
+    write_minimal_workspace(&workspace);
+
+    let temp = assert_fs::TempDir::new().unwrap();
+    let server = test_server_unconfigured(temp.child("missing-dist").path().to_path_buf());
+
+    let resp = server.get("/api/workspace").await;
+    resp.assert_status_ok();
+    let body: serde_json::Value = resp.json();
+    assert!(body["workspace_root"].is_null());
+    assert_eq!(body["manifest_present"], serde_json::json!(false));
+
+    let resp = server
+        .post("/api/workspace")
+        .json(&serde_json::json!({
+            "workspace_root": workspace.path().display().to_string()
+        }))
+        .await;
+    resp.assert_status_ok();
+    let body: serde_json::Value = resp.json();
+    assert_eq!(body["manifest_present"], serde_json::json!(true));
+
+    let resp = server.get("/api/manifest").await;
+    resp.assert_status_ok();
+    let body: serde_json::Value = resp.json();
+    assert_eq!(body["artifacts"], serde_json::json!(["hello"]));
+}
+
+#[tokio::test]
 async fn api_render_should_validate_rendered_output() {
     let temp = assert_fs::TempDir::new().unwrap();
     temp.child("artifacts").create_dir_all().unwrap();
@@ -320,6 +408,31 @@ validate_as = "json"
     resp.assert_status_bad_request();
     let body: serde_json::Value = resp.json();
     assert!(body["message"].as_str().unwrap().contains("校验失败"));
+}
+
+#[tokio::test]
+async fn api_artifact_source_should_read_and_update_file_artifact() {
+    let temp = assert_fs::TempDir::new().unwrap();
+    write_minimal_workspace(&temp);
+
+    let server = test_server(&temp, temp.child("missing-dist").path().to_path_buf());
+
+    let resp = server.get("/api/artifacts/hello/source").await;
+    resp.assert_status_ok();
+    let body: serde_json::Value = resp.json();
+    assert_eq!(body["artifact_id"], serde_json::json!("hello"));
+    assert_eq!(body["content"], serde_json::json!("Hello {{ name }}!"));
+
+    let resp = server
+        .put("/api/artifacts/hello/source")
+        .json(&serde_json::json!({ "content": "Hi {{ name }}!" }))
+        .await;
+    resp.assert_status_ok();
+    let body: serde_json::Value = resp.json();
+    assert_eq!(body["content"], serde_json::json!("Hi {{ name }}!"));
+
+    let updated = std::fs::read_to_string(temp.child("artifacts/hello.txt.tera").path()).unwrap();
+    assert_eq!(updated, "Hi {{ name }}!");
 }
 
 #[tokio::test]

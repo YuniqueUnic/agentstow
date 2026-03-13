@@ -1,5 +1,6 @@
 import type {
   ArtifactDetailResponse,
+  ArtifactSourceResponse,
   ApiError,
   ImpactAnalysisResponse,
   LinkRecordResponse,
@@ -8,6 +9,10 @@ import type {
   ProfileDetailResponse,
   RenderResponse,
   WatchStatusResponse,
+  WorkspaceInitRequest,
+  WorkspaceInitResponse,
+  WorkspaceSelectResponse,
+  WorkspaceStateResponse,
   WorkspaceSummaryResponse
 } from '$lib/types';
 
@@ -97,6 +102,30 @@ export function getManifest(): Promise<ManifestResponse> {
   return fetchJson<ManifestResponse>('/api/manifest');
 }
 
+export function getWorkspaceState(): Promise<WorkspaceStateResponse> {
+  return fetchJson<WorkspaceStateResponse>('/api/workspace');
+}
+
+export function selectWorkspace(workspace_root: string): Promise<WorkspaceSelectResponse> {
+  return fetchJson<WorkspaceSelectResponse>('/api/workspace', undefined, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ workspace_root })
+  });
+}
+
+export function initWorkspace(request: WorkspaceInitRequest): Promise<WorkspaceInitResponse> {
+  return fetchJson<WorkspaceInitResponse>('/api/workspace/init', undefined, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(request)
+  });
+}
+
 export function getLinks(): Promise<LinkRecordResponse[]> {
   return fetchJson<LinkRecordResponse[]>('/api/links');
 }
@@ -115,6 +144,27 @@ export function getWorkspaceSummary(): Promise<WorkspaceSummaryResponse> {
 
 export function getArtifactDetail(artifact: string): Promise<ArtifactDetailResponse> {
   return fetchJson<ArtifactDetailResponse>(`/api/artifacts/${encodeURIComponent(artifact)}`);
+}
+
+export function getArtifactSource(artifact: string): Promise<ArtifactSourceResponse> {
+  return fetchJson<ArtifactSourceResponse>(`/api/artifacts/${encodeURIComponent(artifact)}/source`);
+}
+
+export function updateArtifactSource(
+  artifact: string,
+  content: string
+): Promise<ArtifactSourceResponse> {
+  return fetchJson<ArtifactSourceResponse>(
+    `/api/artifacts/${encodeURIComponent(artifact)}/source`,
+    undefined,
+    {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ content })
+    }
+  );
 }
 
 export function getProfileDetail(profile: string): Promise<ProfileDetailResponse> {

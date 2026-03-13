@@ -1,6 +1,8 @@
 export type { ArtifactDetailResponse } from './ArtifactDetailResponse';
 export type { ArtifactKindResponse } from './ArtifactKindResponse';
+export type { ArtifactSourceResponse } from './ArtifactSourceResponse';
 export type { ArtifactSummaryResponse } from './ArtifactSummaryResponse';
+export type { ArtifactSourceUpdateRequest } from './ArtifactSourceUpdateRequest';
 export type { ApiError } from './ApiError';
 export type { EnvSetSummaryResponse } from './EnvSetSummaryResponse';
 export type { EnvVarSummaryResponse } from './EnvVarSummaryResponse';
@@ -24,4 +26,9 @@ export type { ValidationIssueResponse } from './ValidationIssueResponse';
 export type { WatchModeResponse } from './WatchModeResponse';
 export type { WatchStatusResponse } from './WatchStatusResponse';
 export type { WorkspaceCountsResponse } from './WorkspaceCountsResponse';
+export type { WorkspaceInitRequest } from './WorkspaceInitRequest';
+export type { WorkspaceInitResponse } from './WorkspaceInitResponse';
+export type { WorkspaceSelectRequest } from './WorkspaceSelectRequest';
+export type { WorkspaceSelectResponse } from './WorkspaceSelectResponse';
+export type { WorkspaceStateResponse } from './WorkspaceStateResponse';
 export type { WorkspaceSummaryResponse } from './WorkspaceSummaryResponse';

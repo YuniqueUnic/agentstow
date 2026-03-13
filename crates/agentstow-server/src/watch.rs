@@ -144,6 +144,15 @@ impl WatchStatusHandle {
         handle
     }
 
+    pub(crate) fn manual(watch_roots: Vec<String>, last_error: Option<String>) -> Self {
+        Self {
+            inner: Arc::new(Mutex::new(WatchState {
+                snapshot: WatchStatusSnapshot::manual(watch_roots, last_error),
+                guard: None,
+            })),
+        }
+    }
+
     #[allow(dead_code)]
     #[cfg(test)]
     pub(crate) fn from_snapshot(snapshot: WatchStatusSnapshot) -> Self {
