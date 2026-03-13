@@ -13,9 +13,10 @@ use agentstow_web_types::{
     ArtifactDetailResponse, ArtifactKindResponse, ArtifactSummaryResponse, EnvSetSummaryResponse,
     EnvVarSummaryResponse, ImpactAnalysisResponse, ImpactSubjectKindResponse,
     InstallMethodResponse, LinkRecordResponse, LinkStatusResponseItem, ManifestResponse,
-    McpServerSummaryResponse, McpTransportKindResponse, ProfileDetailResponse, ProfileSummaryResponse,
-    ProfileVarResponse, RenderResponse, ScriptSummaryResponse, TargetSummaryResponse,
-    ValidateAsResponse, ValidationIssueResponse, WorkspaceCountsResponse, WorkspaceSummaryResponse,
+    McpServerSummaryResponse, McpTransportKindResponse, ProfileDetailResponse,
+    ProfileSummaryResponse, ProfileVarResponse, RenderResponse, ScriptSummaryResponse,
+    TargetSummaryResponse, ValidateAsResponse, ValidationIssueResponse, WorkspaceCountsResponse,
+    WorkspaceSummaryResponse,
 };
 use time::format_description::well_known::Rfc3339;
 
@@ -119,7 +120,10 @@ impl WorkspaceQueryService {
         })
     }
 
-    pub(crate) fn artifact_detail(&self, artifact_id: &ArtifactId) -> Result<ArtifactDetailResponse> {
+    pub(crate) fn artifact_detail(
+        &self,
+        artifact_id: &ArtifactId,
+    ) -> Result<ArtifactDetailResponse> {
         let manifest = self.load_manifest()?;
         let link_status = self.compute_link_status(&manifest)?;
         let targets = build_target_summaries(&manifest);
@@ -127,14 +131,13 @@ impl WorkspaceQueryService {
         let artifacts = build_artifact_summaries(&manifest, &targets);
         let issues = collect_workspace_issues(&manifest, &targets, &link_status);
 
-        let artifact =
-            artifacts
-                .iter()
-                .find(|artifact| artifact.id == artifact_id.as_str())
-                .cloned()
-                .ok_or_else(|| AgentStowError::Manifest {
-                    message: format!("artifact 不存在: {}", artifact_id.as_str()).into(),
-                })?;
+        let artifact = artifacts
+            .iter()
+            .find(|artifact| artifact.id == artifact_id.as_str())
+            .cloned()
+            .ok_or_else(|| AgentStowError::Manifest {
+                message: format!("artifact 不存在: {}", artifact_id.as_str()).into(),
+            })?;
         let artifact_targets: Vec<_> = targets
             .iter()
             .filter(|target| target.artifact_id == artifact.id)
@@ -163,7 +166,10 @@ impl WorkspaceQueryService {
         })
     }
 
-    pub(crate) fn profile_detail(&self, profile_name: &ProfileName) -> Result<ProfileDetailResponse> {
+    pub(crate) fn profile_detail(
+        &self,
+        profile_name: &ProfileName,
+    ) -> Result<ProfileDetailResponse> {
         let manifest = self.load_manifest()?;
         let link_status = self.compute_link_status(&manifest)?;
         let targets = build_target_summaries(&manifest);
@@ -171,14 +177,13 @@ impl WorkspaceQueryService {
         let artifacts = build_artifact_summaries(&manifest, &targets);
         let issues = collect_workspace_issues(&manifest, &targets, &link_status);
 
-        let profile =
-            profiles
-                .iter()
-                .find(|profile| profile.id == profile_name.as_str())
-                .cloned()
-                .ok_or_else(|| AgentStowError::Manifest {
-                    message: format!("profile 不存在: {}", profile_name.as_str()).into(),
-                })?;
+        let profile = profiles
+            .iter()
+            .find(|profile| profile.id == profile_name.as_str())
+            .cloned()
+            .ok_or_else(|| AgentStowError::Manifest {
+                message: format!("profile 不存在: {}", profile_name.as_str()).into(),
+            })?;
         let merged_vars = build_profile_vars(&manifest, profile_name)?;
         let profile_targets: Vec<_> = targets
             .iter()
@@ -311,9 +316,9 @@ impl WorkspaceQueryService {
         };
 
         let subject_ids = collect_subject_ids(
-            artifact_ids.into_iter(),
+            artifact_ids,
             affected_targets.iter().map(|target| target.id.clone()),
-            profile_ids.into_iter(),
+            profile_ids,
         );
 
         Ok(ImpactAnalysisResponse {
@@ -353,8 +358,13 @@ fn build_target_summaries(manifest: &Manifest) -> Vec<TargetSummaryResponse> {
         .map(|(target_name, target)| TargetSummaryResponse {
             id: target_name.as_str().to_string(),
             artifact_id: target.artifact.as_str().to_string(),
-            profile: target.profile.as_ref().map(|profile| profile.as_str().to_string()),
-            target_path: normalize_for_display(&target.absolute_target_path(&manifest.workspace_root)),
+            profile: target
+                .profile
+                .as_ref()
+                .map(|profile| profile.as_str().to_string()),
+            target_path: normalize_for_display(
+                &target.absolute_target_path(&manifest.workspace_root),
+            ),
             method: install_method_response(target.method),
         })
         .collect()
@@ -434,7 +444,10 @@ fn build_profile_summaries(
         .collect()
 }
 
-fn build_profile_vars(manifest: &Manifest, profile_name: &ProfileName) -> Result<Vec<ProfileVarResponse>> {
+fn build_profile_vars(
+    manifest: &Manifest,
+    profile_name: &ProfileName,
+) -> Result<Vec<ProfileVarResponse>> {
     let mut vars: Vec<_> = manifest
         .profile_vars(profile_name)?
         .into_iter()
@@ -533,15 +546,15 @@ fn collect_workspace_issues(
         }
 
         let profile = target.profile.as_ref().expect("checked above");
-        let artifact =
-            manifest
-                .artifacts
-                .get(&target.artifact)
-                .expect("manifest already validated");
+        let artifact = manifest
+            .artifacts
+            .get(&target.artifact)
+            .expect("manifest already validated");
         if artifact.kind == ArtifactKind::File {
             match Renderer::render_file(manifest, &target.artifact, profile) {
                 Ok(rendered) => {
-                    if let Err(error) = Validator::validate_rendered_file(artifact, &rendered.bytes) {
+                    if let Err(error) = Validator::validate_rendered_file(artifact, &rendered.bytes)
+                    {
                         issues.push(issue(
                             "error",
                             "target",

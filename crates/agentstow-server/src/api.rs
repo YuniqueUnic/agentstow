@@ -2,11 +2,11 @@ use std::sync::Arc;
 
 use agentstow_core::{AgentStowError, ArtifactId, ProfileName};
 use agentstow_web_types::{ApiError, HealthResponse};
+use axum::Router;
 use axum::extract::{Path as AxumPath, Query, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Json, Response};
 use axum::routing::{any, get};
-use axum::Router;
 use serde::Deserialize;
 
 use crate::ServerState;
@@ -62,7 +62,10 @@ async fn api_manifest(State(st): State<Arc<ServerState>>) -> Response {
     }
 }
 
-async fn api_render(State(st): State<Arc<ServerState>>, Query(query): Query<RenderQuery>) -> Response {
+async fn api_render(
+    State(st): State<Arc<ServerState>>,
+    Query(query): Query<RenderQuery>,
+) -> Response {
     let artifact_id = match ArtifactId::parse(query.artifact) {
         Ok(artifact_id) => artifact_id,
         Err(error) => return api_error(StatusCode::BAD_REQUEST, error),
@@ -117,7 +120,10 @@ async fn api_profile_detail(
     handle_result(st.queries.profile_detail(&profile_name))
 }
 
-async fn api_impact(State(st): State<Arc<ServerState>>, Query(query): Query<ImpactQuery>) -> Response {
+async fn api_impact(
+    State(st): State<Arc<ServerState>>,
+    Query(query): Query<ImpactQuery>,
+) -> Response {
     let artifact = match query.artifact {
         Some(artifact) => match ArtifactId::parse(artifact) {
             Ok(artifact_id) => Some(artifact_id),
@@ -133,7 +139,10 @@ async fn api_impact(State(st): State<Arc<ServerState>>, Query(query): Query<Impa
         None => None,
     };
 
-    handle_result(st.queries.impact_analysis(artifact.as_ref(), profile.as_ref()))
+    handle_result(
+        st.queries
+            .impact_analysis(artifact.as_ref(), profile.as_ref()),
+    )
 }
 
 fn handle_result<T: serde::Serialize>(result: Result<T, AgentStowError>) -> Response {

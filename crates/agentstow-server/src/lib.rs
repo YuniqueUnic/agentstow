@@ -3,8 +3,8 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use agentstow_core::{AgentStowError, Result};
-use axum::routing::get;
 use axum::Router;
+use axum::routing::get;
 use tower_http::services::ServeDir;
 
 mod api;

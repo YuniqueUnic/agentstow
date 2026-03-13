@@ -404,7 +404,10 @@ fn api_workspace_summary_should_expose_prd_read_model() {
             assert_eq!(body["counts"]["env_set_count"], serde_json::json!(1));
             assert_eq!(body["counts"]["script_count"], serde_json::json!(1));
             assert_eq!(body["counts"]["mcp_server_count"], serde_json::json!(1));
-            assert_eq!(body["issues"][0]["code"], serde_json::json!("target_profile_missing"));
+            assert_eq!(
+                body["issues"][0]["code"],
+                serde_json::json!("target_profile_missing")
+            );
         });
     });
 }

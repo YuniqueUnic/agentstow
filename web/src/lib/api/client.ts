@@ -6,8 +6,7 @@ import type {
   LinkStatusResponseItem,
   ManifestResponse,
   ProfileDetailResponse,
-  RenderResponse
-  ,
+  RenderResponse,
   WorkspaceSummaryResponse
 } from '$lib/types';
 

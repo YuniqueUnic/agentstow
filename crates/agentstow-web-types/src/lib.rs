@@ -73,6 +73,15 @@ pub enum ImpactSubjectKindResponse {
     ArtifactProfile,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
+pub enum WatchModeResponse {
+    Native,
+    Poll,
+    Manual,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct LinkRecordResponse {
@@ -94,6 +103,17 @@ pub struct LinkStatusResponseItem {
     pub method: InstallMethodResponse,
     pub ok: bool,
     pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct WatchStatusResponse {
+    pub mode: WatchModeResponse,
+    pub revision: u64,
+    pub poll_interval_ms: Option<u64>,
+    pub last_event: Option<String>,
+    pub last_event_at: Option<String>,
+    pub last_error: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -249,8 +269,10 @@ pub fn export_bindings() -> Result<(), ts_rs::ExportError> {
     ValidateAsResponse::export_all(&config)?;
     McpTransportKindResponse::export_all(&config)?;
     ImpactSubjectKindResponse::export_all(&config)?;
+    WatchModeResponse::export_all(&config)?;
     LinkRecordResponse::export_all(&config)?;
     LinkStatusResponseItem::export_all(&config)?;
+    WatchStatusResponse::export_all(&config)?;
     WorkspaceCountsResponse::export_all(&config)?;
     TargetSummaryResponse::export_all(&config)?;
     ArtifactSummaryResponse::export_all(&config)?;

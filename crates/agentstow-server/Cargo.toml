@@ -15,6 +15,7 @@ agentstow-web-types = { path = "../agentstow-web-types" }
 anyhow.workspace = true
 axum.workspace = true
 fs-err.workspace = true
+notify.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
