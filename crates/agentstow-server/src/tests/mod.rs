@@ -26,6 +26,16 @@ validate_as = "none"
         .unwrap();
 }
 
+fn write_web_dist(temp: &assert_fs::TempDir) {
+    temp.child("dist/assets").create_dir_all().unwrap();
+    temp.child("dist/index.html")
+        .write_str("<!doctype html><html><body><div id=\"app\">AgentStow UI</div></body></html>")
+        .unwrap();
+    temp.child("dist/assets/app.js")
+        .write_str("console.log('agentstow-ui');")
+        .unwrap();
+}
+
 #[tokio::test]
 async fn api_health_should_return_ok() {
     let temp = assert_fs::TempDir::new().unwrap();
@@ -184,13 +194,70 @@ method = "copy"
         let runtime = tokio::runtime::Runtime::new().unwrap();
         runtime.block_on(async {
             let server = TestServer::new(build_app(temp.path().to_path_buf()));
+            let links_resp = server.get("/api/links").await;
+            links_resp.assert_status_ok();
+            let links_body: serde_json::Value = links_resp.json();
+            assert_eq!(links_body[0]["method"], serde_json::json!("copy"));
+
             let resp = server.get("/api/link-status").await;
 
             resp.assert_status_ok();
             let body: serde_json::Value = resp.json();
             assert_eq!(body.as_array().unwrap().len(), 1);
             assert_eq!(body[0]["ok"], serde_json::json!(true));
+            assert_eq!(body[0]["method"], serde_json::json!("copy"));
             assert_eq!(body[0]["message"], serde_json::json!("healthy"));
+        });
+    });
+}
+
+#[test]
+#[serial]
+fn ui_should_return_service_unavailable_when_dist_is_missing() {
+    let temp = assert_fs::TempDir::new().unwrap();
+    write_minimal_workspace(&temp);
+    let missing_dist = temp.child("missing-dist");
+
+    temp_env::with_var("AGENTSTOW_WEB_DIST", Some(missing_dist.path()), || {
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        runtime.block_on(async {
+            let server = TestServer::new(build_app(temp.path().to_path_buf()));
+            let resp = server.get("/").await;
+
+            resp.assert_status_service_unavailable();
+            let body = resp.text();
+            assert!(body.contains("AgentStow Web UI 未构建"));
+            assert!(body.contains("web/dist"));
+        });
+    });
+}
+
+#[test]
+#[serial]
+fn ui_should_serve_spa_index_for_client_routes_and_assets_from_dist() {
+    let temp = assert_fs::TempDir::new().unwrap();
+    write_minimal_workspace(&temp);
+    write_web_dist(&temp);
+
+    temp_env::with_var("AGENTSTOW_WEB_DIST", Some(temp.child("dist").path()), || {
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        runtime.block_on(async {
+            let server = TestServer::new(build_app(temp.path().to_path_buf()));
+
+            let root = server.get("/").await;
+            root.assert_status_ok();
+            assert!(root.text().contains("AgentStow UI"));
+
+            let route = server.get("/artifacts/hello").await;
+            route.assert_status_ok();
+            assert!(route.text().contains("AgentStow UI"));
+
+            let asset = server.get("/assets/app.js").await;
+            asset.assert_status_ok();
+            assert_eq!(asset.text(), "console.log('agentstow-ui');");
+
+            let missing_asset = server.get("/assets/missing.js").await;
+            missing_asset.assert_status_not_found();
         });
     });
 }

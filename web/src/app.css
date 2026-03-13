@@ -1,0 +1,119 @@
+:root {
+  color-scheme: light;
+  font-family: 'Instrument Sans', 'Segoe UI', sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+
+  --canvas: oklch(0.97 0.01 95);
+  --canvas-tint: oklch(0.94 0.03 70);
+  --surface: color-mix(in oklch, white 86%, var(--canvas-tint));
+  --surface-strong: color-mix(in oklch, white 72%, var(--canvas-tint));
+  --surface-muted: oklch(0.92 0.02 80);
+  --line: oklch(0.83 0.02 78);
+  --line-strong: oklch(0.73 0.04 66);
+  --ink: oklch(0.28 0.03 55);
+  --ink-soft: oklch(0.47 0.03 63);
+  --primary: oklch(0.58 0.13 182);
+  --primary-strong: oklch(0.47 0.15 182);
+  --primary-soft: oklch(0.89 0.05 182);
+  --accent: oklch(0.74 0.15 52);
+  --success: oklch(0.69 0.15 151);
+  --danger: oklch(0.64 0.16 28);
+  --shadow: 0 22px 60px rgba(59, 54, 43, 0.12);
+
+  --md-sys-color-primary: var(--primary);
+  --md-sys-color-on-primary: white;
+  --md-sys-color-primary-container: var(--primary-soft);
+  --md-sys-color-on-primary-container: var(--primary-strong);
+  --md-sys-color-secondary-container: color-mix(in oklch, var(--accent) 28%, white);
+  --md-sys-color-surface: var(--surface);
+  --md-sys-color-surface-container: var(--surface-strong);
+  --md-sys-color-surface-container-high: var(--surface);
+  --md-sys-color-surface-container-highest: var(--surface-muted);
+  --md-sys-color-outline: var(--line-strong);
+  --md-sys-color-on-surface: var(--ink);
+  --md-sys-color-on-surface-variant: var(--ink-soft);
+
+  --md-sys-typescale-body-large-font: 'Instrument Sans', sans-serif;
+  --md-sys-typescale-body-medium-font: 'Instrument Sans', sans-serif;
+  --md-sys-typescale-title-large-font: 'Manrope', sans-serif;
+  --md-sys-typescale-title-medium-font: 'Manrope', sans-serif;
+  --md-sys-typescale-headline-small-font: 'Manrope', sans-serif;
+
+  --md-filled-tonal-button-container-shape: 999px;
+  --md-outlined-button-container-shape: 999px;
+  --md-text-button-container-shape: 999px;
+  --md-filter-chip-container-shape: 999px;
+  --md-filter-chip-selected-container-color: color-mix(
+    in oklch,
+    var(--primary) 18%,
+    white
+  );
+  --md-filter-chip-outline-color: color-mix(in oklch, var(--line) 82%, white);
+  --md-filter-chip-label-text-font: 'Instrument Sans', sans-serif;
+  --md-outlined-text-field-container-shape: 22px;
+}
+
+html,
+body,
+#app {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  color: var(--ink);
+  background:
+    radial-gradient(circle at top left, color-mix(in oklch, var(--accent) 18%, transparent), transparent 28%),
+    radial-gradient(circle at top right, color-mix(in oklch, var(--primary) 18%, transparent), transparent 34%),
+    linear-gradient(180deg, color-mix(in oklch, var(--canvas) 92%, white), var(--canvas));
+}
+
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(
+      135deg,
+      rgba(255, 255, 255, 0.55),
+      rgba(255, 255, 255, 0) 28%
+    ),
+    linear-gradient(
+      0deg,
+      rgba(255, 255, 255, 0.2),
+      rgba(255, 255, 255, 0)
+    );
+  opacity: 0.8;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+::selection {
+  background: color-mix(in oklch, var(--primary) 24%, white);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+

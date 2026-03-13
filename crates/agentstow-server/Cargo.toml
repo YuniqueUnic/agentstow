@@ -11,12 +11,14 @@ agentstow-manifest = { path = "../agentstow-manifest" }
 agentstow-render = { path = "../agentstow-render" }
 agentstow-state = { path = "../agentstow-state" }
 agentstow-validate = { path = "../agentstow-validate" }
+agentstow-web-types = { path = "../agentstow-web-types" }
 anyhow.workspace = true
 axum.workspace = true
 fs-err.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
+time.workspace = true
 tokio.workspace = true
 tower-http.workspace = true
 tracing.workspace = true
@@ -27,4 +29,3 @@ axum-test = "19"
 pretty_assertions.workspace = true
 serial_test.workspace = true
 temp-env.workspace = true
-time.workspace = true

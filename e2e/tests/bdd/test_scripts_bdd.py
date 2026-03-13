@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from pytest_bdd import given, scenarios, then, when, parsers
+from pytest_bdd import given, scenarios, when, parsers
 
 from .conftest import write_text
 
@@ -42,14 +42,4 @@ def _run_sleepy_script(scripts_workspace: Path, run_cli, timeout: str):
         "--id",
         "sleepy",
     )
-
-
-@then(parsers.parse("the command fails with exit code {code:d}"))
-def _fails_with_code(result, code: int):
-    assert result.returncode == code
-
-
-@then(parsers.parse('stderr contains "{text}"'))
-def _stderr_contains(result, text: str):
-    assert text in result.stderr
 

@@ -17,6 +17,7 @@ members = [
     "crates/agentstow-scripts",
     "crates/agentstow-server",
     "crates/agentstow-state",
+    "crates/agentstow-web-types",
     "crates/agentstow-validate",
 ]
 exclude = [
@@ -67,6 +68,7 @@ tower-http = { version = "0.6", features = ["fs"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 trycmd = "1"
+ts-rs = { version = "12", features = ["format"] }
 
 
 [profile.release]

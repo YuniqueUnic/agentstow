@@ -1,0 +1,9 @@
+[package]
+name = "agentstow-web-types"
+edition = "2024"
+authors.workspace = true
+version.workspace = true
+
+[dependencies]
+serde.workspace = true
+ts-rs.workspace = true

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from pytest_bdd import given, scenarios, then, when
+from pytest_bdd import given, scenarios, when
 
 from .conftest import write_text
 
@@ -41,14 +41,4 @@ def _run_render(render_workspace: Path, run_cli):
         "hello",
         "--dry-run",
     )
-
-
-@then("the command succeeds")
-def _command_succeeds(result):
-    assert result.returncode == 0, result.stderr
-
-
-@then('stdout contains "Hello BDD!"')
-def _stdout_contains(result):
-    assert "Hello BDD!" in result.stdout
 

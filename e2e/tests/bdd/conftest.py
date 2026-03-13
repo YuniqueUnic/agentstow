@@ -3,9 +3,9 @@ from __future__ import annotations
 import json
 import subprocess
 from pathlib import Path
-from typing import Iterable
 
 import pytest
+from pytest_bdd import parsers, then
 
 
 @pytest.fixture(scope="session")
@@ -57,3 +57,22 @@ def write_json(path: Path, data: object) -> None:
 
 __all__ = ["write_json", "write_text"]
 
+
+@then("the command succeeds")
+def then_command_succeeds(result) -> None:
+    assert result.returncode == 0, result.stderr
+
+
+@then(parsers.parse("the command fails with exit code {code:d}"))
+def then_command_fails(result, code: int) -> None:
+    assert result.returncode == code
+
+
+@then(parsers.parse('stdout contains "{text}"'))
+def then_stdout_contains(result, text: str) -> None:
+    assert text in result.stdout
+
+
+@then(parsers.parse('stderr contains "{text}"'))
+def then_stderr_contains(result, text: str) -> None:
+    assert text in result.stderr
