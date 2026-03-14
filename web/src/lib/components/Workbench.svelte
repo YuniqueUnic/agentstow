@@ -1,6 +1,7 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onDestroy, onMount } from 'svelte';
 
+  import CommandPalette, { type PaletteCommand } from '$lib/workbench/CommandPalette.svelte';
   import WorkspaceBoot from '$lib/workbench/WorkspaceBoot.svelte';
   import WorkbenchRail from '$lib/workbench/WorkbenchRail.svelte';
   import WorkbenchTopbar from '$lib/workbench/WorkbenchTopbar.svelte';
@@ -50,6 +51,8 @@
   type ImpactMode = 'artifact' | 'profile' | 'artifact_profile';
 
   let view = $state<ViewKey>('artifacts');
+  let paletteOpen = $state(false);
+  let artifactRequestId = $state<string | null>(null);
 
   let workspaceState = $state<WorkspaceStateResponse | null>(null);
   let workspaceInput = $state('');
@@ -62,7 +65,8 @@
   let selectedProfile = $state<string | null>(null);
   let selectedEnvSet = $state<string | null>(null);
   let selectedScript = $state<string | null>(null);
-  let selectedLinkTargetPath = $state<string | null>(null);
+  let selectedTargetId = $state<string | null>(null);
+  let selectedTargets = $state<string[]>([]);
   let selectedMcpServerId = $state<string | null>(null);
 
   let selectedShell = $state<ShellKindResponse>('bash');
@@ -117,15 +121,14 @@
   const activeMcpServer = $derived(
     mcpServers.find((server) => server.id === selectedMcpServerId) ?? null
   );
-  const activeLink = $derived(
-    (linkStatus ?? []).find((item) => item.target_path === selectedLinkTargetPath) ?? null
+  const activeTarget = $derived(
+    selectedTargetId ? targets.find((t) => t.id === selectedTargetId) ?? null : null
   );
-  const activeTargetIdForLink = $derived.by(() => {
-    if (!activeLink) {
-      return null;
-    }
-    return targets.find((target) => target.target_path === activeLink.target_path)?.id ?? null;
-  });
+  const activeLinkStatus = $derived(
+    activeTarget
+      ? (linkStatus ?? []).find((item) => item.target_path === activeTarget.target_path) ?? null
+      : null
+  );
 
   const watchPill = $derived.by(
     (): { tone: 'neutral' | 'warn' | 'ok'; label: string } => {
@@ -204,6 +207,17 @@
       if (!selectedScript) {
         selectedScript = nextSummary.scripts[0]?.id ?? null;
       }
+      if (!selectedTargetId) {
+        selectedTargetId = nextSummary.targets[0]?.id ?? null;
+      } else if (!nextSummary.targets.some((t) => t.id === selectedTargetId)) {
+        selectedTargetId = nextSummary.targets[0]?.id ?? null;
+      }
+
+      const allowedTargets = new Set(nextSummary.targets.map((t) => t.id));
+      selectedTargets = selectedTargets.filter((id) => allowedTargets.has(id));
+      if (selectedTargets.length === 0 && selectedTargetId) {
+        selectedTargets = [selectedTargetId];
+      }
       if (selectedMcpServerId && !nextSummary.mcp_servers.some((server) => server.id === selectedMcpServerId)) {
         selectedMcpServerId = nextSummary.mcp_servers[0]?.id ?? null;
       } else if (!selectedMcpServerId) {
@@ -232,7 +246,6 @@
   async function bootstrapConfigured(): Promise<void> {
     await Promise.all([refreshSummary(), refreshWatchStatus()]);
     linkStatus = null;
-    selectedLinkTargetPath = null;
     impact = null;
     statusLine = '已连接到 workspace。';
   }
@@ -243,15 +256,9 @@
     try {
       const items = await getLinkStatus();
       linkStatus = items;
-      if (!selectedLinkTargetPath) {
-        selectedLinkTargetPath = items[0]?.target_path ?? null;
-      } else if (!items.some((item) => item.target_path === selectedLinkTargetPath)) {
-        selectedLinkTargetPath = items[0]?.target_path ?? null;
-      }
       statusLine = '已刷新 link status。';
     } catch (error) {
       linkStatus = null;
-      selectedLinkTargetPath = null;
       errorMessage = describeError(error, '无法读取 link status。');
     } finally {
       busy.links = false;
@@ -262,20 +269,19 @@
     busy.link_op = true;
     errorMessage = null;
     try {
-      const selectedTargets: string[] = [];
+      const chosenTargets: string[] = [];
       if (linkScope === 'selected') {
-        if (!activeTargetIdForLink) {
-          throw new Error(
-            '当前选择的 link 无法映射到 manifest target（可能是旧记录或未刷新 workspace summary）。'
-          );
+        const ids = selectedTargets.filter(Boolean);
+        if (ids.length === 0) {
+          throw new Error('请先选择至少一个 target（提示：在列表里 Ctrl/Cmd 点击可多选）。');
         }
-        selectedTargets.push(activeTargetIdForLink);
+        chosenTargets.push(...ids);
       }
 
       const default_profile = selectedProfile ?? null;
 
       if (kind === 'plan') {
-        linkOp = await planLinks({ targets: selectedTargets, default_profile });
+        linkOp = await planLinks({ targets: chosenTargets, default_profile });
         linkOpTitle = 'plan';
         statusLine = `plan 完成（${linkOp.items.length} items）。`;
         return;
@@ -283,7 +289,7 @@
 
       if (kind === 'apply') {
         linkOp = await applyLinks({
-          targets: selectedTargets,
+          targets: chosenTargets,
           default_profile,
           force: linkForce
         });
@@ -294,7 +300,7 @@
       }
 
       linkOp = await repairLinks({
-        targets: selectedTargets,
+        targets: chosenTargets,
         default_profile,
         force: linkForce
       });
@@ -476,11 +482,25 @@
     }
   }
 
-  function selectLink(targetPath: string): void {
-    selectedLinkTargetPath = targetPath;
+  function selectTargetExclusive(id: string): void {
+    selectedTargetId = id;
+    selectedTargets = [id];
     linkOp = null;
     linkOpTitle = null;
-    statusLine = `已选择 link：${truncateMiddle(targetPath, 48)}`;
+    statusLine = `已选择 target：${id}`;
+  }
+
+  function toggleTargetSelection(id: string): void {
+    selectedTargetId = id;
+    linkOp = null;
+    linkOpTitle = null;
+    if (selectedTargets.includes(id)) {
+      selectedTargets = selectedTargets.filter((t) => t !== id);
+      statusLine = `已取消选择 target：${id}`;
+      return;
+    }
+    selectedTargets = [...selectedTargets, id];
+    statusLine = `已追加选择 target：${id}`;
   }
 
   function selectMcpServer(id: string): void {
@@ -488,7 +508,231 @@
     statusLine = `已选择 MCP server：${id}`;
   }
 
+  function openTargetInLinks(targetId: string): void {
+    view = 'links';
+    selectTargetExclusive(targetId);
+  }
+
+  function requestOpenArtifact(id: string): void {
+    view = 'artifacts';
+    artifactRequestId = id;
+  }
+
+  const paletteCommands = $derived.by((): PaletteCommand[] => {
+    const cmds: PaletteCommand[] = [];
+
+    const nav = (key: ViewKey) => {
+      cmds.push({
+        id: `nav:${key}`,
+        group: 'Navigate',
+        title: `Go to ${key}`,
+        keywords: `view ${key}`,
+        run: () => {
+          view = key;
+        }
+      });
+    };
+
+    nav('artifacts');
+    nav('links');
+    nav('env');
+    nav('scripts');
+    nav('mcp');
+    nav('impact');
+
+    cmds.push({
+      id: 'action:refresh',
+      group: 'Actions',
+      title: 'Refresh workspace',
+      keywords: 'reload refresh',
+      disabled: !manifestPresent,
+      run: async () => {
+        await bootstrapConfigured();
+      }
+    });
+
+    cmds.push({
+      id: 'action:switch-workspace',
+      group: 'Actions',
+      title: 'Switch workspace',
+      keywords: 'workspace switch boot',
+      disabled: !manifestPresent,
+      run: () => {
+        returnToWorkspaceBoot();
+      }
+    });
+
+    cmds.push({
+      id: 'links:status',
+      group: 'Links',
+      title: 'Links: Refresh status',
+      disabled: !manifestPresent,
+      keywords: 'links status refresh',
+      run: async () => {
+        view = 'links';
+        await refreshLinkStatus();
+      }
+    });
+
+    cmds.push({
+      id: 'links:plan:selected',
+      group: 'Links',
+      title: 'Links: Plan (selected)',
+      disabled: selectedTargets.length === 0,
+      keywords: 'links plan selected',
+      run: async () => {
+        view = 'links';
+        linkScope = 'selected';
+        await runLinkOperation('plan');
+      }
+    });
+
+    cmds.push({
+      id: 'links:apply:selected',
+      group: 'Links',
+      title: 'Links: Apply (selected)',
+      disabled: selectedTargets.length === 0,
+      keywords: 'links apply selected',
+      run: async () => {
+        view = 'links';
+        linkScope = 'selected';
+        await runLinkOperation('apply');
+      }
+    });
+
+    cmds.push({
+      id: 'links:repair:selected',
+      group: 'Links',
+      title: 'Links: Repair (selected)',
+      disabled: selectedTargets.length === 0,
+      keywords: 'links repair selected',
+      run: async () => {
+        view = 'links';
+        linkScope = 'selected';
+        await runLinkOperation('repair');
+      }
+    });
+
+    cmds.push({
+      id: 'links:plan:all',
+      group: 'Links',
+      title: 'Links: Plan (all)',
+      keywords: 'links plan all',
+      disabled: !manifestPresent,
+      run: async () => {
+        view = 'links';
+        linkScope = 'all';
+        await runLinkOperation('plan');
+      }
+    });
+
+    cmds.push({
+      id: 'links:apply:all',
+      group: 'Links',
+      title: 'Links: Apply (all)',
+      keywords: 'links apply all',
+      disabled: !manifestPresent,
+      run: async () => {
+        view = 'links';
+        linkScope = 'all';
+        await runLinkOperation('apply');
+      }
+    });
+
+    cmds.push({
+      id: 'links:repair:all',
+      group: 'Links',
+      title: 'Links: Repair (all)',
+      keywords: 'links repair all',
+      disabled: !manifestPresent,
+      run: async () => {
+        view = 'links';
+        linkScope = 'all';
+        await runLinkOperation('repair');
+      }
+    });
+
+    cmds.push({
+      id: 'env:emit',
+      group: 'Env',
+      title: 'Env: Emit activation script',
+      keywords: 'env emit shell',
+      disabled: !selectedEnvSet,
+      run: async () => {
+        view = 'env';
+        await handleEnvEmit();
+      }
+    });
+
+    cmds.push({
+      id: 'scripts:run',
+      group: 'Scripts',
+      title: 'Scripts: Run',
+      keywords: 'scripts run execute',
+      disabled: !selectedScript,
+      run: async () => {
+        view = 'scripts';
+        await handleScriptRun();
+      }
+    });
+
+    cmds.push({
+      id: 'impact:run',
+      group: 'Impact',
+      title: 'Impact: Run analysis',
+      keywords: 'impact analyze',
+      disabled: !(selectedArtifact || selectedProfile),
+      run: async () => {
+        view = 'impact';
+        await refreshImpactAnalysis();
+      }
+    });
+
+    for (const a of fileArtifacts) {
+      cmds.push({
+        id: `artifact:${a.id}`,
+        group: 'Artifacts',
+        title: `Open artifact: ${a.id}`,
+        subtitle: truncateMiddle(a.source_path, 56),
+        keywords: `${a.id} ${a.source_path} artifact`,
+        run: () => {
+          requestOpenArtifact(a.id);
+        }
+      });
+    }
+
+    for (const t of targets) {
+      cmds.push({
+        id: `target:${t.id}`,
+        group: 'Targets',
+        title: `Open target: ${t.id}`,
+        subtitle: truncateMiddle(t.target_path, 56),
+        keywords: `${t.id} ${t.target_path} ${t.artifact_id} ${t.profile ?? ''} target`,
+        run: () => {
+          openTargetInLinks(t.id);
+        }
+      });
+    }
+
+    return cmds;
+  });
+
   onMount(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const isMod = event.metaKey || event.ctrlKey;
+      if (!isMod) {
+        return;
+      }
+      if (event.key.toLowerCase() !== 'k') {
+        return;
+      }
+
+      event.preventDefault();
+      paletteOpen = !paletteOpen;
+    };
+
+    window.addEventListener('keydown', onKeyDown);
+
     void (async () => {
       await refreshWorkspaceState();
       if (manifestPresent) {
@@ -499,6 +743,14 @@
         statusLine = '请选择一个 workspace。';
       }
     })();
+
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+    };
+  });
+
+  onDestroy(() => {
+    // onMount cleanup covers it; this is a no-op but keeps intent explicit.
   });
 
   $effect(() => {
@@ -552,6 +804,14 @@
           selectedProfile={selectedProfile}
           onSelectProfile={selectProfile}
           onFocusArtifact={focusArtifact}
+          onOpenTarget={openTargetInLinks}
+          requestedArtifactId={artifactRequestId}
+          onRequestHandled={(id) => {
+            if (artifactRequestId === id) {
+              artifactRequestId = null;
+            }
+          }}
+          shortcutsEnabled={!paletteOpen}
           statusLine={statusLine}
           errorMessage={errorMessage}
           setStatusLine={(next) => (statusLine = next)}
@@ -559,16 +819,18 @@
         />
       {:else if view === 'links'}
         <LinksView
+          targets={targets}
           linkStatus={linkStatus}
-          selectedLinkTargetPath={selectedLinkTargetPath}
+          selectedTargetId={selectedTargetId}
+          selectedTargets={selectedTargets}
           linkSearch={linkSearch}
           linkUnhealthyOnly={linkUnhealthyOnly}
           linkForce={linkForce}
           linkScope={linkScope}
           linkOp={linkOp}
           linkOpTitle={linkOpTitle}
-          activeLink={activeLink}
-          activeTargetIdForLink={activeTargetIdForLink}
+          activeTarget={activeTarget}
+          activeLinkStatus={activeLinkStatus}
           selectedProfile={selectedProfile}
           busyLinks={busy.links}
           busyLinkOp={busy.link_op}
@@ -578,7 +840,8 @@
           onLinkUnhealthyOnly={(next) => (linkUnhealthyOnly = next)}
           onLinkForce={(next) => (linkForce = next)}
           onLinkScope={(next) => (linkScope = next)}
-          onSelectLink={selectLink}
+          onSelectTarget={selectTargetExclusive}
+          onToggleTarget={toggleTargetSelection}
           onRefreshLinkStatus={refreshLinkStatus}
           onCopyToClipboard={copyToClipboard}
           onRunLinkOperation={runLinkOperation}
@@ -637,6 +900,12 @@
           onCopyToClipboard={copyToClipboard}
         />
       {/if}
+
+      <CommandPalette
+        open={paletteOpen}
+        commands={paletteCommands}
+        onClose={() => (paletteOpen = false)}
+      />
     </div>
   {/if}
 </div>

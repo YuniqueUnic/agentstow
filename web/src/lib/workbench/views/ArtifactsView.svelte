@@ -13,7 +13,7 @@
     updateArtifactSource
   } from '$lib/api/client';
   import type { ArtifactSourceResponse, WorkspaceSummaryResponse } from '$lib/types';
-  import { basenameFromPath } from '$lib/utils/format';
+  import { basenameFromPath, truncateMiddle } from '$lib/utils/format';
   import { buildArtifactTree, relativeSourcePath } from '$lib/workbench/artifacts/artifact_tree';
   import ArtifactTreeNode from '$lib/workbench/artifacts/ArtifactTreeNode.svelte';
   import DiffViewer from '$lib/workbench/DiffViewer.svelte';
@@ -24,6 +24,10 @@
     selectedProfile: string | null;
     onSelectProfile: (id: string) => void;
     onFocusArtifact?: (id: string | null) => void;
+    onOpenTarget?: (id: string) => void;
+    requestedArtifactId?: string | null;
+    onRequestHandled?: (id: string) => void;
+    shortcutsEnabled?: boolean;
     statusLine: string;
     errorMessage: string | null;
     setStatusLine: (next: string) => void;
@@ -35,6 +39,10 @@
     selectedProfile,
     onSelectProfile,
     onFocusArtifact,
+    onOpenTarget,
+    requestedArtifactId,
+    onRequestHandled,
+    shortcutsEnabled,
     statusLine,
     errorMessage,
     setStatusLine,
@@ -57,12 +65,20 @@
   let rightMode = $state<'preview' | 'diff'>('preview');
   let autoOpened = $state(false);
   let artifactSearch = $state('');
+  let tabMenu = $state<{ id: string; x: number; y: number } | null>(null);
+  let tabMenuEl = $state<HTMLDivElement | null>(null);
 
   const fileArtifacts = $derived((summary?.artifacts ?? []).filter((a) => a.kind === 'file'));
   const dirArtifacts = $derived((summary?.artifacts ?? []).filter((a) => a.kind === 'dir'));
   const workspaceRoot = $derived(summary?.workspace_root ?? null);
   const profiles = $derived(summary?.profiles ?? []);
   const profileIds = $derived(profiles.map((p) => p.id));
+  const usageTargets = $derived.by(() => {
+    if (!summary || !activeTab) {
+      return [];
+    }
+    return summary.targets.filter((t) => t.artifact_id === activeTab);
+  });
 
   const filteredFileArtifacts = $derived.by(() => {
     const q = artifactSearch.trim().toLowerCase();
@@ -134,6 +150,66 @@
     const nextActive = nextTabs[idx] ?? nextTabs[idx - 1] ?? null;
     activeTab = nextActive;
     setStatusLine(nextActive ? `切换到 ${nextActive}` : '已关闭所有 artifact。');
+  }
+
+  function closeArtifactTab(id: string): void {
+    const idx = openTabs.indexOf(id);
+    if (idx === -1) {
+      return;
+    }
+    const nextTabs = openTabs.filter((t) => t !== id);
+    openTabs = nextTabs;
+
+    if (activeTab === id) {
+      activeTab = nextTabs[idx] ?? nextTabs[idx - 1] ?? null;
+    }
+  }
+
+  function closeOtherTabs(keepId: string): void {
+    if (!openTabs.includes(keepId)) {
+      return;
+    }
+    openTabs = [keepId];
+    activeTab = keepId;
+  }
+
+  function reorderTabs(nextOrder: string[]): void {
+    // Keep only currently opened tabs and preserve uniqueness.
+    const allowed = new Set(openTabs);
+    const next: string[] = [];
+    for (const id of nextOrder) {
+      if (allowed.has(id) && !next.includes(id)) {
+        next.push(id);
+      }
+    }
+    for (const id of openTabs) {
+      if (!next.includes(id)) {
+        next.push(id);
+      }
+    }
+    openTabs = next;
+  }
+
+  async function copyToClipboard(text: string, label: string): Promise<void> {
+    try {
+      await navigator.clipboard.writeText(text);
+      setStatusLine(`已复制${label}到剪贴板。`);
+    } catch {
+      setStatusLine(`复制${label}失败（浏览器未授权）。`);
+    }
+  }
+
+  function openTabMenu(id: string, x: number, y: number): void {
+    const pad = 12;
+    const w = 240;
+    const h = 210;
+    const clampedX = Math.min(x, window.innerWidth - w - pad);
+    const clampedY = Math.min(y, window.innerHeight - h - pad);
+    tabMenu = { id, x: Math.max(pad, clampedX), y: Math.max(pad, clampedY) };
+  }
+
+  function closeTabMenu(): void {
+    tabMenu = null;
   }
 
   function describeDirArtifact(artifactId: string): void {
@@ -223,6 +299,9 @@
   }
 
   function onKeyDown(event: KeyboardEvent): void {
+    if (shortcutsEnabled === false) {
+      return;
+    }
     const isMod = event.metaKey || event.ctrlKey;
     if (!isMod) {
       return;
@@ -249,6 +328,35 @@
   });
 
   $effect(() => {
+    if (!tabMenu) {
+      return;
+    }
+
+    const onPointerDown = (event: PointerEvent) => {
+      if (!tabMenuEl) {
+        return;
+      }
+      const target = event.target;
+      if (target instanceof Node && tabMenuEl.contains(target)) {
+        return;
+      }
+      closeTabMenu();
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        closeTabMenu();
+      }
+    };
+
+    window.addEventListener('pointerdown', onPointerDown);
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('pointerdown', onPointerDown);
+      window.removeEventListener('keydown', onKey);
+    };
+  });
+
+  $effect(() => {
     if (autoOpened) {
       return;
     }
@@ -264,6 +372,24 @@
       return;
     }
     void loadArtifactSource(activeTab);
+  });
+
+  $effect(() => {
+    const req = requestedArtifactId ?? null;
+    if (!req) {
+      return;
+    }
+    if (activeTab === req) {
+      onRequestHandled?.(req);
+      return;
+    }
+    if (summary && !fileArtifacts.some((a) => a.id === req)) {
+      setErrorMessage(`artifact 不存在：${req}`);
+      onRequestHandled?.(req);
+      return;
+    }
+    openArtifact(req);
+    onRequestHandled?.(req);
   });
 
   $effect(() => {
@@ -374,6 +500,40 @@
     </div>
   {/if}
 
+  {#if activeTab}
+    <div class="explorer__section">
+      <div class="section__title">
+        <span>Used By Targets</span>
+        <strong>{usageTargets.length}</strong>
+      </div>
+
+      {#if usageTargets.length === 0}
+        <div class="list__static">
+          <span class="muted">（未被任何 target 引用）</span>
+          <span class="mono">{activeTab}</span>
+        </div>
+      {:else}
+        <ul class="list">
+          {#each usageTargets as t (t.id)}
+            <li>
+              <button
+                class="list__item"
+                type="button"
+                disabled={!onOpenTarget}
+                onclick={() => onOpenTarget?.(t.id)}
+                title={t.target_path}
+              >
+                <span class="list__dot list__dot--accent" aria-hidden="true"></span>
+                <span class="list__name">{t.id}</span>
+                <span class="list__meta">{truncateMiddle(t.target_path, 22)}</span>
+              </button>
+            </li>
+          {/each}
+        </ul>
+      {/if}
+    </div>
+  {/if}
+
   <div class="explorer__section">
     <div class="section__title">
       <span>Profiles</span>
@@ -449,6 +609,9 @@
                 onChange={(next) => {
                   activeTab = next;
                 }}
+                onClose={(id) => closeArtifactTab(id)}
+                onReorder={(nextOrder) => reorderTabs(nextOrder)}
+                onOpenContextMenu={(id, x, y) => openTabMenu(id, x, y)}
               />
             </div>
           </div>
@@ -509,3 +672,87 @@
     </SplitView>
   </div>
 </main>
+
+{#if tabMenu}
+  <div
+    class="context-menu surface"
+    bind:this={tabMenuEl}
+    style={`left:${tabMenu.x}px; top:${tabMenu.y}px;`}
+    role="menu"
+    aria-label="tab menu"
+  >
+    <button
+      class="context-menu__item"
+      type="button"
+      role="menuitem"
+      onclick={() => {
+        if (!tabMenu) {
+          return;
+        }
+        openArtifact(tabMenu.id);
+        closeTabMenu();
+      }}
+    >
+      切换到该 tab
+    </button>
+    <button
+      class="context-menu__item"
+      type="button"
+      role="menuitem"
+      onclick={() => {
+        if (!tabMenu) {
+          return;
+        }
+        closeArtifactTab(tabMenu.id);
+        closeTabMenu();
+      }}
+    >
+      关闭
+    </button>
+    <button
+      class="context-menu__item"
+      type="button"
+      role="menuitem"
+      onclick={() => {
+        if (!tabMenu) {
+          return;
+        }
+        closeOtherTabs(tabMenu.id);
+        closeTabMenu();
+      }}
+    >
+      关闭其他
+    </button>
+    <div class="context-menu__sep" aria-hidden="true"></div>
+    <button
+      class="context-menu__item"
+      type="button"
+      role="menuitem"
+      onclick={() => {
+        if (!tabMenu) {
+          return;
+        }
+        void copyToClipboard(tabMenu.id, 'artifact id');
+        closeTabMenu();
+      }}
+    >
+      复制 artifact id
+    </button>
+    <button
+      class="context-menu__item"
+      type="button"
+      role="menuitem"
+      disabled={!tabMenu || !editors[tabMenu.id]?.source?.source_path}
+      onclick={() => {
+        if (!tabMenu) {
+          return;
+        }
+        const p = editors[tabMenu.id]?.source?.source_path ?? '';
+        void copyToClipboard(p, 'source path');
+        closeTabMenu();
+      }}
+    >
+      复制 source path
+    </button>
+  </div>
+{/if}

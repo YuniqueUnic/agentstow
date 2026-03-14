@@ -12,8 +12,9 @@
     "typecheck": "svelte-check --tsconfig ./tsconfig.json"
   },
   "dependencies": {
-    "@material/web": "^2.4.1",
     "@codemirror/lang-jinja": "^6.0.0",
+    "@material/web": "^2.4.1",
+    "@tanstack/svelte-virtual": "^3.13.22",
     "bits-ui": "^2.15.5",
     "codemirror": "^6.0.1",
     "diff": "^8.0.2",
