@@ -3,21 +3,27 @@ use std::path::PathBuf;
 
 use agentstow_core::{
     AgentStowDirs, AgentStowError, ArtifactId, ArtifactKind, InstallMethod, ProfileName, Result,
-    SecretBinding, ValidateAs, normalize_for_display,
+    SecretBinding, TargetName, ValidateAs, normalize_for_display,
 };
+use agentstow_linker::{ApplyOptions, InstallSource, LinkJob, RenderStore, apply_job, plan_job};
 use agentstow_manifest::{Manifest, McpTransport};
 use agentstow_render::Renderer;
+use agentstow_scripts::ScriptRunner;
 use agentstow_state::{LinkInstanceRecord, StateDb};
 use agentstow_validate::Validator;
 use agentstow_web_types::{
     ArtifactDetailResponse, ArtifactKindResponse, ArtifactSourceResponse, ArtifactSummaryResponse,
-    EnvSetSummaryResponse, EnvVarSummaryResponse, ImpactAnalysisResponse, ImpactSubjectKindResponse,
-    InstallMethodResponse, LinkRecordResponse, LinkStatusResponseItem, ManifestResponse,
-    McpServerSummaryResponse, McpTransportKindResponse, ProfileDetailResponse,
-    ProfileSummaryResponse, ProfileVarResponse, RenderResponse, ScriptSummaryResponse,
-    TargetSummaryResponse, ValidateAsResponse, ValidationIssueResponse, WatchModeResponse,
-    WatchStatusResponse, WorkspaceCountsResponse, WorkspaceSummaryResponse,
+    EnvEmitResponse, EnvSetSummaryResponse, EnvVarSummaryResponse, ImpactAnalysisResponse,
+    ImpactSubjectKindResponse, InstallMethodResponse, LinkApplyRequest, LinkDesiredInstallResponse,
+    LinkOperationActionResponse, LinkOperationItemResponse, LinkOperationResponse,
+    LinkPlanItemResponse, LinkPlanRequest, LinkRecordResponse, LinkRepairRequest,
+    LinkStatusResponseItem, ManifestResponse, McpServerSummaryResponse, McpTransportKindResponse,
+    ProfileDetailResponse, ProfileSummaryResponse, ProfileVarResponse, RenderResponse,
+    ScriptRunResponse, ScriptSummaryResponse, ShellKindResponse, TargetSummaryResponse,
+    ValidateAsResponse, ValidationIssueResponse, WatchModeResponse, WatchStatusResponse,
+    WorkspaceCountsResponse, WorkspaceSummaryResponse,
 };
+use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
 
 use crate::watch::{WatchMode, WatchStatusSnapshot};
@@ -74,7 +80,57 @@ impl WorkspaceQueryService {
         })
     }
 
-    pub(crate) fn artifact_source(&self, artifact_id: &ArtifactId) -> Result<ArtifactSourceResponse> {
+    pub(crate) fn env_emit(
+        &self,
+        env_set_id: &str,
+        shell: ShellKindResponse,
+    ) -> Result<EnvEmitResponse> {
+        let manifest = self.load_manifest()?;
+        let env_set =
+            manifest
+                .env_sets
+                .get(env_set_id)
+                .ok_or_else(|| AgentStowError::Manifest {
+                    message: format!("env set 不存在：{env_set_id}").into(),
+                })?;
+
+        let resolved = agentstow_env::Env::resolve_env_set(env_set)?;
+        let text = agentstow_env::Env::emit_shell(shell_kind(shell), &resolved)?;
+        Ok(EnvEmitResponse { text })
+    }
+
+    pub(crate) async fn script_run(
+        &self,
+        script_id: &str,
+        stdin: Option<&str>,
+    ) -> Result<ScriptRunResponse> {
+        let manifest = self.load_manifest()?;
+        let script = manifest
+            .scripts
+            .get(script_id)
+            .ok_or_else(|| AgentStowError::Manifest {
+                message: format!("script 不存在：{script_id}").into(),
+            })?
+            .clone();
+
+        let out = ScriptRunner::run(agentstow_scripts::ScriptRunRequest {
+            workspace_root: manifest.workspace_root,
+            script,
+            stdin_text: stdin.map(ToString::to_string),
+        })
+        .await?;
+
+        Ok(ScriptRunResponse {
+            exit_code: out.exit_code,
+            stdout: out.stdout,
+            stderr: out.stderr,
+        })
+    }
+
+    pub(crate) fn artifact_source(
+        &self,
+        artifact_id: &ArtifactId,
+    ) -> Result<ArtifactSourceResponse> {
         let manifest = self.load_manifest()?;
         let artifact_def =
             manifest
@@ -148,6 +204,149 @@ impl WorkspaceQueryService {
     pub(crate) fn link_status(&self) -> Result<Vec<LinkStatusResponseItem>> {
         let manifest = self.load_manifest()?;
         self.compute_link_status(&manifest)
+    }
+
+    pub(crate) fn link_plan(&self, req: LinkPlanRequest) -> Result<LinkOperationResponse> {
+        let manifest = self.load_manifest()?;
+        let dirs = AgentStowDirs::from_env()?;
+        let render_store =
+            RenderStore::new(dirs.cache_dir.join("agentstow"), &manifest.workspace_root);
+
+        let default_profile = match req.default_profile {
+            Some(p) => Some(ProfileName::parse(p)?),
+            None => None,
+        };
+
+        let selected = select_manifest_targets(&manifest, &req.targets)?;
+
+        let mut items = Vec::new();
+        for (target_name, target) in selected {
+            let profile = target
+                .profile
+                .clone()
+                .or_else(|| default_profile.clone())
+                .ok_or_else(|| AgentStowError::InvalidArgs {
+                    message: format!(
+                        "target 未配置 profile，且未提供 default_profile: {}",
+                        target_name.as_str()
+                    )
+                    .into(),
+                })?;
+
+            let job = build_link_job(&manifest, target_name, target, &profile)?;
+            let planned = plan_job(&job, &render_store)?;
+            items.push(LinkOperationItemResponse {
+                action: LinkOperationActionResponse::Planned,
+                item: link_plan_item_response(&planned),
+                message: None,
+            });
+        }
+
+        Ok(LinkOperationResponse { items })
+    }
+
+    pub(crate) fn link_apply(&self, req: LinkApplyRequest) -> Result<LinkOperationResponse> {
+        let manifest = self.load_manifest()?;
+        let dirs = AgentStowDirs::from_env()?;
+        let render_store =
+            RenderStore::new(dirs.cache_dir.join("agentstow"), &manifest.workspace_root);
+
+        let default_profile = match req.default_profile {
+            Some(p) => Some(ProfileName::parse(p)?),
+            None => None,
+        };
+
+        let selected = select_manifest_targets(&manifest, &req.targets)?;
+
+        let mut items = Vec::new();
+        for (target_name, target) in selected {
+            let profile = target
+                .profile
+                .clone()
+                .or_else(|| default_profile.clone())
+                .ok_or_else(|| AgentStowError::InvalidArgs {
+                    message: format!(
+                        "target 未配置 profile，且未提供 default_profile: {}",
+                        target_name.as_str()
+                    )
+                    .into(),
+                })?;
+
+            let job = build_link_job(&manifest, target_name, target, &profile)?;
+            let healthy_before = link_job_is_healthy(&job, &render_store).unwrap_or(false);
+
+            let applied = apply_job(&job, &render_store, ApplyOptions { force: req.force })?;
+            record_link_instance(&manifest, &dirs, &job, &render_store)?;
+
+            items.push(LinkOperationItemResponse {
+                action: if healthy_before {
+                    LinkOperationActionResponse::Skipped
+                } else {
+                    LinkOperationActionResponse::Applied
+                },
+                item: link_plan_item_response(&applied),
+                message: Some(if healthy_before {
+                    "already_healthy".to_string()
+                } else {
+                    "applied".to_string()
+                }),
+            });
+        }
+
+        Ok(LinkOperationResponse { items })
+    }
+
+    pub(crate) fn link_repair(&self, req: LinkRepairRequest) -> Result<LinkOperationResponse> {
+        let manifest = self.load_manifest()?;
+        let dirs = AgentStowDirs::from_env()?;
+        let render_store =
+            RenderStore::new(dirs.cache_dir.join("agentstow"), &manifest.workspace_root);
+
+        let default_profile = match req.default_profile {
+            Some(p) => Some(ProfileName::parse(p)?),
+            None => None,
+        };
+
+        let selected = select_manifest_targets(&manifest, &req.targets)?;
+
+        let mut items = Vec::new();
+        for (target_name, target) in selected {
+            let profile = target
+                .profile
+                .clone()
+                .or_else(|| default_profile.clone())
+                .ok_or_else(|| AgentStowError::InvalidArgs {
+                    message: format!(
+                        "target 未配置 profile，且未提供 default_profile: {}",
+                        target_name.as_str()
+                    )
+                    .into(),
+                })?;
+
+            let job = build_link_job(&manifest, target_name, target, &profile)?;
+            let planned = plan_job(&job, &render_store)?;
+            let healthy_before = link_job_is_healthy(&job, &render_store).unwrap_or(false);
+
+            if healthy_before {
+                items.push(LinkOperationItemResponse {
+                    action: LinkOperationActionResponse::Skipped,
+                    item: link_plan_item_response(&planned),
+                    message: Some("already_healthy".to_string()),
+                });
+                continue;
+            }
+
+            let applied = apply_job(&job, &render_store, ApplyOptions { force: req.force })?;
+            record_link_instance(&manifest, &dirs, &job, &render_store)?;
+
+            items.push(LinkOperationItemResponse {
+                action: LinkOperationActionResponse::Repaired,
+                item: link_plan_item_response(&applied),
+                message: Some("repaired".to_string()),
+            });
+        }
+
+        Ok(LinkOperationResponse { items })
     }
 
     pub(crate) fn workspace_summary(&self) -> Result<WorkspaceSummaryResponse> {
@@ -418,6 +617,16 @@ impl WorkspaceQueryService {
     }
 }
 
+fn shell_kind(shell: ShellKindResponse) -> agentstow_core::ShellKind {
+    match shell {
+        ShellKindResponse::Bash => agentstow_core::ShellKind::Bash,
+        ShellKindResponse::Zsh => agentstow_core::ShellKind::Zsh,
+        ShellKindResponse::Fish => agentstow_core::ShellKind::Fish,
+        ShellKindResponse::Powershell => agentstow_core::ShellKind::Powershell,
+        ShellKindResponse::Cmd => agentstow_core::ShellKind::Cmd,
+    }
+}
+
 fn ensure_safe_workspace_relative_path(path: &std::path::Path) -> Result<()> {
     use std::path::Component;
 
@@ -439,6 +648,170 @@ fn ensure_safe_workspace_relative_path(path: &std::path::Path) -> Result<()> {
     }
 
     Ok(())
+}
+
+fn select_manifest_targets<'a>(
+    manifest: &'a Manifest,
+    only_targets: &[String],
+) -> Result<Vec<(&'a TargetName, &'a agentstow_manifest::TargetDef)>> {
+    if only_targets.is_empty() {
+        return Ok(manifest.targets.iter().collect());
+    }
+
+    only_targets
+        .iter()
+        .map(|t| {
+            let name = TargetName::parse(t.clone())?;
+            let (k, def) =
+                manifest
+                    .targets
+                    .get_key_value(&name)
+                    .ok_or_else(|| AgentStowError::Manifest {
+                        message: format!("target 不存在：{t}").into(),
+                    })?;
+            Ok((k, def))
+        })
+        .collect::<Result<Vec<_>>>()
+}
+
+fn build_link_job(
+    manifest: &Manifest,
+    target_name: &TargetName,
+    target: &agentstow_manifest::TargetDef,
+    profile: &ProfileName,
+) -> Result<LinkJob> {
+    let artifact =
+        manifest
+            .artifacts
+            .get(&target.artifact)
+            .ok_or_else(|| AgentStowError::Manifest {
+                message: format!("artifact 不存在：{}", target.artifact.as_str()).into(),
+            })?;
+    let target_path = target.absolute_target_path(&manifest.workspace_root);
+
+    let desired = match artifact.kind {
+        ArtifactKind::File => {
+            let rendered = Renderer::render_file(manifest, &target.artifact, profile)?;
+            Validator::validate_rendered_file(artifact, &rendered.bytes)?;
+            InstallSource::FileBytes(rendered.bytes)
+        }
+        ArtifactKind::Dir => InstallSource::Path(artifact.source_path(&manifest.workspace_root)),
+    };
+
+    Ok(LinkJob {
+        target: target_name.clone(),
+        artifact_id: target.artifact.clone(),
+        profile: profile.clone(),
+        artifact_kind: artifact.kind,
+        method: target.method,
+        target_path,
+        desired,
+    })
+}
+
+fn link_job_is_healthy(job: &LinkJob, render_store: &RenderStore) -> Result<bool> {
+    match job.method {
+        InstallMethod::Symlink => match (&job.artifact_kind, &job.desired) {
+            (ArtifactKind::File, InstallSource::FileBytes(_bytes)) => {
+                let desired_source =
+                    render_store.rendered_file_path(&job.artifact_id, &job.profile);
+                if !desired_source.is_file() {
+                    return Ok(false);
+                }
+                agentstow_linker::check_symlink(&job.target_path, &desired_source)
+            }
+            (ArtifactKind::Dir, InstallSource::Path(p)) => {
+                if !p.exists() {
+                    return Ok(false);
+                }
+                agentstow_linker::check_symlink(&job.target_path, p)
+            }
+            _ => Ok(false),
+        },
+        InstallMethod::Junction => match (&job.artifact_kind, &job.desired) {
+            (ArtifactKind::Dir, InstallSource::Path(p)) => {
+                agentstow_linker::check_junction(&job.target_path, p)
+            }
+            _ => Ok(false),
+        },
+        InstallMethod::Copy => match (&job.artifact_kind, &job.desired) {
+            (ArtifactKind::File, InstallSource::FileBytes(bytes)) => {
+                if !job.target_path.is_file() {
+                    return Ok(false);
+                }
+                let existing = fs_err::read(&job.target_path).map_err(AgentStowError::from)?;
+                Ok(existing == *bytes)
+            }
+            (ArtifactKind::Dir, InstallSource::Path(p)) => {
+                agentstow_linker::check_copy_dir(&job.target_path, p)
+            }
+            _ => Ok(false),
+        },
+    }
+}
+
+fn record_link_instance(
+    manifest: &Manifest,
+    dirs: &AgentStowDirs,
+    job: &LinkJob,
+    store: &RenderStore,
+) -> Result<()> {
+    let db = StateDb::open(dirs)?;
+    let (rendered_path, blake3) = match (&job.method, &job.desired) {
+        (InstallMethod::Symlink, InstallSource::FileBytes(bytes)) => (
+            Some(store.rendered_file_path(&job.artifact_id, &job.profile)),
+            Some(blake3::hash(bytes).to_hex().to_string()),
+        ),
+        (InstallMethod::Copy, InstallSource::FileBytes(bytes)) => {
+            (None, Some(blake3::hash(bytes).to_hex().to_string()))
+        }
+        (InstallMethod::Symlink, InstallSource::Path(p))
+        | (InstallMethod::Junction, InstallSource::Path(p)) => (Some(p.clone()), None),
+        (InstallMethod::Copy, InstallSource::Path(_)) => (None, None),
+        _ => (None, None),
+    };
+
+    let rec = LinkInstanceRecord {
+        workspace_root: manifest.workspace_root.clone(),
+        artifact_id: job.artifact_id.clone(),
+        profile: job.profile.clone(),
+        target_path: job.target_path.clone(),
+        method: job.method,
+        rendered_path,
+        blake3,
+        updated_at: OffsetDateTime::now_utc(),
+    };
+    db.upsert_link_instance(&rec)?;
+    Ok(())
+}
+
+fn link_plan_item_response(planned: &agentstow_linker::LinkPlanItem) -> LinkPlanItemResponse {
+    LinkPlanItemResponse {
+        target: planned.target.as_str().to_string(),
+        artifact_id: planned.artifact_id.as_str().to_string(),
+        profile: planned.profile.as_str().to_string(),
+        artifact_kind: artifact_kind_response(planned.artifact_kind),
+        method: install_method_response(planned.method),
+        target_path: normalize_for_display(&planned.target_path),
+        desired: match &planned.desired {
+            agentstow_linker::DesiredInstall::Symlink { source_path } => {
+                LinkDesiredInstallResponse::Symlink {
+                    source_path: normalize_for_display(source_path),
+                }
+            }
+            agentstow_linker::DesiredInstall::Junction { source_path } => {
+                LinkDesiredInstallResponse::Junction {
+                    source_path: normalize_for_display(source_path),
+                }
+            }
+            agentstow_linker::DesiredInstall::Copy { blake3, bytes_len } => {
+                LinkDesiredInstallResponse::Copy {
+                    blake3: blake3.clone(),
+                    bytes_len: *bytes_len,
+                }
+            }
+        },
+    }
 }
 
 fn build_target_summaries(manifest: &Manifest) -> Vec<TargetSummaryResponse> {

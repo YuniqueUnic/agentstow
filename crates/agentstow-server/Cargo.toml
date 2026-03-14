@@ -6,14 +6,17 @@ version.workspace = true
 
 [dependencies]
 agentstow-core = { path = "../agentstow-core" }
+agentstow-env = { path = "../agentstow-env" }
 agentstow-linker = { path = "../agentstow-linker" }
 agentstow-manifest = { path = "../agentstow-manifest" }
 agentstow-render = { path = "../agentstow-render" }
+agentstow-scripts = { path = "../agentstow-scripts" }
 agentstow-state = { path = "../agentstow-state" }
 agentstow-validate = { path = "../agentstow-validate" }
 agentstow-web-types = { path = "../agentstow-web-types" }
 anyhow.workspace = true
 axum.workspace = true
+blake3.workspace = true
 fs-err.workspace = true
 notify.workspace = true
 notify-debouncer-full.workspace = true

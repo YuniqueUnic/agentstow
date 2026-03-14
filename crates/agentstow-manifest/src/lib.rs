@@ -10,6 +10,13 @@ use serde::{Deserialize, Serialize};
 pub const DEFAULT_MANIFEST_FILE: &str = "agentstow.toml";
 
 #[derive(Debug, Clone)]
+pub struct WorkspaceInitOutcome {
+    pub workspace_root: PathBuf,
+    pub manifest_path: PathBuf,
+    pub created: bool,
+}
+
+#[derive(Debug, Clone)]
 pub struct Manifest {
     pub workspace_root: PathBuf,
     pub profiles: BTreeMap<ProfileName, Profile>,
@@ -218,7 +225,7 @@ impl Manifest {
                 None => {
                     return Err(AgentStowError::Manifest {
                         message: format!(
-                            "未找到 {DEFAULT_MANIFEST_FILE}（从 {} 向上搜索）",
+                            "未找到 {DEFAULT_MANIFEST_FILE}（从 {} 向上搜索）。你可以运行 `agentstow workspace init` 初始化，或使用 `--workspace` 指定已有 workspace，或启动 `agentstow serve` 通过 Web 引导。",
                             agentstow_core::normalize_for_display(start_dir)
                         )
                         .into(),
@@ -240,6 +247,42 @@ impl Manifest {
             })?;
         profile.merged_vars(&self.profiles)
     }
+}
+
+pub fn init_workspace_skeleton(workspace_root: &Path) -> Result<WorkspaceInitOutcome> {
+    fs_err::create_dir_all(workspace_root).map_err(AgentStowError::from)?;
+
+    let manifest_path = workspace_root.join(DEFAULT_MANIFEST_FILE);
+    let created = if manifest_path.exists() {
+        false
+    } else {
+        fs_err::create_dir_all(workspace_root.join("artifacts")).map_err(AgentStowError::from)?;
+        fs_err::write(
+            workspace_root.join("artifacts/hello.txt.tera"),
+            "Hello {{ name }}!",
+        )
+        .map_err(AgentStowError::from)?;
+        fs_err::write(
+            &manifest_path,
+            r#"[profiles.base]
+vars = { name = "AgentStow" }
+
+[artifacts.hello]
+kind = "file"
+source = "artifacts/hello.txt.tera"
+template = true
+validate_as = "none"
+"#,
+        )
+        .map_err(AgentStowError::from)?;
+        true
+    };
+
+    Ok(WorkspaceInitOutcome {
+        workspace_root: workspace_root.to_path_buf(),
+        manifest_path,
+        created,
+    })
 }
 
 fn validate_manifest(m: &ManifestToml, workspace_root: &Path) -> Result<()> {

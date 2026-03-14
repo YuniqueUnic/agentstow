@@ -181,6 +181,11 @@ pub struct WorkspaceArgs {
 #[derive(Debug, Subcommand)]
 pub enum WorkspaceSubcommand {
     Status,
+    Init {
+        /// 初始化 workspace（创建最小 agentstow.toml + 示例 artifacts）
+        #[arg(long)]
+        git_init: bool,
+    },
 }
 
 #[derive(Debug, Args)]
@@ -250,6 +255,48 @@ async fn run_cli(cli: Cli) -> Result<()> {
                 println!("Repo root: {}", normalize_for_display(&info.repo_root));
                 println!("HEAD: {}", info.head);
                 println!("Dirty: {}", info.dirty);
+                Ok(())
+            }
+            WorkspaceSubcommand::Init { git_init } => {
+                let ws = workspace.as_deref().unwrap_or(&cwd).to_path_buf();
+                let out = agentstow_manifest::init_workspace_skeleton(&ws)?;
+
+                let mut git_inited = false;
+                if git_init && !ws.join(".git").exists() {
+                    let status = tokio::process::Command::new("git")
+                        .arg("init")
+                        .current_dir(&ws)
+                        .status()
+                        .await
+                        .map_err(AgentStowError::from)?;
+                    if !status.success() {
+                        return Err(AgentStowError::Other(anyhow::anyhow!(
+                            "git init 失败（exit={}）",
+                            status.code().unwrap_or(-1)
+                        )));
+                    }
+                    git_inited = true;
+                }
+
+                if json {
+                    print_json(&serde_json::json!({
+                        "workspace_root": normalize_for_display(&out.workspace_root),
+                        "manifest_path": normalize_for_display(&out.manifest_path),
+                        "created": out.created,
+                        "git_inited": git_inited,
+                    }))?;
+                    return Ok(());
+                }
+
+                println!(
+                    "Workspace root: {}",
+                    normalize_for_display(&out.workspace_root)
+                );
+                println!("Manifest: {}", normalize_for_display(&out.manifest_path));
+                println!("Created: {}", out.created);
+                if git_init {
+                    println!("Git init: {}", git_inited);
+                }
                 Ok(())
             }
         },

@@ -106,16 +106,25 @@ serve *ARGS="":
 web-install:
     cd web && bun install
 
+web-bindings:
+    cargo run -p agentstow-web-types --bin export_bindings -- --out web/src/lib/bindings
+
 web-dev *ARGS="":
+    just web-bindings
+    cd web && bun install
     cd web && bun run dev -- {{ ARGS }}
 
 web-build:
+    just web-bindings
+    cd web && bun install
     cd web && bun run build
 
 web-preview *ARGS="":
     cd web && bun run preview -- {{ ARGS }}
 
 web-check:
+    just web-bindings
+    cd web && bun install
     cd web && bun run typecheck
 
 [unix]

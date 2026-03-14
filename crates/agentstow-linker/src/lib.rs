@@ -376,11 +376,30 @@ fn apply_copy(job: &LinkJob, opt: ApplyOptions) -> Result<LinkPlanItem> {
                         .into(),
                 });
             }
-            if job.target_path.exists() && !opt.force {
-                return Err(AgentStowError::LinkConflict {
-                    message: format!("target 已存在：{}", normalize_for_display(&job.target_path))
+            if job.target_path.exists() {
+                if check_copy_dir(&job.target_path, source_dir)? {
+                    return Ok(LinkPlanItem {
+                        target: job.target.clone(),
+                        artifact_id: job.artifact_id.clone(),
+                        profile: job.profile.clone(),
+                        artifact_kind: job.artifact_kind,
+                        method: job.method,
+                        target_path: job.target_path.clone(),
+                        desired: DesiredInstall::Copy {
+                            blake3: "<dir>".to_string(),
+                            bytes_len: 0,
+                        },
+                    });
+                }
+                if !opt.force {
+                    return Err(AgentStowError::LinkConflict {
+                        message: format!(
+                            "target 已存在：{}",
+                            normalize_for_display(&job.target_path)
+                        )
                         .into(),
-                });
+                    });
+                }
             }
             ensure_parent_dir(&job.target_path)?;
             let parent = job.target_path.parent().unwrap_or_else(|| Path::new("."));

@@ -2,12 +2,20 @@ import type {
   ArtifactDetailResponse,
   ArtifactSourceResponse,
   ApiError,
+  EnvEmitRequest,
+  EnvEmitResponse,
   ImpactAnalysisResponse,
   LinkRecordResponse,
+  LinkApplyRequest,
+  LinkOperationResponse,
+  LinkPlanRequest,
+  LinkRepairRequest,
   LinkStatusResponseItem,
   ManifestResponse,
   ProfileDetailResponse,
   RenderResponse,
+  ScriptRunRequest,
+  ScriptRunResponse,
   WatchStatusResponse,
   WorkspaceInitRequest,
   WorkspaceInitResponse,
@@ -134,6 +142,36 @@ export function getLinkStatus(): Promise<LinkStatusResponseItem[]> {
   return fetchJson<LinkStatusResponseItem[]>('/api/link-status');
 }
 
+export function planLinks(request: LinkPlanRequest): Promise<LinkOperationResponse> {
+  return fetchJson<LinkOperationResponse>('/api/links/plan', undefined, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(request)
+  });
+}
+
+export function applyLinks(request: LinkApplyRequest): Promise<LinkOperationResponse> {
+  return fetchJson<LinkOperationResponse>('/api/links/apply', undefined, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(request)
+  });
+}
+
+export function repairLinks(request: LinkRepairRequest): Promise<LinkOperationResponse> {
+  return fetchJson<LinkOperationResponse>('/api/links/repair', undefined, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(request)
+  });
+}
+
 export function getWatchStatus(): Promise<WatchStatusResponse> {
   return fetchJson<WatchStatusResponse>('/api/watch-status');
 }
@@ -180,4 +218,28 @@ export function getImpactAnalysis(query: {
 
 export function renderArtifact(artifact: string, profile: string): Promise<RenderResponse> {
   return fetchJson<RenderResponse>('/api/render', { artifact, profile });
+}
+
+export function emitEnv(request: EnvEmitRequest): Promise<EnvEmitResponse> {
+  return fetchJson<EnvEmitResponse>('/api/env/emit', undefined, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(request)
+  });
+}
+
+export function runScript(scriptId: string, request: ScriptRunRequest): Promise<ScriptRunResponse> {
+  return fetchJson<ScriptRunResponse>(
+    `/api/scripts/${encodeURIComponent(scriptId)}/run`,
+    undefined,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(request)
+    }
+  );
 }

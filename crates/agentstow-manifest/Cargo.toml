@@ -7,6 +7,7 @@ version.workspace = true
 [dependencies]
 agentstow-core = { path = "../agentstow-core" }
 anyhow.workspace = true
+fs-err.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true

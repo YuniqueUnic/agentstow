@@ -2,7 +2,8 @@ use std::sync::Arc;
 
 use agentstow_core::{AgentStowError, ArtifactId, ProfileName};
 use agentstow_web_types::{
-    ApiError, ArtifactSourceUpdateRequest, HealthResponse, WorkspaceInitRequest,
+    ApiError, ArtifactSourceUpdateRequest, EnvEmitRequest, HealthResponse, LinkApplyRequest,
+    LinkPlanRequest, LinkRepairRequest, ScriptRunRequest, WorkspaceInitRequest,
     WorkspaceInitResponse, WorkspaceSelectRequest, WorkspaceSelectResponse, WorkspaceStateResponse,
 };
 use axum::Router;
@@ -18,12 +19,18 @@ use crate::services::WorkspaceQueryService;
 pub(crate) fn routes() -> Router<Arc<ServerState>> {
     Router::new()
         .route("/api/health", get(api_health))
-        .route("/api/workspace", get(api_workspace_state).post(api_workspace_select))
+        .route(
+            "/api/workspace",
+            get(api_workspace_state).post(api_workspace_select),
+        )
         .route("/api/workspace/init", post(api_workspace_init))
         .route("/api/manifest", get(api_manifest))
         .route("/api/render", get(api_render))
         .route("/api/links", get(api_links))
         .route("/api/link-status", get(api_link_status))
+        .route("/api/links/plan", post(api_links_plan))
+        .route("/api/links/apply", post(api_links_apply))
+        .route("/api/links/repair", post(api_links_repair))
         .route("/api/watch-status", get(api_watch_status))
         .route("/api/workspace-summary", get(api_workspace_summary))
         .route("/api/artifacts/{artifact}", get(api_artifact_detail))
@@ -31,6 +38,8 @@ pub(crate) fn routes() -> Router<Arc<ServerState>> {
             "/api/artifacts/{artifact}/source",
             get(api_artifact_source).put(api_artifact_source_update),
         )
+        .route("/api/env/emit", post(api_env_emit))
+        .route("/api/scripts/{script}/run", post(api_script_run))
         .route("/api/profiles/{profile}", get(api_profile_detail))
         .route("/api/impact", get(api_impact))
         .route("/api/{*path}", any(api_not_found))
@@ -68,9 +77,10 @@ async fn api_health() -> Json<HealthResponse> {
 
 async fn api_workspace_state(State(st): State<Arc<ServerState>>) -> Response {
     let workspace_root = st.workspace_root.read().await.clone();
-    let manifest_present = workspace_root
-        .as_ref()
-        .is_some_and(|root| root.join(agentstow_manifest::DEFAULT_MANIFEST_FILE).is_file());
+    let manifest_present = workspace_root.as_ref().is_some_and(|root| {
+        root.join(agentstow_manifest::DEFAULT_MANIFEST_FILE)
+            .is_file()
+    });
 
     Json(WorkspaceStateResponse {
         workspace_root: workspace_root
@@ -124,38 +134,9 @@ async fn api_workspace_init(
     }
 
     let workspace_root = std::path::PathBuf::from(req.workspace_root);
-    if let Err(error) = fs_err::create_dir_all(&workspace_root) {
-        return api_error(StatusCode::BAD_REQUEST, error);
-    }
-
-    let manifest_path = workspace_root.join(agentstow_manifest::DEFAULT_MANIFEST_FILE);
-    let created = if manifest_path.exists() {
-        false
-    } else {
-        if let Err(error) = fs_err::create_dir_all(workspace_root.join("artifacts")) {
-            return api_error(StatusCode::BAD_REQUEST, error);
-        }
-        if let Err(error) = fs_err::write(
-            workspace_root.join("artifacts/hello.txt.tera"),
-            "Hello {{ name }}!",
-        ) {
-            return api_error(StatusCode::BAD_REQUEST, error);
-        }
-        if let Err(error) = fs_err::write(
-            &manifest_path,
-            r#"[profiles.base]
-vars = { name = "AgentStow" }
-
-[artifacts.hello]
-kind = "file"
-source = "artifacts/hello.txt.tera"
-template = true
-validate_as = "none"
-"#,
-        ) {
-            return api_error(StatusCode::BAD_REQUEST, error);
-        }
-        true
+    let created = match agentstow_manifest::init_workspace_skeleton(&workspace_root) {
+        Ok(outcome) => outcome.created,
+        Err(error) => return api_error(StatusCode::BAD_REQUEST, error),
     };
 
     if req.git_init && !workspace_root.join(".git").exists() {
@@ -181,6 +162,7 @@ validate_as = "none"
         Ok(path) => path,
         Err(error) => return api_error(StatusCode::BAD_REQUEST, error),
     };
+    let manifest_path = canonical.join(agentstow_manifest::DEFAULT_MANIFEST_FILE);
     {
         let mut guard = st.workspace_root.write().await;
         *guard = Some(canonical.clone());
@@ -241,6 +223,42 @@ async fn api_links(State(st): State<Arc<ServerState>>) -> Response {
         Ok(records) => Json(records).into_response(),
         Err(error) => api_error(StatusCode::INTERNAL_SERVER_ERROR, error),
     }
+}
+
+async fn api_links_plan(
+    State(st): State<Arc<ServerState>>,
+    Json(req): Json<LinkPlanRequest>,
+) -> Response {
+    let queries = match queries_from_state(&st).await {
+        Ok(queries) => queries,
+        Err(error) => return api_error(StatusCode::BAD_REQUEST, error),
+    };
+
+    handle_result(queries.link_plan(req))
+}
+
+async fn api_links_apply(
+    State(st): State<Arc<ServerState>>,
+    Json(req): Json<LinkApplyRequest>,
+) -> Response {
+    let queries = match queries_from_state(&st).await {
+        Ok(queries) => queries,
+        Err(error) => return api_error(StatusCode::BAD_REQUEST, error),
+    };
+
+    handle_result(queries.link_apply(req))
+}
+
+async fn api_links_repair(
+    State(st): State<Arc<ServerState>>,
+    Json(req): Json<LinkRepairRequest>,
+) -> Response {
+    let queries = match queries_from_state(&st).await {
+        Ok(queries) => queries,
+        Err(error) => return api_error(StatusCode::BAD_REQUEST, error),
+    };
+
+    handle_result(queries.link_repair(req))
 }
 
 async fn api_link_status(State(st): State<Arc<ServerState>>) -> Response {
@@ -321,6 +339,39 @@ async fn api_artifact_source_update(
     handle_result(queries.update_artifact_source(&artifact_id, &req.content))
 }
 
+async fn api_env_emit(
+    State(st): State<Arc<ServerState>>,
+    Json(req): Json<EnvEmitRequest>,
+) -> Response {
+    if req.env_set_id.trim().is_empty() {
+        return api_error(StatusCode::BAD_REQUEST, "env_set_id 不能为空");
+    }
+
+    let queries = match queries_from_state(&st).await {
+        Ok(queries) => queries,
+        Err(error) => return api_error(StatusCode::BAD_REQUEST, error),
+    };
+
+    handle_result(queries.env_emit(&req.env_set_id, req.shell))
+}
+
+async fn api_script_run(
+    State(st): State<Arc<ServerState>>,
+    AxumPath(script): AxumPath<String>,
+    Json(req): Json<ScriptRunRequest>,
+) -> Response {
+    if script.trim().is_empty() {
+        return api_error(StatusCode::BAD_REQUEST, "script id 不能为空");
+    }
+
+    let queries = match queries_from_state(&st).await {
+        Ok(queries) => queries,
+        Err(error) => return api_error(StatusCode::BAD_REQUEST, error),
+    };
+
+    handle_result(queries.script_run(&script, req.stdin.as_deref()).await)
+}
+
 async fn api_profile_detail(
     State(st): State<Arc<ServerState>>,
     AxumPath(profile): AxumPath<String>,
@@ -373,7 +424,9 @@ fn handle_result<T: serde::Serialize>(result: Result<T, AgentStowError>) -> Resp
                 AgentStowError::InvalidArgs { .. }
                 | AgentStowError::Manifest { .. }
                 | AgentStowError::Render { .. }
-                | AgentStowError::Validate { .. } => StatusCode::BAD_REQUEST,
+                | AgentStowError::Validate { .. }
+                | AgentStowError::Mcp { .. } => StatusCode::BAD_REQUEST,
+                AgentStowError::LinkConflict { .. } => StatusCode::CONFLICT,
                 _ => StatusCode::INTERNAL_SERVER_ERROR,
             };
             api_error(status, error)
@@ -381,11 +434,17 @@ fn handle_result<T: serde::Serialize>(result: Result<T, AgentStowError>) -> Resp
     }
 }
 
-async fn queries_from_state(st: &Arc<ServerState>) -> Result<WorkspaceQueryService, AgentStowError> {
-    let workspace_root = st.workspace_root.read().await.clone().ok_or_else(|| {
-        AgentStowError::InvalidArgs {
-            message: "workspace 未选择，请先通过 /api/workspace 设置或使用 CLI --workspace".into(),
-        }
-    })?;
+async fn queries_from_state(
+    st: &Arc<ServerState>,
+) -> Result<WorkspaceQueryService, AgentStowError> {
+    let workspace_root =
+        st.workspace_root
+            .read()
+            .await
+            .clone()
+            .ok_or_else(|| AgentStowError::InvalidArgs {
+                message: "workspace 未选择，请先通过 /api/workspace 设置或使用 CLI --workspace"
+                    .into(),
+            })?;
     Ok(WorkspaceQueryService::new(workspace_root))
 }

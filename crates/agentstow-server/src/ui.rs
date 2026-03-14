@@ -29,14 +29,14 @@ fn resolve_ui_dist_dir(inputs: UiDistInputs) -> PathBuf {
         return override_dir;
     }
 
-    if let Some(exe) = inputs.current_exe {
-        if let Some(exe_dir) = exe.parent() {
-            // Common dev case: target/debug/agentstow -> <repo>/web/dist.
-            for ancestor in exe_dir.ancestors() {
-                let candidate = ancestor.join("web/dist");
-                if candidate.join("index.html").is_file() {
-                    return candidate;
-                }
+    if let Some(exe) = inputs.current_exe
+        && let Some(exe_dir) = exe.parent()
+    {
+        // Common dev case: target/debug/agentstow -> <repo>/web/dist.
+        for ancestor in exe_dir.ancestors() {
+            let candidate = ancestor.join("web/dist");
+            if candidate.join("index.html").is_file() {
+                return candidate;
             }
         }
     }
@@ -84,7 +84,7 @@ async fn serve_ui_shell(ui_dist_dir: &Path) -> Response {
 
 pub(crate) fn ui_dist_missing_page(index_path: &Path) -> String {
     format!(
-        "<!doctype html><html lang=\"zh-CN\"><head><meta charset=\"utf-8\"><title>AgentStow Web Dist Missing</title></head><body><h1>web/dist 尚未构建</h1><p>缺少前端入口文件：<code>{}</code></p><p>如果你在源码仓库内运行：进入 <code>web/</code> 后执行 <code>bun install</code> 与 <code>bun run build</code>。</p><p>如果你在任意目录运行已编译的二进制：请设置 <code>AGENTSTOW_UI_DIST</code> 指向包含 <code>index.html</code> 的 dist 目录。</p></body></html>",
+        "<!doctype html><html lang=\"zh-CN\"><head><meta charset=\"utf-8\"><title>AgentStow Web Dist Missing</title></head><body><h1>web/dist 尚未构建</h1><p>缺少前端入口文件：<code>{}</code></p><p>如果你在源码仓库内运行：优先执行 <code>just web-build</code>（会同步 Rust/TS bindings）。或进入 <code>web/</code> 后执行 <code>bun install</code> 与 <code>bun run build</code>。</p><p>如果你在任意目录运行已编译的二进制：请设置 <code>AGENTSTOW_UI_DIST</code> 指向包含 <code>index.html</code> 的 dist 目录。</p></body></html>",
         normalize_for_display(index_path)
     )
 }

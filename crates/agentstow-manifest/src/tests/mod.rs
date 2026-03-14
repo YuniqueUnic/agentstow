@@ -226,3 +226,27 @@ vars = {}
     assert_eq!(err.exit_code(), agentstow_core::ExitCode::InvalidConfig);
     assert!(err.to_string().contains("profile 不存在"));
 }
+
+#[test]
+fn init_workspace_skeleton_should_create_manifest_and_sample_artifact() {
+    let temp = assert_fs::TempDir::new().unwrap();
+    let ws = temp.child("ws");
+
+    let out = init_workspace_skeleton(ws.path()).unwrap();
+    assert!(out.created);
+    assert_eq!(out.workspace_root, ws.path().to_path_buf());
+    assert!(out.manifest_path.exists());
+    assert!(ws.child("artifacts/hello.txt.tera").path().exists());
+
+    let manifest = Manifest::load_from_dir(ws.path()).unwrap();
+    assert!(
+        manifest
+            .artifacts
+            .contains_key(&agentstow_core::ArtifactId::new_unchecked("hello"))
+    );
+    assert!(
+        manifest
+            .profiles
+            .contains_key(&ProfileName::new_unchecked("base"))
+    );
+}

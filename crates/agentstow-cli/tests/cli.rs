@@ -246,3 +246,22 @@ method = "copy"
         .success()
         .stdout(predicate::str::contains("[ok]").and(predicate::str::contains(".agents/skills")));
 }
+
+#[test]
+fn workspace_init_should_create_manifest_and_sample_artifact() {
+    let temp = assert_fs::TempDir::new().unwrap();
+    let ws = temp.child("ws");
+
+    let mut cmd = Command::cargo_bin("agentstow").unwrap();
+    cmd.arg("--cwd")
+        .arg(temp.path())
+        .arg("--workspace")
+        .arg(ws.path())
+        .arg("workspace")
+        .arg("init");
+
+    cmd.assert().success();
+
+    assert!(ws.child("agentstow.toml").path().exists());
+    assert!(ws.child("artifacts/hello.txt.tera").path().exists());
+}

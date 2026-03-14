@@ -112,6 +112,7 @@ dependencies = [
  "agentstow-core",
  "anyhow",
  "assert_fs",
+ "fs-err",
  "pretty_assertions",
  "serde",
  "serde_json",
@@ -174,9 +175,11 @@ name = "agentstow-server"
 version = "0.1.0"
 dependencies = [
  "agentstow-core",
+ "agentstow-env",
  "agentstow-linker",
  "agentstow-manifest",
  "agentstow-render",
+ "agentstow-scripts",
  "agentstow-state",
  "agentstow-validate",
  "agentstow-web-types",
@@ -184,6 +187,7 @@ dependencies = [
  "assert_fs",
  "axum",
  "axum-test",
+ "blake3",
  "fs-err",
  "notify",
  "notify-debouncer-full",
@@ -238,6 +242,8 @@ version = "0.1.0"
 dependencies = [
  "serde",
  "serde_json",
+ "temp-env",
+ "tempfile",
  "ts-rs",
 ]
 

@@ -81,6 +81,44 @@ pub struct RenderResponse {
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
+pub enum ShellKindResponse {
+    Bash,
+    Zsh,
+    Fish,
+    Powershell,
+    Cmd,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct EnvEmitRequest {
+    pub env_set_id: String,
+    pub shell: ShellKindResponse,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct EnvEmitResponse {
+    pub text: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct ScriptRunRequest {
+    pub stdin: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct ScriptRunResponse {
+    pub exit_code: i32,
+    pub stdout: Option<String>,
+    pub stderr: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, TS)]
 #[serde(rename_all = "lowercase")]
 #[ts(export)]
 pub enum InstallMethodResponse {
@@ -155,6 +193,80 @@ pub struct LinkStatusResponseItem {
     pub method: InstallMethodResponse,
     pub ok: bool,
     pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct LinkPlanRequest {
+    /// 可选：为空则对所有 targets 生效
+    pub targets: Vec<String>,
+    /// target 未声明 profile 时可用（等价于 CLI 的全局 --profile）
+    pub default_profile: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct LinkApplyRequest {
+    /// 可选：为空则对所有 targets 生效
+    pub targets: Vec<String>,
+    /// target 未声明 profile 时可用（等价于 CLI 的全局 --profile）
+    pub default_profile: Option<String>,
+    pub force: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct LinkRepairRequest {
+    /// 可选：为空则只修复不健康项（坏链扫描结果）
+    pub targets: Vec<String>,
+    /// target 未声明 profile 时可用（等价于 CLI 的全局 --profile）
+    pub default_profile: Option<String>,
+    pub force: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+#[ts(export)]
+pub enum LinkDesiredInstallResponse {
+    Symlink { source_path: String },
+    Junction { source_path: String },
+    Copy { blake3: String, bytes_len: usize },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct LinkPlanItemResponse {
+    pub target: String,
+    pub artifact_id: String,
+    pub profile: String,
+    pub artifact_kind: ArtifactKindResponse,
+    pub method: InstallMethodResponse,
+    pub target_path: String,
+    pub desired: LinkDesiredInstallResponse,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
+pub enum LinkOperationActionResponse {
+    Planned,
+    Applied,
+    Repaired,
+    Skipped,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct LinkOperationItemResponse {
+    pub action: LinkOperationActionResponse,
+    pub item: LinkPlanItemResponse,
+    pub message: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct LinkOperationResponse {
+    pub items: Vec<LinkOperationItemResponse>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -328,6 +440,11 @@ pub fn export_bindings() -> Result<(), ts_rs::ExportError> {
     ArtifactSourceResponse::export_all(&config)?;
     ArtifactSourceUpdateRequest::export_all(&config)?;
     RenderResponse::export_all(&config)?;
+    ShellKindResponse::export_all(&config)?;
+    EnvEmitRequest::export_all(&config)?;
+    EnvEmitResponse::export_all(&config)?;
+    ScriptRunRequest::export_all(&config)?;
+    ScriptRunResponse::export_all(&config)?;
     InstallMethodResponse::export_all(&config)?;
     ArtifactKindResponse::export_all(&config)?;
     ValidateAsResponse::export_all(&config)?;
@@ -336,6 +453,14 @@ pub fn export_bindings() -> Result<(), ts_rs::ExportError> {
     WatchModeResponse::export_all(&config)?;
     LinkRecordResponse::export_all(&config)?;
     LinkStatusResponseItem::export_all(&config)?;
+    LinkPlanRequest::export_all(&config)?;
+    LinkApplyRequest::export_all(&config)?;
+    LinkRepairRequest::export_all(&config)?;
+    LinkDesiredInstallResponse::export_all(&config)?;
+    LinkPlanItemResponse::export_all(&config)?;
+    LinkOperationActionResponse::export_all(&config)?;
+    LinkOperationItemResponse::export_all(&config)?;
+    LinkOperationResponse::export_all(&config)?;
     WatchStatusResponse::export_all(&config)?;
     WorkspaceCountsResponse::export_all(&config)?;
     TargetSummaryResponse::export_all(&config)?;

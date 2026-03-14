@@ -166,6 +166,33 @@ fn copy_dir_force_should_overwrite_existing_dir() {
 }
 
 #[test]
+fn copy_dir_apply_should_be_idempotent_when_target_is_healthy() {
+    let temp = assert_fs::TempDir::new().unwrap();
+    let store = RenderStore::new(temp.child("cache").path().to_path_buf(), temp.path());
+
+    temp.child("src").create_dir_all().unwrap();
+    temp.child("src/a.txt").write_str("v1").unwrap();
+
+    let job = LinkJob {
+        target: TargetName::new_unchecked("t"),
+        artifact_id: ArtifactId::new_unchecked("a"),
+        profile: ProfileName::new_unchecked("p"),
+        artifact_kind: ArtifactKind::Dir,
+        method: InstallMethod::Copy,
+        target_path: temp.child("dst").path().to_path_buf(),
+        desired: InstallSource::Path(temp.child("src").path().to_path_buf()),
+    };
+
+    apply_job(&job, &store, ApplyOptions { force: false }).unwrap();
+    apply_job(&job, &store, ApplyOptions { force: false }).unwrap();
+
+    assert_eq!(
+        std::fs::read_to_string(temp.child("dst/a.txt").path()).unwrap(),
+        "v1"
+    );
+}
+
+#[test]
 fn check_copy_dir_should_fail_when_target_has_extra_file() {
     let temp = assert_fs::TempDir::new().unwrap();
     temp.child("src").create_dir_all().unwrap();
