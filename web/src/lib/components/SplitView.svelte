@@ -1,187 +1,164 @@
 <script lang="ts">
   import { onMount, type Snippet } from 'svelte';
 
+  import { Pane, PaneGroup, PaneResizer } from 'paneforge';
+
+  type Direction = 'horizontal' | 'vertical';
+
   type Props = {
     left: Snippet;
     right: Snippet;
+    direction?: Direction;
     initialLeftPct?: number;
     minLeftPx?: number;
     minRightPx?: number;
     disabled?: boolean;
+    autoSaveId?: string | null;
+    keyboardResizeBy?: number | null;
+    onLayoutChange?: ((layout: number[]) => void) | null;
   };
 
   let {
     left,
     right,
+    direction = 'horizontal',
     initialLeftPct = 52,
     minLeftPx = 320,
     minRightPx = 320,
-    disabled = false
+    disabled = false,
+    autoSaveId = null,
+    keyboardResizeBy = null,
+    onLayoutChange = null
   }: Props = $props();
 
   let host: HTMLDivElement | null = null;
-  let gutter: HTMLButtonElement | null = null;
-
-  let leftPct = $state<number | null>(null);
   let dragging = $state(false);
+  let groupExtentPx = $state(0);
 
   function clamp(value: number, min: number, max: number): number {
     return Math.min(max, Math.max(min, value));
   }
 
-  function clampLeftPct(nextPct: number): number {
-    if (!host) {
-      return clamp(nextPct, 0, 100);
+  function pxToPct(px: number): number {
+    if (groupExtentPx <= 0) {
+      return 0;
     }
-
-    const rect = host.getBoundingClientRect();
-    const width = rect.width;
-    if (width <= 0) {
-      return clamp(nextPct, 0, 100);
-    }
-
-    const minPct = (minLeftPx / width) * 100;
-    const maxPct = 100 - (minRightPx / width) * 100;
-    return clamp(nextPct, minPct, maxPct);
+    return (px / groupExtentPx) * 100;
   }
 
-  function updateFromClientX(clientX: number): void {
-    if (!host) {
-      return;
-    }
-
-    const rect = host.getBoundingClientRect();
-    const width = rect.width;
-    if (width <= 0) {
-      return;
-    }
-
-    const nextPct = ((clientX - rect.left) / width) * 100;
-    leftPct = clampLeftPct(nextPct);
-  }
-
-  function onPointerDown(event: PointerEvent): void {
-    if (disabled) {
-      return;
-    }
-    if (!gutter) {
-      return;
-    }
-
-    dragging = true;
-    gutter.setPointerCapture(event.pointerId);
-    updateFromClientX(event.clientX);
-  }
-
-  function onPointerMove(event: PointerEvent): void {
-    if (!dragging) {
-      return;
-    }
-    updateFromClientX(event.clientX);
-  }
-
-  function onPointerUp(event: PointerEvent): void {
-    dragging = false;
-    try {
-      gutter?.releasePointerCapture(event.pointerId);
-    } catch {
-      // ignore
-    }
-  }
-
-  function nudge(deltaPct: number): void {
-    const current = leftPct ?? initialLeftPct;
-    leftPct = clampLeftPct(current + deltaPct);
-  }
-
-  function onKeyDown(event: KeyboardEvent): void {
-    if (disabled) {
-      return;
-    }
-
-    if (event.key === 'ArrowLeft') {
-      event.preventDefault();
-      nudge(-2);
-      return;
-    }
-    if (event.key === 'ArrowRight') {
-      event.preventDefault();
-      nudge(2);
-      return;
-    }
-    if (event.key === 'Home') {
-      event.preventDefault();
-      leftPct = clampLeftPct(initialLeftPct);
-      return;
-    }
-  }
+  const minFirstPct = $derived.by(() => clamp(pxToPct(minLeftPx), 0, 100));
+  const minSecondPct = $derived.by(() => clamp(pxToPct(minRightPx), 0, 100));
+  const maxFirstPct = $derived.by(() => Math.max(minFirstPct, 100 - minSecondPct));
+  const defaultFirstPct = $derived.by(() =>
+    clamp(initialLeftPct, minFirstPct, maxFirstPct)
+  );
 
   onMount(() => {
-    leftPct = clampLeftPct(initialLeftPct);
+    if (!host) {
+      return;
+    }
+
+    const updateExtent = () => {
+      if (!host) {
+        return;
+      }
+      const rect = host.getBoundingClientRect();
+      groupExtentPx = direction === 'horizontal' ? rect.width : rect.height;
+    };
+
+    updateExtent();
+
+    const observer = new ResizeObserver(() => {
+      updateExtent();
+    });
+
+    observer.observe(host);
+
+    return () => {
+      observer.disconnect();
+    };
   });
 </script>
 
-<div class="splitview" bind:this={host} data-dragging={dragging ? 'true' : 'false'}>
-  <div
-    class="splitview__pane splitview__pane--left"
-    style={`flex-basis: ${leftPct ?? initialLeftPct}%;`}
+<div
+  class="splitview"
+  data-direction={direction}
+  data-dragging={dragging ? 'true' : 'false'}
+  bind:this={host}
+>
+  <PaneGroup
+    {direction}
+    {autoSaveId}
+    {keyboardResizeBy}
+    onLayoutChange={onLayoutChange ?? undefined}
   >
-    {@render left()}
-  </div>
-  <button
-    type="button"
-    class="splitview__gutter"
-    bind:this={gutter}
-    aria-label="调整分屏宽度"
-    disabled={disabled}
-    onpointerdown={onPointerDown}
-    onpointermove={onPointerMove}
-    onpointerup={onPointerUp}
-    onpointercancel={onPointerUp}
-    onkeydown={onKeyDown}
-  ></button>
-  <div class="splitview__pane splitview__pane--right">
-    {@render right()}
-  </div>
+    <Pane
+      class="splitview__pane splitview__pane--first"
+      defaultSize={defaultFirstPct}
+      minSize={minFirstPct}
+      maxSize={maxFirstPct}
+    >
+      {@render left()}
+    </Pane>
+
+    <PaneResizer
+      class="splitview__gutter"
+      {disabled}
+      onDraggingChange={(next) => {
+        dragging = next;
+      }}
+    />
+
+    <Pane class="splitview__pane splitview__pane--second" minSize={minSecondPct}>
+      {@render right()}
+    </Pane>
+  </PaneGroup>
 </div>
 
 <style>
   .splitview {
     height: 100%;
-    display: flex;
     min-height: 0;
     min-width: 0;
   }
 
-  .splitview__pane {
+  .splitview :global([data-pane-group]) {
+    height: 100%;
+    width: 100%;
     min-height: 0;
     min-width: 0;
-    flex: 1 1 0;
   }
 
-  .splitview__pane--left {
+  .splitview :global([data-pane]) {
+    min-height: 0;
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  .splitview :global([data-pane-resizer]) {
     flex: 0 0 auto;
-  }
-
-  .splitview__gutter {
-    flex: 0 0 14px;
-    width: 14px;
-    padding: 0;
     position: relative;
-    cursor: col-resize;
-    border-radius: 999px;
+    padding: 0;
     border: 0;
     background: transparent;
     outline: none;
     touch-action: none;
+    display: grid;
+    place-items: center;
   }
 
-  .splitview__gutter::before {
+  .splitview :global([data-pane-resizer][data-direction='horizontal']) {
+    width: 14px;
+    cursor: col-resize;
+  }
+
+  .splitview :global([data-pane-resizer][data-direction='vertical']) {
+    height: 14px;
+    cursor: row-resize;
+  }
+
+  .splitview :global([data-pane-resizer])::before {
     content: '';
-    position: absolute;
-    inset: 10px 0;
-    width: 2px;
-    left: calc(50% - 1px);
     border-radius: 999px;
     background: color-mix(in oklch, var(--line-strong) 30%, transparent);
     transition:
@@ -191,15 +168,41 @@
     opacity: 0.9;
   }
 
-  .splitview__gutter:hover::before,
-  .splitview[data-dragging='true'] .splitview__gutter::before,
-  .splitview__gutter:focus-visible::before {
+  .splitview :global([data-pane-resizer][data-direction='horizontal'])::before {
+    width: 2px;
+    height: calc(100% - 20px);
+  }
+
+  .splitview :global([data-pane-resizer][data-direction='vertical'])::before {
+    width: calc(100% - 20px);
+    height: 2px;
+  }
+
+  .splitview :global([data-pane-resizer]:hover)::before,
+  .splitview :global([data-pane-resizer][data-active])::before,
+  .splitview[data-dragging='true'] :global([data-pane-resizer])::before,
+  .splitview :global([data-pane-resizer]:focus-visible)::before {
     background: color-mix(in oklch, var(--primary) 40%, transparent);
-    transform: scaleX(1.2);
     opacity: 1;
   }
 
-  .splitview__gutter:disabled {
+  .splitview :global([data-pane-resizer][data-direction='horizontal']:hover)::before,
+  .splitview :global([data-pane-resizer][data-direction='horizontal'][data-active])::before,
+  .splitview[data-dragging='true']
+    :global([data-pane-resizer][data-direction='horizontal'])::before,
+  .splitview :global([data-pane-resizer][data-direction='horizontal']:focus-visible)::before {
+    transform: scaleX(1.2);
+  }
+
+  .splitview :global([data-pane-resizer][data-direction='vertical']:hover)::before,
+  .splitview :global([data-pane-resizer][data-direction='vertical'][data-active])::before,
+  .splitview[data-dragging='true']
+    :global([data-pane-resizer][data-direction='vertical'])::before,
+  .splitview :global([data-pane-resizer][data-direction='vertical']:focus-visible)::before {
+    transform: scaleY(1.2);
+  }
+
+  .splitview :global([data-pane-resizer][data-enabled='false']) {
     cursor: default;
     opacity: 0.7;
   }

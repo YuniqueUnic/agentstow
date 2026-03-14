@@ -82,7 +82,7 @@
           },
           '&.cm-focused': {
             outline: '1px solid color-mix(in oklch, var(--primary) 42%, transparent)',
-            borderRadius: '12px',
+            borderRadius: '0',
             boxShadow: '0 0 0 3px color-mix(in oklch, var(--primary) 16%, transparent)'
           },
           '.cm-cursor': {
@@ -202,11 +202,10 @@
   .editor {
     height: 100%;
     position: relative;
-    border-radius: 12px;
-    background:
-      linear-gradient(180deg, color-mix(in oklch, var(--panel-elevated) 78%, var(--panel-bg)), var(--panel-bg));
-    border: 1px solid color-mix(in oklch, var(--line) 86%, transparent);
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+    border-radius: 0;
+    background: transparent;
+    border: 0;
+    box-shadow: none;
   }
 
   .editor__host {
@@ -214,15 +213,15 @@
   }
 
   .editor :global(.cm-editor) {
-    border-radius: 12px;
+    border-radius: 0;
   }
 
   .editor__loading {
     position: absolute;
-    inset: 12px;
-    border-radius: 10px;
+    inset: 0;
+    border-radius: 0;
     border: 1px dashed color-mix(in oklch, var(--line) 70%, transparent);
-    background: color-mix(in oklch, var(--canvas-deep) 62%, transparent);
+    background: color-mix(in oklch, var(--canvas-deep) 74%, transparent);
     display: grid;
     place-items: center;
     gap: 10px;

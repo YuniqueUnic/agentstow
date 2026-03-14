@@ -44,7 +44,7 @@
 <aside class="explorer surface" aria-label="资源面板">
   <div class="explorer__head">
     <p class="explorer__eyebrow">ENV</p>
-    <p class="explorer__hint">选择 env set 后生成 shell 激活脚本</p>
+    <p class="explorer__hint">环境变量是工作台对象，不是独立后台页。</p>
   </div>
 
   <div class="explorer__section">
@@ -92,7 +92,7 @@
   <div class="canvas__head">
     <div class="title">
       <strong>{activeEnvSet?.id ?? '未选择 env set'}</strong>
-      <span class="muted">· env</span>
+      <span class="muted">· shell preview</span>
     </div>
 
     <div class="canvas__actions">
@@ -113,7 +113,7 @@
         type="button"
         onclick={() => void onCopyToClipboard(envScript?.text ?? '', '脚本')}
       >
-        复制
+        复制脚本
       </button>
     </div>
   </div>
@@ -124,34 +124,12 @@
   <p class="status-line" aria-live="polite">{statusLine}</p>
 
   <div class="split surface">
-    <SplitView initialLeftPct={40} minLeftPx={320} minRightPx={360}>
+    <SplitView autoSaveId="workbench:env:shell" initialLeftPct={68} minLeftPx={420} minRightPx={280}>
       {#snippet left()}
-        <div class="pane">
-          <div class="pane__title">Variables</div>
-          <div class="pane__body">
-            {#if !activeEnvSet}
-              <p class="muted">（暂无 env set）</p>
-            {:else if activeEnvSet.vars.length === 0}
-              <p class="muted">（该 env set 没有变量）</p>
-            {:else}
-              <ul class="kv">
-                {#each activeEnvSet.vars as v (v.key)}
-                  <li class="kv__row">
-                    <span class="kv__key">{v.key}</span>
-                    <span class="kv__value">{v.binding}</span>
-                  </li>
-                {/each}
-              </ul>
-            {/if}
-          </div>
-        </div>
-      {/snippet}
-
-      {#snippet right()}
-        <div class="pane">
-          <div class="pane__title">Shell</div>
-          <div class="pane__body pane__body--stack">
-            <div class="chips chips--tight" aria-label="Shell 选择">
+        <section class="region" aria-label="Shell 预览">
+          <div class="region__header">
+            <span>Shell Preview</span>
+            <div class="region__toolbar" aria-label="Shell 选择">
               {#each shellChoices as sh (sh)}
                 <button
                   class={['chip', selectedShell === sh ? 'chip--active' : ''].join(' ')}
@@ -162,12 +140,47 @@
                 </button>
               {/each}
             </div>
+          </div>
 
-            <div class="output">
-              <CodeEditor value={envScript?.text ?? ''} readonly={true} />
+          <div class="region__body region__body--stack">
+            <p class="stack-note">
+              当前 env set 会按所选 shell 渲染激活脚本，便于直接复制或在终端中执行。
+            </p>
+            <div class="panel__body panel__body--flush">
+              {#if !activeEnvSet}
+                <p class="empty empty--flush">（暂无 env set，可先在 manifest 中声明）</p>
+              {:else}
+                <CodeEditor value={envScript?.text ?? ''} readonly={true} />
+              {/if}
             </div>
           </div>
-        </div>
+        </section>
+      {/snippet}
+
+      {#snippet right()}
+        <section class="region secondary-sidebar" aria-label="变量检查器">
+          <div class="region__header">
+            <span>Variables</span>
+            <span class="mono">{activeEnvSet?.vars.length ?? 0} keys</span>
+          </div>
+
+          <div class="panel__body panel__body--flush">
+            {#if !activeEnvSet}
+              <p class="empty empty--flush">（选择 env set 后可查看变量绑定）</p>
+            {:else if activeEnvSet.vars.length === 0}
+              <p class="empty empty--flush">（该 env set 暂无变量）</p>
+            {:else}
+              <div class="inspector-table">
+                {#each activeEnvSet.vars as v (v.key)}
+                  <div class="inspector-row">
+                    <span class="inspector-row__label">{v.key}</span>
+                    <span class="inspector-row__value inspector-row__value--mono">{v.binding}</span>
+                  </div>
+                {/each}
+              </div>
+            {/if}
+          </div>
+        </section>
       {/snippet}
     </SplitView>
   </div>

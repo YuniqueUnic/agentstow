@@ -4,6 +4,7 @@
   import CommandPalette, { type PaletteCommand } from '$lib/workbench/CommandPalette.svelte';
   import WorkspaceBoot from '$lib/workbench/WorkspaceBoot.svelte';
   import ShellGutter from '$lib/workbench/ShellGutter.svelte';
+  import EditorTabs from '$lib/workbench/EditorTabs.svelte';
   import WorkbenchRail from '$lib/workbench/WorkbenchRail.svelte';
   import WorkbenchTopbar from '$lib/workbench/WorkbenchTopbar.svelte';
   import ArtifactsView from '$lib/workbench/views/ArtifactsView.svelte';
@@ -51,12 +52,24 @@
 
   type ViewKey = 'artifacts' | 'links' | 'env' | 'scripts' | 'mcp' | 'impact';
   type ImpactMode = 'artifact' | 'profile' | 'artifact_profile';
+  type WorkbenchDocument = {
+    id: string;
+    kind: ViewKey;
+    title: string;
+    entityId?: string | null;
+    dirty?: boolean;
+  };
+
+  const ARTIFACTS_DOC_ID = 'artifacts:workspace';
+  const IMPACT_DOC_ID = 'impact:analysis';
 
   let view = $state<ViewKey>('artifacts');
   let paletteOpen = $state(false);
   let artifactRequestId = $state<string | null>(null);
   let manifestInsertRequest = $state<ManifestInsertKind | null>(null);
   let explorerWidth = $state(332);
+  let editorDocs = $state<WorkbenchDocument[]>([]);
+  let activeDocId = $state<string | null>(null);
 
   let workspaceState = $state<WorkspaceStateResponse | null>(null);
   let workspaceInput = $state('');
@@ -162,6 +175,256 @@
     impact: 'Impact'
   };
 
+  const editorTabModel = $derived.by(() =>
+    editorDocs.map((doc) => ({
+      id: doc.id,
+      label: doc.title,
+      dirty: Boolean(doc.dirty)
+    }))
+  );
+
+  function buildDocTitle(kind: ViewKey, entityId?: string | null): string {
+    if (!entityId) {
+      return viewLabels[kind];
+    }
+
+    switch (kind) {
+      case 'links':
+        return `Target · ${entityId}`;
+      case 'env':
+        return `Env · ${entityId}`;
+      case 'scripts':
+        return `Script · ${entityId}`;
+      case 'mcp':
+        return `MCP · ${entityId}`;
+      case 'impact':
+        return 'Impact';
+      case 'artifacts':
+      default:
+        return 'Artifacts';
+    }
+  }
+
+  function syncSelectionFromDocument(doc: WorkbenchDocument | null): void {
+    if (!doc) {
+      return;
+    }
+
+    view = doc.kind;
+
+    if (doc.kind === 'env' && doc.entityId) {
+      selectedEnvSet = doc.entityId;
+      return;
+    }
+
+    if (doc.kind === 'scripts' && doc.entityId) {
+      selectedScript = doc.entityId;
+      return;
+    }
+
+    if (doc.kind === 'links' && doc.entityId) {
+      selectedTargetId = doc.entityId;
+      if (!selectedTargets.includes(doc.entityId)) {
+        selectedTargets = [doc.entityId];
+      }
+      return;
+    }
+
+    if (doc.kind === 'mcp' && doc.entityId) {
+      selectedMcpServerId = doc.entityId;
+      return;
+    }
+
+    if (doc.kind === 'artifacts' && artifactRequestId === null) {
+      artifactRequestId = selectedArtifact ?? null;
+    }
+  }
+
+  function upsertDocument(doc: WorkbenchDocument, activate = true): void {
+    const idx = editorDocs.findIndex((item) => item.id === doc.id);
+    if (idx === -1) {
+      editorDocs = [...editorDocs, doc];
+    } else {
+      const next = editorDocs.slice();
+      next[idx] = { ...next[idx], ...doc };
+      editorDocs = next;
+    }
+
+    if (activate) {
+      activeDocId = doc.id;
+      syncSelectionFromDocument(doc);
+    }
+  }
+
+  function ensureFallbackDocument(): void {
+    if (editorDocs.length > 0 && activeDocId && editorDocs.some((doc) => doc.id === activeDocId)) {
+      const doc = editorDocs.find((item) => item.id === activeDocId) ?? null;
+      syncSelectionFromDocument(doc);
+      return;
+    }
+
+    if (editorDocs.length > 0) {
+      const doc = editorDocs.at(-1) ?? editorDocs[0] ?? null;
+      activeDocId = doc?.id ?? null;
+      syncSelectionFromDocument(doc);
+      return;
+    }
+
+    const fallback: WorkbenchDocument = {
+      id: ARTIFACTS_DOC_ID,
+      kind: 'artifacts',
+      title: 'Artifacts'
+    };
+    editorDocs = [fallback];
+    activeDocId = fallback.id;
+    syncSelectionFromDocument(fallback);
+  }
+
+  function activateDocument(id: string): void {
+    const doc = editorDocs.find((item) => item.id === id) ?? null;
+    if (!doc) {
+      return;
+    }
+    activeDocId = id;
+    syncSelectionFromDocument(doc);
+  }
+
+  function closeDocument(id: string): void {
+    const closingIndex = editorDocs.findIndex((item) => item.id === id);
+    if (closingIndex === -1) {
+      return;
+    }
+
+    const nextDocs = editorDocs.filter((item) => item.id !== id);
+    editorDocs = nextDocs;
+
+    if (!nextDocs.length) {
+      activeDocId = null;
+      ensureFallbackDocument();
+      return;
+    }
+
+    if (activeDocId === id) {
+      const nextDoc = nextDocs[Math.max(0, closingIndex - 1)] ?? nextDocs[0] ?? null;
+      activeDocId = nextDoc?.id ?? null;
+      syncSelectionFromDocument(nextDoc);
+    }
+  }
+
+  function reorderDocuments(nextOrder: string[]): void {
+    const byId = new Map(editorDocs.map((doc) => [doc.id, doc]));
+    const orderedDocs = nextOrder
+      .map((id) => byId.get(id) ?? null)
+      .filter((doc): doc is WorkbenchDocument => doc !== null);
+    const seenIds = new Set(orderedDocs.map((doc) => doc.id));
+
+    editorDocs = [
+      ...orderedDocs,
+      ...editorDocs.filter((doc) => !seenIds.has(doc.id))
+    ];
+  }
+
+  function openArtifactsWorkspace(requestId?: string | null): void {
+    if (requestId) {
+      artifactRequestId = requestId;
+    }
+
+    upsertDocument({
+      id: ARTIFACTS_DOC_ID,
+      kind: 'artifacts',
+      title: 'Artifacts'
+    });
+  }
+
+  function openEnvDocument(id?: string | null): void {
+    if (id) {
+      selectEnvSet(id);
+    }
+
+    const entityId = id ?? selectedEnvSet ?? null;
+    upsertDocument({
+      id: entityId ? `env:${entityId}` : 'env:index',
+      kind: 'env',
+      title: buildDocTitle('env', entityId),
+      entityId
+    });
+  }
+
+  function openScriptDocument(id?: string | null): void {
+    if (id) {
+      selectScript(id);
+    }
+
+    const entityId = id ?? selectedScript ?? null;
+    upsertDocument({
+      id: entityId ? `scripts:${entityId}` : 'scripts:index',
+      kind: 'scripts',
+      title: buildDocTitle('scripts', entityId),
+      entityId
+    });
+  }
+
+  function openTargetDocument(id?: string | null): void {
+    if (id) {
+      selectTargetExclusive(id);
+    }
+
+    const entityId = id ?? selectedTargetId ?? null;
+    upsertDocument({
+      id: entityId ? `links:${entityId}` : 'links:index',
+      kind: 'links',
+      title: buildDocTitle('links', entityId),
+      entityId
+    });
+  }
+
+  function openMcpDocument(id?: string | null): void {
+    if (id) {
+      selectMcpServer(id);
+    }
+
+    const entityId = id ?? selectedMcpServerId ?? null;
+    upsertDocument({
+      id: entityId ? `mcp:${entityId}` : 'mcp:index',
+      kind: 'mcp',
+      title: buildDocTitle('mcp', entityId),
+      entityId
+    });
+  }
+
+  function openImpactDocument(): void {
+    upsertDocument({
+      id: IMPACT_DOC_ID,
+      kind: 'impact',
+      title: 'Impact',
+      entityId: `${selectedArtifact ?? 'none'}@${selectedProfile ?? 'none'}`
+    });
+  }
+
+  function openDefaultDocument(kind: ViewKey): void {
+    if (kind === 'artifacts') {
+      openArtifactsWorkspace();
+      return;
+    }
+    if (kind === 'links') {
+      openTargetDocument();
+      return;
+    }
+    if (kind === 'env') {
+      openEnvDocument();
+      return;
+    }
+    if (kind === 'scripts') {
+      openScriptDocument();
+      return;
+    }
+    if (kind === 'mcp') {
+      openMcpDocument();
+      return;
+    }
+    openImpactDocument();
+  }
+
   const statusFocus = $derived.by(() => {
     if (view === 'artifacts') {
       return selectedArtifact ? `artifact:${selectedArtifact}` : 'manifest';
@@ -201,6 +464,8 @@
       workspace_root: workspaceRoot,
       manifest_present: false
     };
+    editorDocs = [];
+    activeDocId = null;
     summary = null;
     linkStatus = null;
     linkOp = null;
@@ -261,6 +526,40 @@
       } else if (!selectedMcpServerId) {
         selectedMcpServerId = nextSummary.mcp_servers[0]?.id ?? null;
       }
+
+      const artifactIds = new Set(nextSummary.artifacts.map((artifact) => artifact.id));
+      const envIds = new Set(nextSummary.env_sets.map((envSet) => envSet.id));
+      const scriptIds = new Set(nextSummary.scripts.map((script) => script.id));
+      const targetIds = new Set(nextSummary.targets.map((target) => target.id));
+      const mcpIds = new Set(nextSummary.mcp_servers.map((server) => server.id));
+
+      editorDocs = editorDocs
+        .filter((doc) => {
+          if (doc.kind === 'env' && doc.entityId) {
+            return envIds.has(doc.entityId);
+          }
+          if (doc.kind === 'scripts' && doc.entityId) {
+            return scriptIds.has(doc.entityId);
+          }
+          if (doc.kind === 'links' && doc.entityId) {
+            return targetIds.has(doc.entityId);
+          }
+          if (doc.kind === 'mcp' && doc.entityId) {
+            return mcpIds.has(doc.entityId);
+          }
+          if (doc.kind === 'artifacts' && doc.entityId) {
+            return artifactIds.has(doc.entityId) || doc.id === ARTIFACTS_DOC_ID;
+          }
+          return true;
+        })
+        .map((doc) => ({
+          ...doc,
+          title: buildDocTitle(doc.kind, doc.entityId)
+        }));
+
+      if (activeDocId && !editorDocs.some((doc) => doc.id === activeDocId)) {
+        activeDocId = editorDocs.at(-1)?.id ?? null;
+      }
     } catch (error) {
       errorMessage = describeError(error, '无法读取 workspace 数据。');
       summary = null;
@@ -285,6 +584,7 @@
     await Promise.all([refreshSummary(), refreshWatchStatus()]);
     linkStatus = null;
     impact = null;
+    ensureFallbackDocument();
     statusLine = '已连接到 workspace。';
   }
 
@@ -547,24 +847,20 @@
   }
 
   function openTargetInLinks(targetId: string): void {
-    view = 'links';
-    selectTargetExclusive(targetId);
+    openTargetDocument(targetId);
   }
 
   function requestOpenArtifact(id: string): void {
-    view = 'artifacts';
-    artifactRequestId = id;
+    openArtifactsWorkspace(id);
   }
 
   function openManifestEditor(): void {
-    view = 'artifacts';
-    artifactRequestId = '$manifest';
+    openArtifactsWorkspace('$manifest');
     statusLine = '已切换到 manifest 编辑器。';
   }
 
   function requestManifestInsert(kind: ManifestInsertKind): void {
-    view = 'artifacts';
-    artifactRequestId = '$manifest';
+    openArtifactsWorkspace('$manifest');
     manifestInsertRequest = kind;
   }
 
@@ -586,7 +882,7 @@
         title: `Go to ${key}`,
         keywords: `view ${key}`,
         run: () => {
-          view = key;
+          openDefaultDocument(key);
         }
       });
     };
@@ -658,7 +954,7 @@
       disabled: !manifestPresent,
       keywords: 'links status refresh',
       run: async () => {
-        view = 'links';
+        openTargetDocument();
         await refreshLinkStatus();
       }
     });
@@ -670,7 +966,7 @@
       disabled: selectedTargets.length === 0,
       keywords: 'links plan selected',
       run: async () => {
-        view = 'links';
+        openTargetDocument();
         linkScope = 'selected';
         await runLinkOperation('plan');
       }
@@ -683,7 +979,7 @@
       disabled: selectedTargets.length === 0,
       keywords: 'links apply selected',
       run: async () => {
-        view = 'links';
+        openTargetDocument();
         linkScope = 'selected';
         await runLinkOperation('apply');
       }
@@ -696,7 +992,7 @@
       disabled: selectedTargets.length === 0,
       keywords: 'links repair selected',
       run: async () => {
-        view = 'links';
+        openTargetDocument();
         linkScope = 'selected';
         await runLinkOperation('repair');
       }
@@ -709,7 +1005,7 @@
       keywords: 'links plan all',
       disabled: !manifestPresent,
       run: async () => {
-        view = 'links';
+        openTargetDocument();
         linkScope = 'all';
         await runLinkOperation('plan');
       }
@@ -722,7 +1018,7 @@
       keywords: 'links apply all',
       disabled: !manifestPresent,
       run: async () => {
-        view = 'links';
+        openTargetDocument();
         linkScope = 'all';
         await runLinkOperation('apply');
       }
@@ -735,7 +1031,7 @@
       keywords: 'links repair all',
       disabled: !manifestPresent,
       run: async () => {
-        view = 'links';
+        openTargetDocument();
         linkScope = 'all';
         await runLinkOperation('repair');
       }
@@ -748,7 +1044,7 @@
       keywords: 'env emit shell',
       disabled: !selectedEnvSet,
       run: async () => {
-        view = 'env';
+        openEnvDocument();
         await handleEnvEmit();
       }
     });
@@ -760,7 +1056,7 @@
       keywords: 'scripts run execute',
       disabled: !selectedScript,
       run: async () => {
-        view = 'scripts';
+        openScriptDocument();
         await handleScriptRun();
       }
     });
@@ -772,7 +1068,7 @@
       keywords: 'impact analyze',
       disabled: !(selectedArtifact || selectedProfile),
       run: async () => {
-        view = 'impact';
+        openImpactDocument();
         await refreshImpactAnalysis();
       }
     });
@@ -798,7 +1094,7 @@
         subtitle: truncateMiddle(t.target_path, 56),
         keywords: `${t.id} ${t.target_path} ${t.artifact_id} ${t.profile ?? ''} target`,
         run: () => {
-          openTargetInLinks(t.id);
+          openTargetDocument(t.id);
         }
       });
     }
@@ -890,8 +1186,20 @@
         onRefresh={bootstrapConfigured}
       />
 
-      <WorkbenchRail view={view} onChange={(next) => (view = next)} />
+      <WorkbenchRail view={view} onChange={openDefaultDocument} />
       <ShellGutter onResize={resizeExplorer} onReset={resetExplorerWidth} />
+
+      <div class="workbench-tabs">
+        <EditorTabs
+          tabs={editorTabModel}
+          active={activeDocId}
+          ariaLabel="Workbench documents"
+          emptyLabel="（未打开任何对象）"
+          onChange={activateDocument}
+          onClose={closeDocument}
+          onReorder={reorderDocuments}
+        />
+      </div>
 
       {#if view === 'artifacts'}
         <ArtifactsView
@@ -942,7 +1250,7 @@
           onLinkUnhealthyOnly={(next) => (linkUnhealthyOnly = next)}
           onLinkForce={(next) => (linkForce = next)}
           onLinkScope={(next) => (linkScope = next)}
-          onSelectTarget={selectTargetExclusive}
+          onSelectTarget={openTargetDocument}
           onToggleTarget={toggleTargetSelection}
           onRefreshLinkStatus={refreshLinkStatus}
           onCopyToClipboard={copyToClipboard}
@@ -959,7 +1267,7 @@
           busyEnvEmit={busy.env_emit}
           errorMessage={errorMessage}
           statusLine={statusLine}
-          onSelectEnvSet={selectEnvSet}
+          onSelectEnvSet={openEnvDocument}
           onSelectShell={(shell) => (selectedShell = shell)}
           onEnvEmit={handleEnvEmit}
           onCopyToClipboard={copyToClipboard}
@@ -976,7 +1284,7 @@
           busyScriptRun={busy.script_run}
           errorMessage={errorMessage}
           statusLine={statusLine}
-          onSelectScript={selectScript}
+          onSelectScript={openScriptDocument}
           onScriptStdin={(next) => (scriptStdin = next)}
           onScriptRun={handleScriptRun}
           onCopyToClipboard={copyToClipboard}
@@ -1002,7 +1310,7 @@
           activeMcpServer={activeMcpServer}
           errorMessage={errorMessage}
           statusLine={statusLine}
-          onSelectMcpServer={selectMcpServer}
+          onSelectMcpServer={openMcpDocument}
           onCopyToClipboard={copyToClipboard}
           onOpenManifestEditor={openManifestEditor}
           onCreateManifestObject={requestManifestInsert}

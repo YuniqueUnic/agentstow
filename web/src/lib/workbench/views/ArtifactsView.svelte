@@ -740,7 +740,7 @@
   <p class="status-line" aria-live="polite">{statusLine}</p>
 
   <div class="split surface">
-    <SplitView initialLeftPct={52} minLeftPx={360} minRightPx={360}>
+    <SplitView autoSaveId="workbench:artifacts:shell" initialLeftPct={52} minLeftPx={360} minRightPx={360}>
       {#snippet left()}
         <div class="pane">
           <div class="pane__title">

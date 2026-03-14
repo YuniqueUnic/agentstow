@@ -8,13 +8,24 @@
   type Props = {
     tabs: Tab[];
     active: string | null;
+    ariaLabel?: string;
+    emptyLabel?: string;
     onChange?: (next: string) => void;
     onClose?: (id: string) => void;
     onReorder?: (nextOrder: string[]) => void;
     onOpenContextMenu?: (id: string, x: number, y: number) => void;
   };
 
-  let { tabs, active, onChange, onClose, onReorder, onOpenContextMenu }: Props = $props();
+  let {
+    tabs,
+    active,
+    ariaLabel = 'Open editors',
+    emptyLabel = '（未打开任何对象）',
+    onChange,
+    onClose,
+    onReorder,
+    onOpenContextMenu
+  }: Props = $props();
 
   const resolvedActive = $derived.by(() => {
     if (!tabs.length) {
@@ -44,10 +55,10 @@
 </script>
 
 {#if !tabs.length}
-  <div class="editor-tabs muted">（未打开任何 artifact）</div>
+  <div class="editor-tabs muted">{emptyLabel}</div>
 {:else if resolvedActive}
-  <div class="editor-tabs" role="region" aria-label="打开的 artifacts">
-    <div class="editor-tabs__list" role="tablist" aria-label="Open editors">
+  <div class="editor-tabs" role="region" aria-label={ariaLabel}>
+    <div class="editor-tabs__list" role="tablist" aria-label={ariaLabel}>
       {#each tabs as tab (tab.id)}
         <div
           class={[

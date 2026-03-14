@@ -160,11 +160,10 @@
   .preview {
     height: 100%;
     margin: 0;
-    padding: 16px 18px;
-    border-radius: 12px;
-    background:
-      linear-gradient(180deg, color-mix(in oklch, var(--panel-elevated) 74%, var(--panel-bg)), var(--panel-bg));
-    border: 1px solid color-mix(in oklch, var(--line) 84%, transparent);
+    padding: 14px 16px 18px;
+    border-radius: 0;
+    background: transparent;
+    border: 0;
     overflow: auto;
     white-space: pre-wrap;
     font-family: 'IBM Plex Mono', 'SFMono-Regular', monospace;
@@ -180,11 +179,10 @@
 
   .markdown {
     height: 100%;
-    padding: 16px 18px 22px;
-    border-radius: 12px;
-    background:
-      linear-gradient(180deg, color-mix(in oklch, var(--panel-elevated) 70%, var(--panel-bg)), var(--panel-bg));
-    border: 1px solid color-mix(in oklch, var(--line) 84%, transparent);
+    padding: 14px 16px 22px;
+    border-radius: 0;
+    background: transparent;
+    border: 0;
     overflow: auto;
     color: var(--ink);
   }
@@ -210,10 +208,10 @@
   }
 
   .markdown :global(pre) {
-    background: color-mix(in oklch, var(--canvas-deep) 86%, transparent);
-    border: 1px solid color-mix(in oklch, var(--line) 78%, transparent);
+    background: color-mix(in oklch, var(--canvas-deep) 76%, transparent);
+    border: 1px solid color-mix(in oklch, var(--line) 62%, transparent);
     padding: 12px 14px;
-    border-radius: 10px;
+    border-radius: 6px;
     overflow: auto;
   }
 </style>
