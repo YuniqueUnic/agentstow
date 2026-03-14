@@ -121,12 +121,12 @@
 
   .tabs {
     display: flex;
-    gap: 8px;
+    gap: 0;
     align-items: center;
-    padding: 6px;
-    border-radius: 999px;
-    background: color-mix(in oklch, var(--surface-strong) 65%, white);
-    border: 1px solid color-mix(in oklch, var(--line) 78%, white);
+    padding: 3px;
+    border-radius: 10px;
+    background: color-mix(in oklch, var(--surface-strong) 72%, transparent);
+    border: 1px solid color-mix(in oklch, var(--line) 84%, transparent);
     width: fit-content;
   }
 
@@ -135,7 +135,7 @@
     border: 0;
     cursor: pointer;
     padding: 7px 12px;
-    border-radius: 999px;
+    border-radius: 8px;
     font-size: 13px;
     letter-spacing: -0.01em;
     color: var(--ink-soft);
@@ -144,8 +144,8 @@
 
   .tab--active {
     color: var(--ink);
-    background: color-mix(in oklch, var(--primary) 14%, white);
-    box-shadow: 0 10px 24px rgba(40, 34, 24, 0.14);
+    background: color-mix(in oklch, var(--primary) 20%, transparent);
+    box-shadow: inset 0 -2px 0 color-mix(in oklch, var(--primary) 78%, transparent);
   }
 
   .tab:focus-visible {
@@ -160,13 +160,14 @@
   .preview {
     height: 100%;
     margin: 0;
-    padding: 14px;
-    border-radius: 18px;
-    background: color-mix(in oklch, white 86%, transparent);
-    border: 1px solid color-mix(in oklch, var(--line) 68%, white);
+    padding: 16px 18px;
+    border-radius: 12px;
+    background:
+      linear-gradient(180deg, color-mix(in oklch, var(--panel-elevated) 74%, var(--panel-bg)), var(--panel-bg));
+    border: 1px solid color-mix(in oklch, var(--line) 84%, transparent);
     overflow: auto;
     white-space: pre-wrap;
-    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
+    font-family: 'IBM Plex Mono', 'SFMono-Regular', monospace;
     font-size: 13px;
     line-height: 1.55;
     color: var(--ink);
@@ -179,10 +180,11 @@
 
   .markdown {
     height: 100%;
-    padding: 14px;
-    border-radius: 18px;
-    background: color-mix(in oklch, white 92%, transparent);
-    border: 1px solid color-mix(in oklch, var(--line) 68%, white);
+    padding: 16px 18px 22px;
+    border-radius: 12px;
+    background:
+      linear-gradient(180deg, color-mix(in oklch, var(--panel-elevated) 70%, var(--panel-bg)), var(--panel-bg));
+    border: 1px solid color-mix(in oklch, var(--line) 84%, transparent);
     overflow: auto;
     color: var(--ink);
   }
@@ -194,24 +196,24 @@
   .markdown :global(h1),
   .markdown :global(h2),
   .markdown :global(h3) {
-    font-family: 'Manrope', sans-serif;
+    font-family: 'Space Grotesk', sans-serif;
     letter-spacing: -0.03em;
   }
 
   .markdown :global(code) {
-    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
+    font-family: 'IBM Plex Mono', 'SFMono-Regular', monospace;
     font-size: 0.95em;
-    background: color-mix(in oklch, var(--primary) 10%, white);
-    border: 1px solid color-mix(in oklch, var(--line) 66%, white);
+    background: color-mix(in oklch, var(--primary) 14%, transparent);
+    border: 1px solid color-mix(in oklch, var(--line) 74%, transparent);
     padding: 0.1em 0.35em;
-    border-radius: 10px;
+    border-radius: 6px;
   }
 
   .markdown :global(pre) {
-    background: color-mix(in oklch, var(--surface-strong) 70%, white);
-    border: 1px solid color-mix(in oklch, var(--line) 72%, white);
+    background: color-mix(in oklch, var(--canvas-deep) 86%, transparent);
+    border: 1px solid color-mix(in oklch, var(--line) 78%, transparent);
     padding: 12px 14px;
-    border-radius: 18px;
+    border-radius: 10px;
     overflow: auto;
   }
 </style>

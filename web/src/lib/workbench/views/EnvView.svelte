@@ -39,14 +39,6 @@
     onOpenManifestEditor,
     onCreateManifestObject
   }: Props = $props();
-
-  function activateOnKey(event: KeyboardEvent, action: () => void): void {
-    if (event.key !== 'Enter' && event.key !== ' ') {
-      return;
-    }
-    event.preventDefault();
-    action();
-  }
 </script>
 
 <aside class="explorer surface" aria-label="资源面板">
@@ -104,33 +96,25 @@
     </div>
 
     <div class="canvas__actions">
-      <md-text-button
-        onclick={onOpenManifestEditor}
-        onkeydown={(event) => activateOnKey(event, onOpenManifestEditor)}
-        role="button"
-        tabindex="0"
-      >
+      <button class="ui-button ui-button--subtle" type="button" onclick={onOpenManifestEditor}>
         编辑 manifest
-      </md-text-button>
-      <md-outlined-button
+      </button>
+      <button
+        class="ui-button ui-button--ghost"
         disabled={!selectedEnvSet || busyEnvEmit}
+        type="button"
         onclick={() => void onEnvEmit()}
-        onkeydown={(event) => activateOnKey(event, () => void onEnvEmit())}
-        role="button"
-        tabindex="0"
       >
         {busyEnvEmit ? '生成中…' : '生成脚本'}
-      </md-outlined-button>
-      <md-filled-tonal-button
+      </button>
+      <button
+        class="ui-button ui-button--primary"
         disabled={!envScript?.text}
+        type="button"
         onclick={() => void onCopyToClipboard(envScript?.text ?? '', '脚本')}
-        onkeydown={(event) =>
-          activateOnKey(event, () => void onCopyToClipboard(envScript?.text ?? '', '脚本'))}
-        role="button"
-        tabindex="0"
       >
         复制
-      </md-filled-tonal-button>
+      </button>
     </div>
   </div>
 

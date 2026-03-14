@@ -23,7 +23,7 @@
   let activeIndex = $state(0);
   let wasOpen = $state(false);
   let listEl = $state<HTMLDivElement | null>(null);
-  let fieldEl = $state<HTMLElement | null>(null);
+  let fieldEl = $state<HTMLInputElement | null>(null);
 
   function normalize(value: string): string {
     return value.trim().toLowerCase();
@@ -169,17 +169,19 @@
       }}
     >
       <div class="palette__head">
-        <md-outlined-text-field
+        <span class="palette__prompt mono" aria-hidden="true">&gt;</span>
+        <input
           bind:this={fieldEl}
-          label="Command"
+          class="palette__input"
+          type="text"
           placeholder="输入命令，或搜索 artifacts/targets…"
           value={query}
           oninput={(event) => {
-            const target = event.currentTarget as { value?: string } | null;
-            query = typeof target?.value === 'string' ? target.value : '';
+            const target = event.currentTarget as HTMLInputElement | null;
+            query = target?.value ?? '';
             activeIndex = 0;
           }}
-        ></md-outlined-text-field>
+        />
       </div>
 
       <div class="palette__results" bind:this={listEl} role="listbox" aria-label="Commands">

@@ -166,14 +166,6 @@
     return fallback;
   }
 
-  function activateOnKey(event: KeyboardEvent, action: () => void): void {
-    if (event.key !== 'Enter' && event.key !== ' ') {
-      return;
-    }
-    event.preventDefault();
-    action();
-  }
-
   function openDocument(id: string): void {
     if (!openTabs.includes(id)) {
       openTabs = [...openTabs, id];
@@ -585,15 +577,19 @@
       <strong>{filteredFileArtifacts.length}</strong>
     </div>
 
-    <md-outlined-text-field
-      label="搜索 artifacts"
-      placeholder="id 或 source path…"
-      value={artifactSearch}
-      oninput={(event) => {
-        const target = event.currentTarget as { value?: string } | null;
-        artifactSearch = typeof target?.value === 'string' ? target.value : '';
-      }}
-    ></md-outlined-text-field>
+    <label class="field field--compact">
+      <span class="field__label">搜索 artifacts</span>
+      <input
+        class="field__input mono"
+        type="search"
+        placeholder="id 或 source path…"
+        value={artifactSearch}
+        oninput={(event) => {
+          const target = event.currentTarget as HTMLInputElement | null;
+          artifactSearch = target?.value ?? '';
+        }}
+      />
+    </label>
 
     {#if !summary}
       <div class="list__static">
@@ -716,33 +712,25 @@
     </div>
 
     <div class="canvas__actions">
-      <md-outlined-button
+      <button
+        class="ui-button ui-button--ghost"
         disabled={!activeEditor?.dirty || activeEditor?.busySave}
+        type="button"
         onclick={() => void saveActiveArtifact()}
-        onkeydown={(event) => activateOnKey(event, () => void saveActiveArtifact())}
-        role="button"
-        tabindex="0"
       >
         {activeEditor?.busySave ? '保存中…' : activeEditor?.dirty ? '保存' : '已保存'}
-      </md-outlined-button>
-      <md-filled-tonal-button
+      </button>
+      <button
+        class="ui-button ui-button--primary"
         disabled={!activeTab || (!isManifestTab(activeTab) && !selectedProfile) || activeEditor?.busyPreview}
+        type="button"
         onclick={() => void refreshPreview()}
-        onkeydown={(event) => activateOnKey(event, () => void refreshPreview())}
-        role="button"
-        tabindex="0"
       >
         {activeEditor?.busyPreview ? '处理中…' : activeTab === MANIFEST_DOC_ID ? '说明 / 校验' : '渲染预览'}
-      </md-filled-tonal-button>
-      <md-text-button
-        disabled={!activeTab}
-        onclick={closeActiveArtifact}
-        onkeydown={(event) => activateOnKey(event, closeActiveArtifact)}
-        role="button"
-        tabindex="0"
-      >
+      </button>
+      <button class="ui-button ui-button--subtle" disabled={!activeTab} type="button" onclick={closeActiveArtifact}>
         关闭
-      </md-text-button>
+      </button>
     </div>
   </div>
 

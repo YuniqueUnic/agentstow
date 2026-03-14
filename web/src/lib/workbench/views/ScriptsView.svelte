@@ -36,14 +36,6 @@
     onOpenManifestEditor,
     onCreateManifestObject
   }: Props = $props();
-
-  function activateOnKey(event: KeyboardEvent, action: () => void): void {
-    if (event.key !== 'Enter' && event.key !== ' ') {
-      return;
-    }
-    event.preventDefault();
-    action();
-  }
 </script>
 
 <aside class="explorer surface" aria-label="资源面板">
@@ -98,33 +90,25 @@
     </div>
 
     <div class="canvas__actions">
-      <md-text-button
-        onclick={onOpenManifestEditor}
-        onkeydown={(event) => activateOnKey(event, onOpenManifestEditor)}
-        role="button"
-        tabindex="0"
-      >
+      <button class="ui-button ui-button--subtle" type="button" onclick={onOpenManifestEditor}>
         编辑 manifest
-      </md-text-button>
-      <md-outlined-button
+      </button>
+      <button
+        class="ui-button ui-button--ghost"
         disabled={!selectedScript || busyScriptRun}
+        type="button"
         onclick={() => void onScriptRun()}
-        onkeydown={(event) => activateOnKey(event, () => void onScriptRun())}
-        role="button"
-        tabindex="0"
       >
         {busyScriptRun ? '执行中…' : '运行'}
-      </md-outlined-button>
-      <md-filled-tonal-button
+      </button>
+      <button
+        class="ui-button ui-button--primary"
         disabled={!scriptRun?.stdout}
+        type="button"
         onclick={() => void onCopyToClipboard(scriptRun?.stdout ?? '', 'stdout')}
-        onkeydown={(event) =>
-          activateOnKey(event, () => void onCopyToClipboard(scriptRun?.stdout ?? '', 'stdout'))}
-        role="button"
-        tabindex="0"
       >
         复制 stdout
-      </md-filled-tonal-button>
+      </button>
     </div>
   </div>
 
@@ -161,16 +145,19 @@
                 </div>
               </div>
 
-              <md-outlined-text-field
-                label="stdin（可选）"
-                placeholder="输入 stdin 内容（会以文本写入）"
-                value={scriptStdin}
-                oninput={(event) => {
-                  const target = event.currentTarget as { value?: string } | null;
-                  onScriptStdin(typeof target?.value === 'string' ? target.value : '');
-                }}
-                supporting-text="仅允许执行 manifest 中声明的脚本。"
-              ></md-outlined-text-field>
+              <label class="field field--textarea">
+                <span class="field__label">stdin（可选）</span>
+                <textarea
+                  class="field__input field__textarea mono"
+                  rows="5"
+                  placeholder="输入 stdin 内容（会以文本写入）"
+                  oninput={(event) => {
+                    const target = event.currentTarget as HTMLTextAreaElement | null;
+                    onScriptStdin(target?.value ?? '');
+                  }}
+                >{scriptStdin}</textarea>
+                <span class="field__hint">仅允许执行 manifest 中声明的脚本。</span>
+              </label>
             {/if}
           </div>
         </div>

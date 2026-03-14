@@ -28,14 +28,6 @@
     onSetImpactMode,
     onRefreshImpact
   }: Props = $props();
-
-  function activateOnKey(event: KeyboardEvent, action: () => void): void {
-    if (event.key !== 'Enter' && event.key !== ' ') {
-      return;
-    }
-    event.preventDefault();
-    action();
-  }
 </script>
 
 <aside class="explorer surface" aria-label="资源面板">
@@ -98,15 +90,14 @@
     </div>
 
     <div class="canvas__actions">
-      <md-outlined-button
+      <button
+        class="ui-button ui-button--primary"
         disabled={busyImpact}
+        type="button"
         onclick={() => void onRefreshImpact()}
-        onkeydown={(event) => activateOnKey(event, () => void onRefreshImpact())}
-        role="button"
-        tabindex="0"
       >
         {busyImpact ? '分析中…' : '运行分析'}
-      </md-outlined-button>
+      </button>
     </div>
   </div>
 
@@ -209,4 +200,3 @@
     </SplitView>
   </div>
 </main>
-

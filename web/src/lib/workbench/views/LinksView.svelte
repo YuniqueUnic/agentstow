@@ -118,14 +118,6 @@
     return `${desired.kind} · ${desired.source_path}`;
   }
 
-  function activateOnKey(event: KeyboardEvent, action: () => void): void {
-    if (event.key !== 'Enter' && event.key !== ' ') {
-      return;
-    }
-    event.preventDefault();
-    action();
-  }
-
   const targetVirtualizer = createVirtualizer<HTMLDivElement, HTMLDivElement>({
     count: 0,
     getScrollElement: () => targetListEl,
@@ -155,27 +147,32 @@
       <strong>{filteredTargets.length}</strong>
     </div>
 
-    <md-outlined-text-field
-      label="搜索 targets"
-      placeholder="id/artifact/profile/path…"
-      value={linkSearch}
-      oninput={(event) => {
-        const target = event.currentTarget as { value?: string } | null;
-        onLinkSearch(typeof target?.value === 'string' ? target.value : '');
-      }}
-    ></md-outlined-text-field>
+    <label class="field field--compact">
+      <span class="field__label">搜索 targets</span>
+      <input
+        class="field__input mono"
+        type="search"
+        placeholder="id/artifact/profile/path…"
+        value={linkSearch}
+        oninput={(event) => {
+          const target = event.currentTarget as HTMLInputElement | null;
+          onLinkSearch(target?.value ?? '');
+        }}
+      />
+    </label>
 
-    <div class="toggle" role="group" aria-label="Targets 过滤">
-      <md-checkbox
+    <label class="toggle" aria-label="Targets 过滤">
+      <input
+        class="toggle__control"
+        type="checkbox"
         checked={linkUnhealthyOnly}
-        onchange={(event: Event) => {
-          const target = event.target as unknown as { checked?: unknown } | null;
+        onchange={(event) => {
+          const target = event.currentTarget as HTMLInputElement | null;
           onLinkUnhealthyOnly(Boolean(target?.checked));
         }}
-        aria-label="仅显示不健康项"
-      ></md-checkbox>
+      />
       <span>仅显示不健康项（已应用且 broken）</span>
-    </div>
+    </label>
 
     {#if targets.length === 0}
       <div class="list__static">
@@ -202,18 +199,17 @@
                     isActive ? 'list__item--active' : '',
                     !isActive && isSelected ? 'list__item--selected' : ''
                   ].join(' ')}
-                onclick={(event) => {
-                  const e = event as MouseEvent;
-                  if (e.metaKey || e.ctrlKey) {
-                    onToggleTarget(t.id);
-                    return;
-                  }
-                  onSelectTarget(t.id);
-                }}
-                onkeydown={(event) => activateOnKey(event, () => onSelectTarget(t.id))}
-                type="button"
-                title={t.target_path}
-              >
+                  onclick={(event) => {
+                    const e = event as MouseEvent;
+                    if (e.metaKey || e.ctrlKey) {
+                      onToggleTarget(t.id);
+                      return;
+                    }
+                    onSelectTarget(t.id);
+                  }}
+                  type="button"
+                  title={t.target_path}
+                >
                 <span
                   class={[
                     'list__dot',
@@ -242,27 +238,22 @@
     </div>
 
     <div class="canvas__actions">
-      <md-outlined-button
+      <button
+        class="ui-button ui-button--ghost"
         disabled={busyLinks}
+        type="button"
         onclick={() => void onRefreshLinkStatus()}
-        onkeydown={(event) => activateOnKey(event, () => void onRefreshLinkStatus())}
-        role="button"
-        tabindex="0"
       >
         {busyLinks ? '刷新中…' : '刷新 status'}
-      </md-outlined-button>
-      <md-filled-tonal-button
+      </button>
+      <button
+        class="ui-button ui-button--primary"
         disabled={!activeTarget}
+        type="button"
         onclick={() => void onCopyToClipboard(activeTarget?.target_path ?? '', '目标路径')}
-        onkeydown={(event) =>
-          activateOnKey(event, () =>
-            void onCopyToClipboard(activeTarget?.target_path ?? '', '目标路径')
-          )}
-        role="button"
-        tabindex="0"
       >
         复制路径
-      </md-filled-tonal-button>
+      </button>
     </div>
   </div>
 
@@ -352,49 +343,44 @@
                 </div>
               </div>
 
-              <div class="toggle" role="group" aria-label="Links 操作选项">
-                <md-checkbox
+              <label class="toggle" aria-label="Links 操作选项">
+                <input
+                  class="toggle__control"
+                  type="checkbox"
                   checked={linkForce}
-                  onchange={(event: Event) => {
-                    const target = event.target as unknown as { checked?: unknown } | null;
+                  onchange={(event) => {
+                    const target = event.currentTarget as HTMLInputElement | null;
                     onLinkForce(Boolean(target?.checked));
                   }}
-                  aria-label="force"
-                ></md-checkbox>
+                />
                 <span>force（覆盖冲突 target）</span>
-              </div>
+              </label>
 
               <div class="op__actions">
-                <md-outlined-button
+                <button
+                  class="ui-button ui-button--ghost"
                   disabled={busyLinkOp}
+                  type="button"
                   onclick={() => void onRunLinkOperation('plan')}
-                  onkeydown={(event) =>
-                    activateOnKey(event, () => void onRunLinkOperation('plan'))}
-                  role="button"
-                  tabindex="0"
                 >
                   {busyLinkOp && linkOpTitle === 'plan' ? '处理中…' : 'Plan'}
-                </md-outlined-button>
-                <md-filled-tonal-button
+                </button>
+                <button
+                  class="ui-button ui-button--primary"
                   disabled={busyLinkOp}
+                  type="button"
                   onclick={() => void onRunLinkOperation('apply')}
-                  onkeydown={(event) =>
-                    activateOnKey(event, () => void onRunLinkOperation('apply'))}
-                  role="button"
-                  tabindex="0"
                 >
                   {busyLinkOp && linkOpTitle === 'apply' ? '处理中…' : 'Apply'}
-                </md-filled-tonal-button>
-                <md-filled-tonal-button
+                </button>
+                <button
+                  class="ui-button ui-button--primary ui-button--danger"
                   disabled={busyLinkOp}
+                  type="button"
                   onclick={() => void onRunLinkOperation('repair')}
-                  onkeydown={(event) =>
-                    activateOnKey(event, () => void onRunLinkOperation('repair'))}
-                  role="button"
-                  tabindex="0"
                 >
                   {busyLinkOp && linkOpTitle === 'repair' ? '处理中…' : 'Repair'}
-                </md-filled-tonal-button>
+                </button>
               </div>
 
               {#if linkScope === 'selected'}

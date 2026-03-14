@@ -49,48 +49,52 @@
           '&.cm-editor': {
             height: '100%',
             background: 'transparent',
-            fontFamily:
-              'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace',
+            color: 'var(--ink)',
+            fontFamily: '"IBM Plex Mono", "SFMono-Regular", monospace',
             fontSize: '13px'
           },
           '.cm-scroller': {
             overflow: 'auto'
           },
           '.cm-content': {
-            padding: '14px 14px 28px'
+            padding: '16px 18px 36px'
           },
           '.cm-line': {
-            padding: '0 6px'
+            padding: '0 8px'
           },
           '.cm-gutters': {
             background: 'transparent',
             border: 'none',
-            color: 'color-mix(in oklch, var(--ink-soft) 70%, transparent)'
+            color: 'color-mix(in oklch, var(--ink-muted) 88%, transparent)'
           },
           '.cm-activeLine': {
-            background:
-              'color-mix(in oklch, var(--primary) 10%, color-mix(in oklch, white 80%, transparent))'
+            background: 'color-mix(in oklch, var(--primary) 12%, transparent)'
           },
           '.cm-activeLineGutter': {
             background: 'transparent',
             color: 'var(--ink)'
           },
           '.cm-selectionBackground': {
-            background: 'color-mix(in oklch, var(--primary) 22%, white)'
+            background: 'color-mix(in oklch, var(--primary) 32%, black)'
           },
           '&.cm-focused .cm-selectionBackground': {
-            background: 'color-mix(in oklch, var(--primary) 24%, white)'
+            background: 'color-mix(in oklch, var(--primary) 36%, black)'
           },
           '&.cm-focused': {
-            outline: '1px solid color-mix(in oklch, var(--primary) 30%, transparent)',
-            borderRadius: '10px',
-            boxShadow: '0 0 0 3px color-mix(in oklch, var(--primary) 10%, transparent)'
+            outline: '1px solid color-mix(in oklch, var(--primary) 42%, transparent)',
+            borderRadius: '12px',
+            boxShadow: '0 0 0 3px color-mix(in oklch, var(--primary) 16%, transparent)'
           },
           '.cm-cursor': {
-            borderLeftColor: 'color-mix(in oklch, var(--ink) 70%, transparent)'
+            borderLeftColor: 'color-mix(in oklch, var(--ink) 78%, transparent)'
+          },
+          '.cm-tooltip, .cm-panels': {
+            background: 'var(--panel-elevated)',
+            color: 'var(--ink)',
+            border: '1px solid color-mix(in oklch, var(--line) 90%, transparent)'
           }
         },
-        { dark: false }
+        { dark: true }
       );
 
       view = new cm.EditorView({
@@ -187,7 +191,7 @@
         <div class="editor__loading-title">编辑器加载失败</div>
         <div class="editor__loading-detail mono">{loadError}</div>
       {:else}
-        <md-circular-progress indeterminate></md-circular-progress>
+        <span class="editor__spinner" aria-hidden="true"></span>
         <div class="editor__loading-title">加载编辑器…</div>
       {/if}
     </div>
@@ -198,9 +202,11 @@
   .editor {
     height: 100%;
     position: relative;
-    border-radius: 10px;
-    background: color-mix(in oklch, var(--surface) 92%, white);
-    border: 1px solid color-mix(in oklch, var(--line) 78%, white);
+    border-radius: 12px;
+    background:
+      linear-gradient(180deg, color-mix(in oklch, var(--panel-elevated) 78%, var(--panel-bg)), var(--panel-bg));
+    border: 1px solid color-mix(in oklch, var(--line) 86%, transparent);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
   }
 
   .editor__host {
@@ -208,21 +214,30 @@
   }
 
   .editor :global(.cm-editor) {
-    border-radius: 10px;
+    border-radius: 12px;
   }
 
   .editor__loading {
     position: absolute;
-    inset: 10px;
-    border-radius: 8px;
-    border: 1px dashed color-mix(in oklch, var(--line) 72%, white);
-    background: color-mix(in oklch, white 86%, transparent);
+    inset: 12px;
+    border-radius: 10px;
+    border: 1px dashed color-mix(in oklch, var(--line) 70%, transparent);
+    background: color-mix(in oklch, var(--canvas-deep) 62%, transparent);
     display: grid;
     place-items: center;
     gap: 10px;
     padding: 16px;
     text-align: center;
     color: var(--ink-soft);
+  }
+
+  .editor__spinner {
+    width: 18px;
+    height: 18px;
+    border-radius: 999px;
+    border: 2px solid color-mix(in oklch, var(--line-strong) 42%, transparent);
+    border-top-color: var(--primary);
+    animation: editor-spin 0.9s linear infinite;
   }
 
   .editor__loading-title {
@@ -239,8 +254,14 @@
 
   .editor__loading--error {
     border-style: solid;
-    border-color: color-mix(in oklch, var(--danger) 22%, white);
-    background: color-mix(in oklch, var(--danger) 8%, white);
+    border-color: color-mix(in oklch, var(--danger) 34%, transparent);
+    background: color-mix(in oklch, var(--danger) 10%, transparent);
     color: color-mix(in oklch, var(--danger) 70%, var(--ink));
+  }
+
+  @keyframes editor-spin {
+    to {
+      transform: rotate(360deg);
+    }
   }
 </style>

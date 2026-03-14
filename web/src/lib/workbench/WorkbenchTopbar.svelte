@@ -27,37 +27,20 @@
     onSwitchWorkspace,
     onRefresh
   }: Props = $props();
-
-  function activateOnKey(event: KeyboardEvent, action: () => void): void {
-    if (event.key !== 'Enter' && event.key !== ' ') {
-      return;
-    }
-
-    event.preventDefault();
-    action();
-  }
 </script>
 
-<header class="topbar surface">
+<header class="topbar">
   <div class="topbar__brand">
     <span class="mark" aria-hidden="true"></span>
-    <div>
+    <div class="topbar__brand-copy">
       <strong>AgentStow</strong>
-      <span class="muted">workbench</span>
+      <span class="muted">local-first workbench</span>
     </div>
   </div>
 
   <div class="topbar__workspace" title={workspaceRoot ?? ''}>
-    <span class="muted">Workspace</span>
-    <span class="mono">{workspaceLabel}</span>
-    <md-text-button
-      onclick={onSwitchWorkspace}
-      onkeydown={(event) => activateOnKey(event, onSwitchWorkspace)}
-      role="button"
-      tabindex="0"
-    >
-      切换
-    </md-text-button>
+    <span class="topbar__crumb">workspace</span>
+    <span class="mono">{truncateMiddle(workspaceRoot ?? workspaceLabel, 72)}</span>
   </div>
 
   <div class="topbar__status">
@@ -70,23 +53,20 @@
   </div>
 
   <div class="topbar__actions">
-    <md-text-button
-      onclick={onOpenPalette}
-      onkeydown={(event) => activateOnKey(event, onOpenPalette)}
-      role="button"
-      tabindex="0"
-    >
-      Command
-      <span class="topbar__shortcut mono">Cmd/Ctrl+K</span>
-    </md-text-button>
-    <md-outlined-button
+    <button class="command-launcher" type="button" onclick={onOpenPalette}>
+      <span>Command</span>
+      <kbd class="topbar__shortcut">Cmd/Ctrl+K</kbd>
+    </button>
+    <button class="ui-button ui-button--ghost" type="button" onclick={onSwitchWorkspace}>
+      切换 workspace
+    </button>
+    <button
+      class="ui-button ui-button--primary"
       disabled={busySummary}
+      type="button"
       onclick={() => void onRefresh()}
-      onkeydown={(event) => activateOnKey(event, () => void onRefresh())}
-      role="button"
-      tabindex="0"
     >
-      刷新
-    </md-outlined-button>
+      {busySummary ? '刷新中…' : '同步视图'}
+    </button>
   </div>
 </header>

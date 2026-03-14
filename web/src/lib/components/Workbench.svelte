@@ -153,6 +153,39 @@
     return `${watchStatus.last_event} · ${formatRelativeTime(watchStatus.last_event_at)}`;
   });
 
+  const viewLabels: Record<ViewKey, string> = {
+    artifacts: 'Artifacts',
+    links: 'Links',
+    env: 'Env',
+    scripts: 'Scripts',
+    mcp: 'MCP',
+    impact: 'Impact'
+  };
+
+  const statusFocus = $derived.by(() => {
+    if (view === 'artifacts') {
+      return selectedArtifact ? `artifact:${selectedArtifact}` : 'manifest';
+    }
+    if (view === 'links') {
+      if (selectedTargets.length > 1) {
+        return `${selectedTargets.length} targets`;
+      }
+      return selectedTargetId ? `target:${selectedTargetId}` : 'targets';
+    }
+    if (view === 'env') {
+      return selectedEnvSet ? `env:${selectedEnvSet}` : 'env';
+    }
+    if (view === 'scripts') {
+      return selectedScript ? `script:${selectedScript}` : 'scripts';
+    }
+    if (view === 'mcp') {
+      return selectedMcpServerId ? `mcp:${selectedMcpServerId}` : 'mcp';
+    }
+    return selectedArtifact || selectedProfile
+      ? `impact:${selectedArtifact ?? 'none'}@${selectedProfile ?? 'none'}`
+      : 'impact';
+  });
+
   function describeError(error: unknown, fallback: string): string {
     if (error instanceof ApiClientError) {
       return error.message;
@@ -161,15 +194,6 @@
       return error.message;
     }
     return fallback;
-  }
-
-  function activateOnKey(event: KeyboardEvent, action: () => void): void {
-    if (event.key !== 'Enter' && event.key !== ' ') {
-      return;
-    }
-
-    event.preventDefault();
-    action();
   }
 
   function returnToWorkspaceBoot(): void {
@@ -990,6 +1014,32 @@
         commands={paletteCommands}
         onClose={() => (paletteOpen = false)}
       />
+
+      <footer class="statusbar" aria-live="polite">
+        <div class="statusbar__group">
+          <span
+            class={[
+              'statusbar__badge',
+              errorMessage ? 'statusbar__badge--error' : 'statusbar__badge--view'
+            ].join(' ')}
+          >
+            {errorMessage ? '问题' : viewLabels[view]}
+          </span>
+          <span class="statusbar__text" title={errorMessage ?? statusLine}>
+            {truncateMiddle(errorMessage ?? statusLine, 120)}
+          </span>
+        </div>
+
+        <div class="statusbar__group statusbar__group--right">
+          {#if selectedProfile}
+            <span class="statusbar__item">
+              profile <strong class="mono">{selectedProfile}</strong>
+            </span>
+          {/if}
+          <span class="statusbar__item mono">{statusFocus}</span>
+          <span class="statusbar__item mono">{workspaceLabel}</span>
+        </div>
+      </footer>
     </div>
   {/if}
 </div>

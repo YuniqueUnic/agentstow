@@ -26,14 +26,6 @@
     onOpenManifestEditor,
     onCreateManifestObject
   }: Props = $props();
-
-  function activateOnKey(event: KeyboardEvent, action: () => void): void {
-    if (event.key !== 'Enter' && event.key !== ' ') {
-      return;
-    }
-    event.preventDefault();
-    action();
-  }
 </script>
 
 <aside class="explorer surface" aria-label="资源面板">
@@ -91,24 +83,17 @@
     </div>
 
     <div class="canvas__actions">
-      <md-text-button
-        onclick={onOpenManifestEditor}
-        onkeydown={(event) => activateOnKey(event, onOpenManifestEditor)}
-        role="button"
-        tabindex="0"
-      >
+      <button class="ui-button ui-button--subtle" type="button" onclick={onOpenManifestEditor}>
         编辑 manifest
-      </md-text-button>
-      <md-outlined-button
+      </button>
+      <button
+        class="ui-button ui-button--ghost"
         disabled={!activeMcpServer}
+        type="button"
         onclick={() => void onCopyToClipboard(activeMcpServer?.location ?? '', 'location')}
-        onkeydown={(event) =>
-          activateOnKey(event, () => void onCopyToClipboard(activeMcpServer?.location ?? '', 'location'))}
-        role="button"
-        tabindex="0"
       >
         复制 location
-      </md-outlined-button>
+      </button>
     </div>
   </div>
 
