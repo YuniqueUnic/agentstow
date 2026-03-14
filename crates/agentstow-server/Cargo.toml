@@ -23,6 +23,7 @@ notify-debouncer-full.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
+tempfile.workspace = true
 time.workspace = true
 tokio.workspace = true
 tower-http.workspace = true

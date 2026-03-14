@@ -59,6 +59,13 @@ pub struct WorkspaceInitResponse {
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
+pub struct ManifestSourceResponse {
+    pub source_path: String,
+    pub content: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct ArtifactSourceResponse {
     pub artifact_id: String,
     pub kind: ArtifactKindResponse,
@@ -71,6 +78,12 @@ pub struct ArtifactSourceResponse {
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct ArtifactSourceUpdateRequest {
+    pub content: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct ManifestSourceUpdateRequest {
     pub content: String,
 }
 
@@ -437,8 +450,10 @@ pub fn export_bindings() -> Result<(), ts_rs::ExportError> {
     WorkspaceSelectResponse::export_all(&config)?;
     WorkspaceInitRequest::export_all(&config)?;
     WorkspaceInitResponse::export_all(&config)?;
+    ManifestSourceResponse::export_all(&config)?;
     ArtifactSourceResponse::export_all(&config)?;
     ArtifactSourceUpdateRequest::export_all(&config)?;
+    ManifestSourceUpdateRequest::export_all(&config)?;
     RenderResponse::export_all(&config)?;
     ShellKindResponse::export_all(&config)?;
     EnvEmitRequest::export_all(&config)?;

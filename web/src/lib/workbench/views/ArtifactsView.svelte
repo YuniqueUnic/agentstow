@@ -9,10 +9,17 @@
   import {
     ApiClientError,
     getArtifactSource,
+    getManifestSource,
     renderArtifact,
-    updateArtifactSource
+    updateArtifactSource,
+    updateManifestSource
   } from '$lib/api/client';
-  import type { ArtifactSourceResponse, WorkspaceSummaryResponse } from '$lib/types';
+  import type {
+    ArtifactSourceResponse,
+    ManifestSourceResponse,
+    ValidateAsResponse,
+    WorkspaceSummaryResponse
+  } from '$lib/types';
   import { basenameFromPath, truncateMiddle } from '$lib/utils/format';
   import { buildArtifactTree, relativeSourcePath } from '$lib/workbench/artifacts/artifact_tree';
   import ArtifactTreeNode from '$lib/workbench/artifacts/ArtifactTreeNode.svelte';
@@ -25,6 +32,7 @@
     onSelectProfile: (id: string) => void;
     onFocusArtifact?: (id: string | null) => void;
     onOpenTarget?: (id: string) => void;
+    onRefreshWorkspace?: () => Promise<void>;
     requestedArtifactId?: string | null;
     onRequestHandled?: (id: string) => void;
     shortcutsEnabled?: boolean;
@@ -40,6 +48,7 @@
     onSelectProfile,
     onFocusArtifact,
     onOpenTarget,
+    onRefreshWorkspace,
     requestedArtifactId,
     onRequestHandled,
     shortcutsEnabled,
@@ -50,7 +59,7 @@
   }: Props = $props();
 
   type EditorState = {
-    source: ArtifactSourceResponse | null;
+    source: ArtifactSourceResponse | ManifestSourceResponse | null;
     editorText: string;
     previewText: string;
     dirty: boolean;
@@ -58,6 +67,8 @@
     busySave: boolean;
     busyPreview: boolean;
   };
+
+  const MANIFEST_DOC_ID = '$manifest';
 
   let openTabs = $state<string[]>([]);
   let activeTab = $state<string | null>(null);
@@ -74,7 +85,7 @@
   const profiles = $derived(summary?.profiles ?? []);
   const profileIds = $derived(profiles.map((p) => p.id));
   const usageTargets = $derived.by(() => {
-    if (!summary || !activeTab) {
+    if (!summary || !activeTab || activeTab === MANIFEST_DOC_ID) {
       return [];
     }
     return summary.targets.filter((t) => t.artifact_id === activeTab);
@@ -103,11 +114,37 @@
 
   const tabsModel = $derived.by(() =>
     openTabs.map((id) => {
-      const label = id;
+      const label = id === MANIFEST_DOC_ID ? 'agentstow.toml' : id;
       const dirty = editors[id]?.dirty ?? false;
       return { id, label, dirty };
     })
   );
+
+  function isManifestTab(id: string | null): boolean {
+    return id === MANIFEST_DOC_ID;
+  }
+
+  function sourcePathOf(
+    source: ArtifactSourceResponse | ManifestSourceResponse | null | undefined
+  ): string | null {
+    return source?.source_path ?? null;
+  }
+
+  function savedContentOf(
+    source: ArtifactSourceResponse | ManifestSourceResponse | null | undefined
+  ): string {
+    return source?.content ?? '';
+  }
+
+  function validateAsOf(
+    tabId: string | null,
+    source: ArtifactSourceResponse | ManifestSourceResponse | null | undefined
+  ): ValidateAsResponse {
+    if (tabId === MANIFEST_DOC_ID) {
+      return 'toml';
+    }
+    return source && 'validate_as' in source ? source.validate_as : 'none';
+  }
 
   function describeError(error: unknown, fallback: string): string {
     if (error instanceof ApiClientError) {
@@ -127,13 +164,13 @@
     action();
   }
 
-  function openArtifact(id: string): void {
+  function openDocument(id: string): void {
     if (!openTabs.includes(id)) {
       openTabs = [...openTabs, id];
     }
     activeTab = id;
     rightMode = 'preview';
-    setStatusLine(`已打开 artifact：${id}`);
+    setStatusLine(id === MANIFEST_DOC_ID ? '已打开 workspace manifest。' : `已打开 artifact：${id}`);
   }
 
   function closeActiveArtifact(): void {
@@ -216,8 +253,8 @@
     setStatusLine(`dir artifact（${artifactId}）当前仅展示，不支持 source 编辑。`);
   }
 
-  async function loadArtifactSource(artifactId: string): Promise<void> {
-    editors[artifactId] ??= {
+  async function loadEditorSource(documentId: string): Promise<void> {
+    editors[documentId] ??= {
       source: null,
       editorText: '',
       previewText: '',
@@ -227,7 +264,7 @@
       busyPreview: false
     };
 
-    const st = editors[artifactId]!;
+    const st = editors[documentId]!;
     if (st.busySource || st.source) {
       return;
     }
@@ -235,7 +272,10 @@
     st.busySource = true;
     setErrorMessage(null);
     try {
-      const source = await getArtifactSource(artifactId);
+      const source =
+        documentId === MANIFEST_DOC_ID
+          ? await getManifestSource()
+          : await getArtifactSource(documentId);
       st.source = source;
       st.editorText = source.content;
       st.dirty = false;
@@ -243,7 +283,9 @@
       st.source = null;
       st.editorText = '';
       st.dirty = false;
-      setErrorMessage(describeError(error, '无法读取 artifact source。'));
+      setErrorMessage(
+        describeError(error, documentId === MANIFEST_DOC_ID ? '无法读取 manifest。' : '无法读取 artifact source。')
+      );
     } finally {
       st.busySource = false;
     }
@@ -264,10 +306,16 @@
     st.busySave = true;
     setErrorMessage(null);
     try {
-      const updated = await updateArtifactSource(activeTab, st.editorText);
+      const updated =
+        activeTab === MANIFEST_DOC_ID
+          ? await updateManifestSource({ content: st.editorText })
+          : await updateArtifactSource(activeTab, st.editorText);
       st.source = updated;
       st.dirty = false;
-      setStatusLine('已保存 source。');
+      setStatusLine(activeTab === MANIFEST_DOC_ID ? '已保存 manifest。' : '已保存 source。');
+      if (activeTab === MANIFEST_DOC_ID) {
+        await onRefreshWorkspace?.();
+      }
     } catch (error) {
       setErrorMessage(describeError(error, '保存失败。'));
     } finally {
@@ -276,7 +324,7 @@
   }
 
   async function refreshPreview(): Promise<void> {
-    if (!activeTab || !selectedProfile) {
+    if (!activeTab) {
       return;
     }
     const st = editors[activeTab];
@@ -287,9 +335,17 @@
     st.busyPreview = true;
     setErrorMessage(null);
     try {
-      const resp = await renderArtifact(activeTab, selectedProfile);
-      st.previewText = resp.text;
-      setStatusLine('已刷新渲染预览。');
+      if (activeTab === MANIFEST_DOC_ID) {
+        st.previewText =
+          'Manifest editor\n\n在这里直接编辑 workspace 的 profiles / artifacts / targets / env_sets / scripts / mcp_servers。\n保存后刷新左侧资源树，即可看到新增或变更的对象。';
+        setStatusLine('已刷新 manifest 说明面板。');
+      } else if (selectedProfile) {
+        const resp = await renderArtifact(activeTab, selectedProfile);
+        st.previewText = resp.text;
+        setStatusLine('已刷新渲染预览。');
+      } else {
+        st.previewText = '请选择 profile 后再渲染预览。';
+      }
     } catch (error) {
       st.previewText = '';
       setErrorMessage(describeError(error, '渲染预览失败。'));
@@ -360,10 +416,12 @@
     if (autoOpened) {
       return;
     }
-    if (!fileArtifacts.length) {
+    if (fileArtifacts.length) {
+      openDocument(fileArtifacts[0].id);
+      autoOpened = true;
       return;
     }
-    openArtifact(fileArtifacts[0].id);
+    openDocument(MANIFEST_DOC_ID);
     autoOpened = true;
   });
 
@@ -371,7 +429,7 @@
     if (!activeTab) {
       return;
     }
-    void loadArtifactSource(activeTab);
+    void loadEditorSource(activeTab);
   });
 
   $effect(() => {
@@ -388,16 +446,19 @@
       onRequestHandled?.(req);
       return;
     }
-    openArtifact(req);
+    openDocument(req);
     onRequestHandled?.(req);
   });
 
   $effect(() => {
-    onFocusArtifact?.(activeTab);
+    onFocusArtifact?.(isManifestTab(activeTab) ? null : activeTab);
   });
 
   $effect(() => {
-    if (!activeTab || !selectedProfile) {
+    if (!activeTab) {
+      return;
+    }
+    if (!isManifestTab(activeTab) && !selectedProfile) {
       return;
     }
     const st = editors[activeTab];
@@ -411,19 +472,40 @@
     if (!activeTab) {
       return '未选择 artifact';
     }
+    if (activeTab === MANIFEST_DOC_ID) {
+      return 'Workspace Manifest · agentstow.toml';
+    }
     const st = editors[activeTab];
-    const file = st?.source?.source_path ? basenameFromPath(st.source.source_path) : null;
+    const sourcePath = sourcePathOf(st?.source);
+    const file = sourcePath ? basenameFromPath(sourcePath) : null;
     return file ? `${activeTab} · ${file}` : activeTab;
   });
 
-  const activeValidateAs = $derived(activeEditor?.source?.validate_as ?? 'none');
+  const activeValidateAs = $derived(validateAsOf(activeTab, activeEditor?.source));
   const previewMode = $derived(activeValidateAs === 'markdown' ? 'markdown' : 'plain');
 </script>
 
 <aside class="explorer surface" aria-label="资源面板">
   <div class="explorer__head">
     <p class="explorer__eyebrow">ARTIFACTS</p>
-    <p class="explorer__hint">打开 artifact 后在右侧编辑与预览</p>
+    <p class="explorer__hint">打开 artifact 或 manifest 后在右侧编辑、渲染与对比</p>
+  </div>
+
+  <div class="explorer__section">
+    <div class="section__title">
+      <span>Workspace Config</span>
+      <strong>1</strong>
+    </div>
+    <button
+      class={['list__item', activeTab === MANIFEST_DOC_ID ? 'list__item--active' : ''].join(' ')}
+      onclick={() => openDocument(MANIFEST_DOC_ID)}
+      type="button"
+      title="agentstow.toml"
+    >
+      <span class="list__dot list__dot--accent" aria-hidden="true"></span>
+      <span class="list__name">agentstow.toml</span>
+      <span class="list__meta">workspace</span>
+    </button>
   </div>
 
   <div class="explorer__section">
@@ -465,7 +547,7 @@
             depth={0}
             activeArtifactId={activeTab}
             searchActive={artifactSearch.trim().length > 0}
-            onOpenArtifact={openArtifact}
+            onOpenArtifact={openDocument}
           />
         {/each}
       </ul>
@@ -500,7 +582,7 @@
     </div>
   {/if}
 
-  {#if activeTab}
+  {#if activeTab && activeTab !== MANIFEST_DOC_ID}
     <div class="explorer__section">
       <div class="section__title">
         <span>Used By Targets</span>
@@ -557,7 +639,9 @@
   <div class="canvas__head">
     <div class="title">
       <strong>{titleLabel}</strong>
-      <span class="muted">{selectedProfile ? `· ${selectedProfile}` : ''}</span>
+      <span class="muted">
+        {activeTab === MANIFEST_DOC_ID ? '· workspace config' : selectedProfile ? `· ${selectedProfile}` : ''}
+      </span>
     </div>
 
     <div class="canvas__actions">
@@ -571,13 +655,13 @@
         {activeEditor?.busySave ? '保存中…' : activeEditor?.dirty ? '保存' : '已保存'}
       </md-outlined-button>
       <md-filled-tonal-button
-        disabled={!activeTab || !selectedProfile || activeEditor?.busyPreview}
+        disabled={!activeTab || (!isManifestTab(activeTab) && !selectedProfile) || activeEditor?.busyPreview}
         onclick={() => void refreshPreview()}
         onkeydown={(event) => activateOnKey(event, () => void refreshPreview())}
         role="button"
         tabindex="0"
       >
-        {activeEditor?.busyPreview ? '渲染中…' : '渲染预览'}
+        {activeEditor?.busyPreview ? '处理中…' : activeTab === MANIFEST_DOC_ID ? '说明 / 校验' : '渲染预览'}
       </md-filled-tonal-button>
       <md-text-button
         disabled={!activeTab}
@@ -632,7 +716,7 @@
                     return;
                   }
                   st.editorText = next;
-                  st.dirty = st.source?.content !== next;
+                  st.dirty = savedContentOf(st.source) !== next;
                 }}
               />
             {/if}
@@ -659,7 +743,7 @@
 
               <Tabs.Content class="tabs__panel" value="diff">
                 <DiffViewer
-                  original={activeEditor?.source?.content ?? ''}
+                  original={savedContentOf(activeEditor?.source)}
                   modified={activeEditor?.editorText ?? ''}
                   fromLabel={activeTab ? `${activeTab} (saved)` : 'saved'}
                   toLabel={activeTab ? `${activeTab} (edited)` : 'edited'}
@@ -689,7 +773,7 @@
         if (!tabMenu) {
           return;
         }
-        openArtifact(tabMenu.id);
+        openDocument(tabMenu.id);
         closeTabMenu();
       }}
     >
@@ -732,22 +816,22 @@
         if (!tabMenu) {
           return;
         }
-        void copyToClipboard(tabMenu.id, 'artifact id');
+        void copyToClipboard(tabMenu.id === MANIFEST_DOC_ID ? 'agentstow.toml' : tabMenu.id, '文档标识');
         closeTabMenu();
       }}
     >
-      复制 artifact id
+      复制文档标识
     </button>
     <button
       class="context-menu__item"
       type="button"
       role="menuitem"
-      disabled={!tabMenu || !editors[tabMenu.id]?.source?.source_path}
+      disabled={!tabMenu || !sourcePathOf(editors[tabMenu.id]?.source)}
       onclick={() => {
         if (!tabMenu) {
           return;
         }
-        const p = editors[tabMenu.id]?.source?.source_path ?? '';
+        const p = sourcePathOf(editors[tabMenu.id]?.source) ?? '';
         void copyToClipboard(p, 'source path');
         closeTabMenu();
       }}

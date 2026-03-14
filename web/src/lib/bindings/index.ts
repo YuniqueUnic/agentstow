@@ -23,6 +23,8 @@ export type { LinkRecordResponse } from './LinkRecordResponse';
 export type { LinkRepairRequest } from './LinkRepairRequest';
 export type { LinkStatusResponseItem } from './LinkStatusResponseItem';
 export type { ManifestResponse } from './ManifestResponse';
+export type { ManifestSourceResponse } from './ManifestSourceResponse';
+export type { ManifestSourceUpdateRequest } from './ManifestSourceUpdateRequest';
 export type { McpServerSummaryResponse } from './McpServerSummaryResponse';
 export type { McpTransportKindResponse } from './McpTransportKindResponse';
 export type { ProfileDetailResponse } from './ProfileDetailResponse';

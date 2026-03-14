@@ -17,11 +17,11 @@ use agentstow_web_types::{
     ImpactSubjectKindResponse, InstallMethodResponse, LinkApplyRequest, LinkDesiredInstallResponse,
     LinkOperationActionResponse, LinkOperationItemResponse, LinkOperationResponse,
     LinkPlanItemResponse, LinkPlanRequest, LinkRecordResponse, LinkRepairRequest,
-    LinkStatusResponseItem, ManifestResponse, McpServerSummaryResponse, McpTransportKindResponse,
-    ProfileDetailResponse, ProfileSummaryResponse, ProfileVarResponse, RenderResponse,
-    ScriptRunResponse, ScriptSummaryResponse, ShellKindResponse, TargetSummaryResponse,
-    ValidateAsResponse, ValidationIssueResponse, WatchModeResponse, WatchStatusResponse,
-    WorkspaceCountsResponse, WorkspaceSummaryResponse,
+    LinkStatusResponseItem, ManifestResponse, ManifestSourceResponse, McpServerSummaryResponse,
+    McpTransportKindResponse, ProfileDetailResponse, ProfileSummaryResponse, ProfileVarResponse,
+    RenderResponse, ScriptRunResponse, ScriptSummaryResponse, ShellKindResponse,
+    TargetSummaryResponse, ValidateAsResponse, ValidationIssueResponse, WatchModeResponse,
+    WatchStatusResponse, WorkspaceCountsResponse, WorkspaceSummaryResponse,
 };
 use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
@@ -191,6 +191,40 @@ impl WorkspaceQueryService {
             source_path: normalize_for_display(&source_path),
             template: artifact_def.template,
             validate_as: validate_as_response(artifact_def.validate_as),
+            content: content.to_string(),
+        })
+    }
+
+    pub(crate) fn manifest_source(&self) -> Result<ManifestSourceResponse> {
+        let manifest_path = self
+            .workspace_root
+            .join(agentstow_manifest::DEFAULT_MANIFEST_FILE);
+        let content = fs_err::read_to_string(&manifest_path).map_err(AgentStowError::from)?;
+
+        Ok(ManifestSourceResponse {
+            source_path: normalize_for_display(&manifest_path),
+            content,
+        })
+    }
+
+    pub(crate) fn update_manifest_source(&self, content: &str) -> Result<ManifestSourceResponse> {
+        let manifest_path = self
+            .workspace_root
+            .join(agentstow_manifest::DEFAULT_MANIFEST_FILE);
+        let mut temp =
+            tempfile::NamedTempFile::new_in(&self.workspace_root).map_err(AgentStowError::from)?;
+        use std::io::Write as _;
+        temp.write_all(content.as_bytes())
+            .map_err(AgentStowError::from)?;
+        temp.flush().map_err(AgentStowError::from)?;
+
+        // Validate before replacing the real manifest to keep the workspace recoverable.
+        Manifest::load_from_path(temp.path())?;
+        temp.persist(&manifest_path)
+            .map_err(|error| AgentStowError::Other(anyhow::anyhow!(error.error)))?;
+
+        Ok(ManifestSourceResponse {
+            source_path: normalize_for_display(&manifest_path),
             content: content.to_string(),
         })
     }

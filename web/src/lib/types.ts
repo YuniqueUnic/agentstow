@@ -24,6 +24,8 @@ export type {
   LinkRepairRequest,
   LinkStatusResponseItem,
   ManifestResponse,
+  ManifestSourceResponse,
+  ManifestSourceUpdateRequest,
   McpServerSummaryResponse,
   McpTransportKindResponse,
   ProfileDetailResponse,

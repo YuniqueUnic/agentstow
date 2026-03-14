@@ -3,8 +3,9 @@ use std::sync::Arc;
 use agentstow_core::{AgentStowError, ArtifactId, ProfileName};
 use agentstow_web_types::{
     ApiError, ArtifactSourceUpdateRequest, EnvEmitRequest, HealthResponse, LinkApplyRequest,
-    LinkPlanRequest, LinkRepairRequest, ScriptRunRequest, WorkspaceInitRequest,
-    WorkspaceInitResponse, WorkspaceSelectRequest, WorkspaceSelectResponse, WorkspaceStateResponse,
+    LinkPlanRequest, LinkRepairRequest, ManifestSourceUpdateRequest, ScriptRunRequest,
+    WorkspaceInitRequest, WorkspaceInitResponse, WorkspaceSelectRequest, WorkspaceSelectResponse,
+    WorkspaceStateResponse,
 };
 use axum::Router;
 use axum::extract::{Path as AxumPath, Query, State};
@@ -25,6 +26,10 @@ pub(crate) fn routes() -> Router<Arc<ServerState>> {
         )
         .route("/api/workspace/init", post(api_workspace_init))
         .route("/api/manifest", get(api_manifest))
+        .route(
+            "/api/manifest/source",
+            get(api_manifest_source).put(api_manifest_source_update),
+        )
         .route("/api/render", get(api_render))
         .route("/api/links", get(api_links))
         .route("/api/link-status", get(api_link_status))
@@ -190,6 +195,27 @@ async fn api_manifest(State(st): State<Arc<ServerState>>) -> Response {
         Ok(response) => Json(response).into_response(),
         Err(error) => api_error(StatusCode::BAD_REQUEST, error),
     }
+}
+
+async fn api_manifest_source(State(st): State<Arc<ServerState>>) -> Response {
+    let queries = match queries_from_state(&st).await {
+        Ok(queries) => queries,
+        Err(error) => return api_error(StatusCode::BAD_REQUEST, error),
+    };
+
+    handle_result(queries.manifest_source())
+}
+
+async fn api_manifest_source_update(
+    State(st): State<Arc<ServerState>>,
+    Json(req): Json<ManifestSourceUpdateRequest>,
+) -> Response {
+    let queries = match queries_from_state(&st).await {
+        Ok(queries) => queries,
+        Err(error) => return api_error(StatusCode::BAD_REQUEST, error),
+    };
+
+    handle_result(queries.update_manifest_source(&req.content))
 }
 
 async fn api_render(

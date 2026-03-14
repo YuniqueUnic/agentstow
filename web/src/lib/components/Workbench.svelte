@@ -173,17 +173,27 @@
       workspace_root: workspaceRoot,
       manifest_present: false
     };
+    summary = null;
+    linkStatus = null;
+    linkOp = null;
+    linkOpTitle = null;
+    impact = null;
+    envScript = null;
+    scriptRun = null;
     statusLine = '请选择一个 workspace。';
   }
 
-  async function refreshWorkspaceState(): Promise<void> {
+  async function refreshWorkspaceState(): Promise<WorkspaceStateResponse | null> {
     try {
-      workspaceState = await getWorkspaceState();
-      if (workspaceInput.trim().length === 0 && workspaceState.workspace_root) {
-        workspaceInput = workspaceState.workspace_root;
+      const nextState = await getWorkspaceState();
+      workspaceState = nextState;
+      if (workspaceInput.trim().length === 0 && nextState.workspace_root) {
+        workspaceInput = nextState.workspace_root;
       }
+      return nextState;
     } catch (error) {
       errorMessage = describeError(error, '无法读取 workspace 状态。');
+      return null;
     }
   }
 
@@ -734,10 +744,10 @@
     window.addEventListener('keydown', onKeyDown);
 
     void (async () => {
-      await refreshWorkspaceState();
-      if (manifestPresent) {
+      const nextState = await refreshWorkspaceState();
+      if (nextState?.manifest_present) {
         await bootstrapConfigured();
-      } else if (workspaceState?.workspace_root) {
+      } else if (nextState?.workspace_root) {
         statusLine = '当前目录没有 manifest。你可以初始化或切换到已有 workspace。';
       } else {
         statusLine = '请选择一个 workspace。';
@@ -755,8 +765,12 @@
 
   $effect(() => {
     if (!manifestPresent) {
-      linkStatus = null;
-      impact = null;
+      if (linkStatus !== null) {
+        linkStatus = null;
+      }
+      if (impact !== null) {
+        impact = null;
+      }
       return;
     }
 
@@ -805,6 +819,7 @@
           onSelectProfile={selectProfile}
           onFocusArtifact={focusArtifact}
           onOpenTarget={openTargetInLinks}
+          onRefreshWorkspace={bootstrapConfigured}
           requestedArtifactId={artifactRequestId}
           onRequestHandled={(id) => {
             if (artifactRequestId === id) {

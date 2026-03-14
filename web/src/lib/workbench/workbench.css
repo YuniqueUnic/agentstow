@@ -121,11 +121,20 @@
 
 .workbench {
   height: 100vh;
-  padding: clamp(12px, 2.2vw, 22px);
+  padding: 0;
   display: grid;
-  grid-template-columns: 86px minmax(260px, 320px) minmax(0, 1fr);
-  grid-template-rows: 64px 1fr;
-  gap: 14px;
+  grid-template-columns: 64px minmax(280px, 340px) minmax(0, 1fr);
+  grid-template-rows: 48px 1fr;
+  gap: 0;
+  background:
+    linear-gradient(180deg, color-mix(in oklch, var(--surface) 70%, white), var(--canvas));
+}
+
+.workbench .surface {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
 }
 
 .topbar {
@@ -133,7 +142,10 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 18px;
+  min-height: 48px;
+  padding: 0 14px;
+  background: color-mix(in oklch, var(--surface) 74%, white);
+  border-bottom: 1px solid color-mix(in oklch, var(--line) 82%, white);
 }
 
 .topbar__brand {
@@ -143,11 +155,11 @@
 }
 
 .mark {
-  width: 14px;
-  height: 14px;
-  border-radius: 5px;
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
   background: linear-gradient(135deg, var(--accent), var(--primary));
-  box-shadow: 0 0 0 4px color-mix(in oklch, var(--primary) 10%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--primary) 10%, transparent);
 }
 
 .topbar__brand strong {
@@ -220,18 +232,20 @@
 }
 
 .rail {
-  padding: 10px 8px;
+  padding: 8px 6px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 4px;
   align-items: stretch;
+  background: color-mix(in oklch, var(--surface-muted) 84%, white);
+  border-right: 1px solid color-mix(in oklch, var(--line) 82%, white);
 }
 
 .rail__item {
   border: 0;
   background: transparent;
-  padding: 10px 8px;
-  border-radius: 22px;
+  padding: 8px 6px;
+  border-radius: 10px;
   display: grid;
   gap: 4px;
   justify-items: center;
@@ -241,21 +255,21 @@
 }
 
 .rail__item--active {
-  background: color-mix(in oklch, var(--primary) 14%, white);
+  background: color-mix(in oklch, var(--primary) 12%, white);
   color: color-mix(in oklch, var(--primary) 62%, var(--ink));
 }
 
 .rail__glyph {
-  width: 40px;
-  height: 40px;
-  border-radius: 18px;
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
   display: grid;
   place-items: center;
   font-family: 'Manrope', sans-serif;
-  font-size: 16px;
-  letter-spacing: -0.04em;
-  background: color-mix(in oklch, white 84%, transparent);
-  border: 1px solid color-mix(in oklch, var(--line) 66%, white);
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  background: transparent;
+  border: 1px solid transparent;
 }
 
 .rail__label {
@@ -265,16 +279,19 @@
 }
 
 .explorer {
-  padding: 16px 16px 18px;
+  padding: 10px 0 12px;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 12px;
   overflow: hidden;
+  background: color-mix(in oklch, var(--surface-muted) 78%, white);
+  border-right: 1px solid color-mix(in oklch, var(--line) 82%, white);
 }
 
 .explorer__head {
   display: grid;
   gap: 4px;
+  padding: 0 12px;
 }
 
 .explorer__eyebrow {
@@ -295,6 +312,7 @@
   display: grid;
   gap: 10px;
   min-height: 0;
+  padding: 0 12px;
 }
 
 .explorer__section--fill {
@@ -334,6 +352,10 @@
   display: grid;
   gap: 8px;
   overflow: auto;
+  border: 1px solid color-mix(in oklch, var(--line) 70%, white);
+  background: color-mix(in oklch, white 70%, transparent);
+  border-radius: 10px;
+  padding: 4px;
 }
 
 .tree {
@@ -343,13 +365,19 @@
   display: grid;
   gap: 6px;
   overflow: auto;
+  border: 1px solid color-mix(in oklch, var(--line) 70%, white);
+  background: color-mix(in oklch, white 70%, transparent);
+  border-radius: 10px;
+  padding: 4px;
 }
 
 .virtual-list {
   position: relative;
   overflow: auto;
-  border-radius: 18px;
-  padding-right: 4px;
+  border-radius: 10px;
+  padding: 4px;
+  border: 1px solid color-mix(in oklch, var(--line) 70%, white);
+  background: color-mix(in oklch, white 70%, transparent);
 }
 
 .virtual-list__inner {
@@ -379,10 +407,10 @@
 
 .tree__row {
   width: 100%;
-  border: 1px solid color-mix(in oklch, var(--line) 62%, white);
-  background: color-mix(in oklch, white 88%, transparent);
-  border-radius: 16px;
-  padding: 9px 10px;
+  border: 1px solid transparent;
+  background: transparent;
+  border-radius: 8px;
+  padding: 8px 10px;
   padding-left: calc(10px + var(--depth, 0) * 14px);
   display: grid;
   grid-template-columns: 14px 1fr auto auto;
@@ -398,14 +426,14 @@ button.tree__row {
 }
 
 .tree__row:hover {
-  transform: translateY(-1px);
-  background: color-mix(in oklch, var(--primary) 10%, white);
-  border-color: color-mix(in oklch, var(--primary) 20%, white);
+  transform: none;
+  background: color-mix(in oklch, var(--primary) 8%, white);
+  border-color: color-mix(in oklch, var(--primary) 16%, white);
 }
 
 .tree__row--active {
-  background: color-mix(in oklch, var(--primary) 14%, white);
-  border-color: color-mix(in oklch, var(--primary) 30%, white);
+  background: color-mix(in oklch, var(--primary) 12%, white);
+  border-color: color-mix(in oklch, var(--primary) 24%, white);
 }
 
 .tree__row--dir {
@@ -464,10 +492,10 @@ summary.tree__row::-webkit-details-marker {
   width: 100%;
   border: 0;
   text-align: left;
-  background: color-mix(in oklch, white 84%, transparent);
-  border: 1px solid color-mix(in oklch, var(--line) 62%, white);
-  border-radius: 18px;
-  padding: 10px 12px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  padding: 8px 10px;
   display: grid;
   grid-template-columns: 10px 1fr auto;
   gap: 10px;
@@ -477,19 +505,19 @@ summary.tree__row::-webkit-details-marker {
 }
 
 .list__item:hover {
-  transform: translateY(-1px);
-  background: color-mix(in oklch, var(--primary) 10%, white);
-  border-color: color-mix(in oklch, var(--primary) 20%, white);
+  transform: none;
+  background: color-mix(in oklch, var(--primary) 8%, white);
+  border-color: color-mix(in oklch, var(--primary) 16%, white);
 }
 
 .list__item--active {
-  background: color-mix(in oklch, var(--primary) 14%, white);
-  border-color: color-mix(in oklch, var(--primary) 30%, white);
+  background: color-mix(in oklch, var(--primary) 12%, white);
+  border-color: color-mix(in oklch, var(--primary) 24%, white);
 }
 
 .list__item--selected {
-  background: color-mix(in oklch, var(--accent) 10%, white);
-  border-color: color-mix(in oklch, var(--accent) 22%, white);
+  background: color-mix(in oklch, var(--accent) 8%, white);
+  border-color: color-mix(in oklch, var(--accent) 20%, white);
 }
 
 .list__dot {
@@ -527,20 +555,20 @@ summary.tree__row::-webkit-details-marker {
 .list__static {
   display: flex;
   justify-content: space-between;
-  padding: 10px 12px;
-  border-radius: 18px;
-  background: color-mix(in oklch, white 86%, transparent);
-  border: 1px solid color-mix(in oklch, var(--line) 60%, white);
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: color-mix(in oklch, white 74%, transparent);
+  border: 1px solid color-mix(in oklch, var(--line) 64%, white);
 }
 
 .toggle {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 10px 12px;
-  border-radius: 18px;
-  background: color-mix(in oklch, white 86%, transparent);
-  border: 1px solid color-mix(in oklch, var(--line) 60%, white);
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: color-mix(in oklch, white 74%, transparent);
+  border: 1px solid color-mix(in oklch, var(--line) 64%, white);
   color: var(--ink-soft);
   font-size: 14px;
 }
@@ -585,6 +613,7 @@ summary.tree__row::-webkit-details-marker {
   grid-template-rows: auto auto 1fr;
   gap: 12px;
   min-width: 0;
+  background: color-mix(in oklch, var(--surface) 42%, transparent);
 }
 
 .canvas__placeholder {
@@ -605,7 +634,9 @@ summary.tree__row::-webkit-details-marker {
   justify-content: space-between;
   align-items: baseline;
   gap: 14px;
-  padding: 0 8px;
+  min-height: 48px;
+  padding: 10px 14px 0;
+  border-bottom: 1px solid color-mix(in oklch, var(--line) 78%, white);
 }
 
 .canvas__head .title {
@@ -628,7 +659,7 @@ summary.tree__row::-webkit-details-marker {
 
 .split {
   min-height: 0;
-  padding: 14px;
+  padding: 0;
 }
 
 .pane {
@@ -637,6 +668,7 @@ summary.tree__row::-webkit-details-marker {
   grid-template-rows: auto 1fr;
   gap: 10px;
   min-height: 0;
+  background: color-mix(in oklch, var(--surface) 82%, white);
 }
 
 .pane__title {
@@ -644,11 +676,14 @@ summary.tree__row::-webkit-details-marker {
   letter-spacing: 0.16em;
   text-transform: uppercase;
   color: var(--ink-soft);
-  padding: 0 6px;
+  padding: 10px 12px;
+  border-bottom: 1px solid color-mix(in oklch, var(--line) 74%, white);
+  background: color-mix(in oklch, var(--surface-strong) 70%, white);
 }
 
 .pane__body {
   min-height: 0;
+  padding: 12px;
 }
 
 .pane__body--stack {
@@ -672,10 +707,10 @@ summary.tree__row::-webkit-details-marker {
   align-items: baseline;
   justify-content: space-between;
   gap: 12px;
-  padding: 10px 12px;
-  border-radius: 18px;
-  background: color-mix(in oklch, white 86%, transparent);
-  border: 1px solid color-mix(in oklch, var(--line) 62%, white);
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: color-mix(in oklch, white 74%, transparent);
+  border: 1px solid color-mix(in oklch, var(--line) 64%, white);
 }
 
 .kv__key {
@@ -706,10 +741,10 @@ summary.tree__row::-webkit-details-marker {
   display: grid;
   grid-template-columns: 92px 1fr;
   gap: 12px;
-  padding: 10px 12px;
-  border-radius: 18px;
-  background: color-mix(in oklch, white 86%, transparent);
-  border: 1px solid color-mix(in oklch, var(--line) 62%, white);
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: color-mix(in oklch, white 74%, transparent);
+  border: 1px solid color-mix(in oklch, var(--line) 64%, white);
 }
 
 .meta__label {
@@ -754,10 +789,10 @@ summary.tree__row::-webkit-details-marker {
 }
 
 .issue {
-  padding: 10px 12px;
-  border-radius: 18px;
-  border: 1px solid color-mix(in oklch, var(--line) 62%, white);
-  background: color-mix(in oklch, white 86%, transparent);
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid color-mix(in oklch, var(--line) 64%, white);
+  background: color-mix(in oklch, white 74%, transparent);
   display: grid;
   gap: 6px;
 }
@@ -846,8 +881,8 @@ md-text-button {
 
 @media (max-width: 960px) {
   .workbench {
-    grid-template-columns: 86px minmax(0, 1fr);
-    grid-template-rows: 64px 1fr;
+    grid-template-columns: 64px minmax(0, 1fr);
+    grid-template-rows: 48px 1fr;
   }
 
   .explorer {
@@ -858,7 +893,7 @@ md-text-button {
 @media (max-width: 680px) {
   .workbench {
     grid-template-columns: 1fr;
-    grid-template-rows: 64px auto 1fr;
+    grid-template-rows: 48px auto 1fr;
   }
 
   .rail {
@@ -872,22 +907,26 @@ md-text-button {
 .editor-tabs {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 0;
   min-width: 0;
 }
 
 .editor-tabs__list {
   display: flex;
-  gap: 6px;
+  gap: 0;
   align-items: center;
   min-width: 0;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  overflow: auto;
+  border: 1px solid color-mix(in oklch, var(--line) 70%, white);
+  border-radius: 10px;
+  background: color-mix(in oklch, var(--surface-strong) 72%, white);
 }
 
 .editor-tab {
-  border: 1px solid color-mix(in oklch, var(--line) 64%, white);
-  background: color-mix(in oklch, white 88%, transparent);
-  border-radius: 14px;
+  border-right: 1px solid color-mix(in oklch, var(--line) 70%, white);
+  background: transparent;
+  border-radius: 0;
   display: inline-flex;
   align-items: stretch;
   color: var(--ink-soft);
@@ -896,16 +935,16 @@ md-text-button {
 }
 
 .editor-tab--active {
-  background: color-mix(in oklch, var(--primary) 14%, white);
-  border-color: color-mix(in oklch, var(--primary) 26%, white);
+  background: color-mix(in oklch, var(--surface) 88%, white);
   color: var(--ink);
+  box-shadow: inset 0 -2px 0 color-mix(in oklch, var(--primary) 72%, white);
 }
 
 .editor-tab__main {
   appearance: none;
   border: 0;
   background: transparent;
-  padding: 6px 10px;
+  padding: 8px 12px;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
@@ -926,9 +965,9 @@ md-text-button {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 12px;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
+  font-size: 13px;
+  letter-spacing: -0.01em;
+  text-transform: none;
 }
 
 .editor-tab__close {
@@ -956,12 +995,12 @@ md-text-button {
 
 .tabs {
   display: flex;
-  gap: 8px;
+  gap: 0;
   align-items: center;
-  padding: 6px;
-  border-radius: 999px;
-  background: color-mix(in oklch, var(--surface-strong) 65%, white);
-  border: 1px solid color-mix(in oklch, var(--line) 78%, white);
+  padding: 2px;
+  border-radius: 8px;
+  background: color-mix(in oklch, var(--surface-strong) 72%, white);
+  border: 1px solid color-mix(in oklch, var(--line) 76%, white);
   width: fit-content;
 }
 
@@ -969,8 +1008,8 @@ md-text-button {
   appearance: none;
   border: 0;
   cursor: pointer;
-  padding: 7px 12px;
-  border-radius: 999px;
+  padding: 7px 10px;
+  border-radius: 6px;
   font-size: 13px;
   letter-spacing: -0.01em;
   color: var(--ink-soft);
@@ -979,8 +1018,8 @@ md-text-button {
 
 .tab[data-state='active'] {
   color: var(--ink);
-  background: color-mix(in oklch, var(--primary) 14%, white);
-  box-shadow: 0 10px 24px rgba(40, 34, 24, 0.14);
+  background: color-mix(in oklch, var(--surface) 94%, white);
+  box-shadow: inset 0 -2px 0 color-mix(in oklch, var(--primary) 70%, white);
 }
 
 .tab:focus-visible {
@@ -1032,11 +1071,13 @@ md-text-button {
   position: fixed;
   z-index: 90;
   width: 240px;
-  padding: 10px;
-  border-radius: 22px;
-  box-shadow: 0 20px 60px rgba(30, 26, 20, 0.2);
+  padding: 8px;
+  border-radius: 10px;
+  box-shadow: 0 16px 36px rgba(30, 26, 20, 0.14);
   display: grid;
   gap: 6px;
+  background: color-mix(in oklch, var(--surface) 92%, white);
+  border: 1px solid color-mix(in oklch, var(--line) 80%, white);
 }
 
 .context-menu__item {
@@ -1076,8 +1117,8 @@ md-text-button {
   position: fixed;
   inset: 0;
   z-index: 95;
-  background: rgba(18, 16, 12, 0.42);
-  backdrop-filter: blur(10px);
+  background: rgba(28, 24, 20, 0.18);
+  backdrop-filter: blur(6px);
   display: grid;
   place-items: start center;
   padding: clamp(18px, 3vw, 38px);
@@ -1089,7 +1130,10 @@ md-text-button {
   display: grid;
   grid-template-rows: auto 1fr auto;
   gap: 10px;
-  padding: 14px;
+  padding: 10px;
+  background: color-mix(in oklch, var(--surface) 95%, white);
+  border: 1px solid color-mix(in oklch, var(--line) 82%, white);
+  border-radius: 12px;
 }
 
 .palette__head {

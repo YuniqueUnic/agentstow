@@ -386,6 +386,63 @@ async fn api_manifest_should_return_json_error_when_manifest_is_missing() {
 }
 
 #[tokio::test]
+async fn api_manifest_source_should_read_and_update_manifest() {
+    let temp = assert_fs::TempDir::new().unwrap();
+    write_minimal_workspace(&temp);
+
+    let server = test_server(&temp, temp.child("missing-dist").path().to_path_buf());
+
+    let resp = server.get("/api/manifest/source").await;
+    resp.assert_status_ok();
+    let body: serde_json::Value = resp.json();
+    assert!(
+        body["source_path"]
+            .as_str()
+            .unwrap()
+            .ends_with("agentstow.toml")
+    );
+    assert!(
+        body["content"]
+            .as_str()
+            .unwrap()
+            .contains("[artifacts.hello]")
+    );
+
+    let updated_manifest = r#"
+[profiles.base]
+vars = { name = "Server" }
+
+[artifacts.hello]
+kind = "file"
+source = "artifacts/hello.txt.tera"
+template = true
+validate_as = "none"
+
+[targets.hello]
+artifact = "hello"
+profile = "base"
+target_path = "proj/AGENTS.md"
+method = "copy"
+"#;
+
+    let resp = server
+        .put("/api/manifest/source")
+        .json(&serde_json::json!({ "content": updated_manifest }))
+        .await;
+    resp.assert_status_ok();
+    let body: serde_json::Value = resp.json();
+    assert!(
+        body["content"]
+            .as_str()
+            .unwrap()
+            .contains("[targets.hello]")
+    );
+
+    let updated = std::fs::read_to_string(temp.child("agentstow.toml").path()).unwrap();
+    assert_eq!(updated, updated_manifest);
+}
+
+#[tokio::test]
 async fn api_workspace_should_start_unconfigured_then_select_workspace() {
     let workspace = assert_fs::TempDir::new().unwrap();
     write_minimal_workspace(&workspace);

@@ -12,6 +12,8 @@ import type {
   LinkRepairRequest,
   LinkStatusResponseItem,
   ManifestResponse,
+  ManifestSourceResponse,
+  ManifestSourceUpdateRequest,
   ProfileDetailResponse,
   RenderResponse,
   ScriptRunRequest,
@@ -108,6 +110,22 @@ async function fetchJson<T>(
 
 export function getManifest(): Promise<ManifestResponse> {
   return fetchJson<ManifestResponse>('/api/manifest');
+}
+
+export function getManifestSource(): Promise<ManifestSourceResponse> {
+  return fetchJson<ManifestSourceResponse>('/api/manifest/source');
+}
+
+export function updateManifestSource(
+  request: ManifestSourceUpdateRequest
+): Promise<ManifestSourceResponse> {
+  return fetchJson<ManifestSourceResponse>('/api/manifest/source', undefined, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(request)
+  });
 }
 
 export function getWorkspaceState(): Promise<WorkspaceStateResponse> {

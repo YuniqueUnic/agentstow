@@ -1,6 +1,7 @@
 <script lang="ts">
   import SplitView from '$lib/components/SplitView.svelte';
   import { createVirtualizer } from '@tanstack/svelte-virtual';
+  import { get } from 'svelte/store';
   import type {
     LinkDesiredInstallResponse,
     LinkOperationItemResponse,
@@ -133,7 +134,12 @@
   });
 
   $effect(() => {
-    $targetVirtualizer.setOptions({ count: filteredTargets.length });
+    const virtualizer = get(targetVirtualizer);
+    const nextCount = filteredTargets.length;
+    if (virtualizer.options.count === nextCount) {
+      return;
+    }
+    virtualizer.setOptions({ count: nextCount });
   });
 </script>
 
