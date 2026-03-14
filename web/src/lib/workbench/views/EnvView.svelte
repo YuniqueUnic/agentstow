@@ -2,6 +2,7 @@
   import CodeEditor from '$lib/components/CodeEditor.svelte';
   import SplitView from '$lib/components/SplitView.svelte';
   import type { EnvEmitResponse, EnvSetSummaryResponse, ShellKindResponse } from '$lib/types';
+  import type { ManifestInsertKind } from '$lib/workbench/manifest_snippets';
 
   type Props = {
     envSets: EnvSetSummaryResponse[];
@@ -17,6 +18,8 @@
     onSelectShell: (shell: ShellKindResponse) => void;
     onEnvEmit: () => Promise<void>;
     onCopyToClipboard: (text: string, label: string) => Promise<void>;
+    onOpenManifestEditor: () => void;
+    onCreateManifestObject: (kind: ManifestInsertKind) => void;
   };
 
   let {
@@ -32,7 +35,9 @@
     onSelectEnvSet,
     onSelectShell,
     onEnvEmit,
-    onCopyToClipboard
+    onCopyToClipboard,
+    onOpenManifestEditor,
+    onCreateManifestObject
   }: Props = $props();
 
   function activateOnKey(event: KeyboardEvent, action: () => void): void {
@@ -54,6 +59,14 @@
     <div class="section__title">
       <span>Env Sets</span>
       <strong>{envSets.length}</strong>
+    </div>
+    <div class="chips chips--tight" aria-label="Env set actions">
+      <button class="chip" onclick={() => onCreateManifestObject('env_set')} type="button">
+        新建 env set
+      </button>
+      <button class="chip" onclick={onOpenManifestEditor} type="button">
+        编辑 manifest
+      </button>
     </div>
     <ul class="list">
       {#if envSets.length === 0}
@@ -91,6 +104,14 @@
     </div>
 
     <div class="canvas__actions">
+      <md-text-button
+        onclick={onOpenManifestEditor}
+        onkeydown={(event) => activateOnKey(event, onOpenManifestEditor)}
+        role="button"
+        tabindex="0"
+      >
+        编辑 manifest
+      </md-text-button>
       <md-outlined-button
         disabled={!selectedEnvSet || busyEnvEmit}
         onclick={() => void onEnvEmit()}
@@ -167,4 +188,3 @@
     </SplitView>
   </div>
 </main>
-

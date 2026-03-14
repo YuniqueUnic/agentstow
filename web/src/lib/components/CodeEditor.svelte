@@ -17,6 +17,7 @@
   let lastFromEditor = '';
 
   let editable: CompartmentType | null = null;
+  let cmModule: typeof import('codemirror') | null = null;
   let loading = $state(true);
   let loadError = $state<string | null>(null);
   let alive = true;
@@ -41,6 +42,7 @@
       }
 
       editable = new Compartment();
+      cmModule = cm;
 
       const theme = cm.EditorView.theme(
         {
@@ -81,8 +83,8 @@
           },
           '&.cm-focused': {
             outline: '1px solid color-mix(in oklch, var(--primary) 30%, transparent)',
-            borderRadius: '16px',
-            boxShadow: '0 0 0 6px color-mix(in oklch, var(--primary) 10%, transparent)'
+            borderRadius: '10px',
+            boxShadow: '0 0 0 3px color-mix(in oklch, var(--primary) 10%, transparent)'
           },
           '.cm-cursor': {
             borderLeftColor: 'color-mix(in oklch, var(--ink) 70%, transparent)'
@@ -167,15 +169,13 @@
       return;
     }
 
-    void (async () => {
-      const cm = await import('codemirror');
-      if (!alive || !view || !editable) {
-        return;
-      }
-      view.dispatch({
-        effects: editable.reconfigure(cm.EditorView.editable.of(!readonly))
-      });
-    })();
+    if (!cmModule) {
+      return;
+    }
+
+    view.dispatch({
+      effects: editable.reconfigure(cmModule.EditorView.editable.of(!readonly))
+    });
   });
 </script>
 
@@ -198,9 +198,9 @@
   .editor {
     height: 100%;
     position: relative;
-    border-radius: 18px;
-    background: color-mix(in oklch, var(--surface) 70%, white);
-    border: 1px solid color-mix(in oklch, var(--line) 70%, white);
+    border-radius: 10px;
+    background: color-mix(in oklch, var(--surface) 92%, white);
+    border: 1px solid color-mix(in oklch, var(--line) 78%, white);
   }
 
   .editor__host {
@@ -208,13 +208,13 @@
   }
 
   .editor :global(.cm-editor) {
-    border-radius: 18px;
+    border-radius: 10px;
   }
 
   .editor__loading {
     position: absolute;
     inset: 10px;
-    border-radius: 16px;
+    border-radius: 8px;
     border: 1px dashed color-mix(in oklch, var(--line) 72%, white);
     background: color-mix(in oklch, white 86%, transparent);
     display: grid;

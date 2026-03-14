@@ -25,6 +25,11 @@
   import ArtifactTreeNode from '$lib/workbench/artifacts/ArtifactTreeNode.svelte';
   import DiffViewer from '$lib/workbench/DiffViewer.svelte';
   import EditorTabs from '$lib/workbench/EditorTabs.svelte';
+  import {
+    buildManifestSnippet,
+    manifestInsertLabel,
+    type ManifestInsertKind
+  } from '$lib/workbench/manifest_snippets';
 
   type Props = {
     summary: WorkspaceSummaryResponse | null;
@@ -35,6 +40,8 @@
     onRefreshWorkspace?: () => Promise<void>;
     requestedArtifactId?: string | null;
     onRequestHandled?: (id: string) => void;
+    requestedManifestInsert?: ManifestInsertKind | null;
+    onManifestInsertHandled?: (kind: ManifestInsertKind) => void;
     shortcutsEnabled?: boolean;
     statusLine: string;
     errorMessage: string | null;
@@ -51,6 +58,8 @@
     onRefreshWorkspace,
     requestedArtifactId,
     onRequestHandled,
+    requestedManifestInsert,
+    onManifestInsertHandled,
     shortcutsEnabled,
     statusLine,
     errorMessage,
@@ -78,6 +87,7 @@
   let artifactSearch = $state('');
   let tabMenu = $state<{ id: string; x: number; y: number } | null>(null);
   let tabMenuEl = $state<HTMLDivElement | null>(null);
+  let lastAutoPreviewKey: string | null = null;
 
   const fileArtifacts = $derived((summary?.artifacts ?? []).filter((a) => a.kind === 'file'));
   const dirArtifacts = $derived((summary?.artifacts ?? []).filter((a) => a.kind === 'dir'));
@@ -251,6 +261,27 @@
 
   function describeDirArtifact(artifactId: string): void {
     setStatusLine(`dir artifact（${artifactId}）当前仅展示，不支持 source 编辑。`);
+  }
+
+  async function ensureEditorState(documentId: string): Promise<EditorState | null> {
+    openDocument(documentId);
+    await loadEditorSource(documentId);
+    return editors[documentId] ?? null;
+  }
+
+  async function insertManifestSnippet(kind: ManifestInsertKind): Promise<void> {
+    const st = await ensureEditorState(MANIFEST_DOC_ID);
+    if (!st) {
+      return;
+    }
+
+    const snippet = buildManifestSnippet(kind, summary);
+    const base = st.editorText.trimEnd();
+    st.editorText = `${base}${base ? '\n\n' : ''}${snippet}`;
+    st.dirty = savedContentOf(st.source) !== st.editorText;
+    activeTab = MANIFEST_DOC_ID;
+    setErrorMessage(null);
+    setStatusLine(`已插入 ${manifestInsertLabel(kind)} 模板，保存后生效。`);
   }
 
   async function loadEditorSource(documentId: string): Promise<void> {
@@ -455,17 +486,37 @@
   });
 
   $effect(() => {
-    if (!activeTab) {
+    const tabId = activeTab;
+    if (!tabId) {
+      lastAutoPreviewKey = null;
       return;
     }
-    if (!isManifestTab(activeTab) && !selectedProfile) {
+    if (!isManifestTab(tabId) && !selectedProfile) {
       return;
     }
-    const st = editors[activeTab];
-    if (!st?.source) {
+
+    const source = editors[tabId]?.source ?? null;
+    if (!source) {
       return;
     }
+
+    const nextKey = `${tabId}::${selectedProfile ?? ''}::${savedContentOf(source)}`;
+    if (nextKey === lastAutoPreviewKey) {
+      return;
+    }
+
+    lastAutoPreviewKey = nextKey;
     void refreshPreview();
+  });
+
+  $effect(() => {
+    const kind = requestedManifestInsert ?? null;
+    if (!kind) {
+      return;
+    }
+
+    void insertManifestSnippet(kind);
+    onManifestInsertHandled?.(kind);
   });
 
   const titleLabel = $derived.by(() => {
@@ -495,6 +546,26 @@
     <div class="section__title">
       <span>Workspace Config</span>
       <strong>1</strong>
+    </div>
+    <div class="chips chips--tight" aria-label="Manifest quick create">
+      <button class="chip" onclick={() => void insertManifestSnippet('profile')} type="button">
+        新建 profile
+      </button>
+      <button class="chip" onclick={() => void insertManifestSnippet('artifact')} type="button">
+        新建 artifact
+      </button>
+      <button class="chip" onclick={() => void insertManifestSnippet('target')} type="button">
+        新建 target
+      </button>
+      <button class="chip" onclick={() => void insertManifestSnippet('env_set')} type="button">
+        新建 env
+      </button>
+      <button class="chip" onclick={() => void insertManifestSnippet('script')} type="button">
+        新建 script
+      </button>
+      <button class="chip" onclick={() => void insertManifestSnippet('mcp_server')} type="button">
+        新建 MCP
+      </button>
     </div>
     <button
       class={['list__item', activeTab === MANIFEST_DOC_ID ? 'list__item--active' : ''].join(' ')}

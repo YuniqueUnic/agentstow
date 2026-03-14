@@ -173,6 +173,7 @@
     border: 0;
     background: transparent;
     outline: none;
+    touch-action: none;
   }
 
   .splitview__gutter::before {

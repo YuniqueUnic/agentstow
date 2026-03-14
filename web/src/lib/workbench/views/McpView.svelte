@@ -1,6 +1,7 @@
-<script lang="ts">
+  <script lang="ts">
   import SplitView from '$lib/components/SplitView.svelte';
   import type { McpServerSummaryResponse } from '$lib/types';
+  import type { ManifestInsertKind } from '$lib/workbench/manifest_snippets';
 
   type Props = {
     mcpServers: McpServerSummaryResponse[];
@@ -10,6 +11,8 @@
     statusLine: string;
     onSelectMcpServer: (id: string) => void;
     onCopyToClipboard: (text: string, label: string) => Promise<void>;
+    onOpenManifestEditor: () => void;
+    onCreateManifestObject: (kind: ManifestInsertKind) => void;
   };
 
   let {
@@ -19,7 +22,9 @@
     errorMessage,
     statusLine,
     onSelectMcpServer,
-    onCopyToClipboard
+    onCopyToClipboard,
+    onOpenManifestEditor,
+    onCreateManifestObject
   }: Props = $props();
 
   function activateOnKey(event: KeyboardEvent, action: () => void): void {
@@ -41,6 +46,14 @@
     <div class="section__title">
       <span>MCP</span>
       <strong>{mcpServers.length}</strong>
+    </div>
+    <div class="chips chips--tight" aria-label="MCP actions">
+      <button class="chip" onclick={() => onCreateManifestObject('mcp_server')} type="button">
+        新建 MCP
+      </button>
+      <button class="chip" onclick={onOpenManifestEditor} type="button">
+        编辑 manifest
+      </button>
     </div>
     <ul class="list">
       {#if mcpServers.length === 0}
@@ -78,6 +91,14 @@
     </div>
 
     <div class="canvas__actions">
+      <md-text-button
+        onclick={onOpenManifestEditor}
+        onkeydown={(event) => activateOnKey(event, onOpenManifestEditor)}
+        role="button"
+        tabindex="0"
+      >
+        编辑 manifest
+      </md-text-button>
       <md-outlined-button
         disabled={!activeMcpServer}
         onclick={() => void onCopyToClipboard(activeMcpServer?.location ?? '', 'location')}
@@ -148,4 +169,3 @@
     </SplitView>
   </div>
 </main>
-

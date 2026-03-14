@@ -1,6 +1,7 @@
-<script lang="ts">
+  <script lang="ts">
   import SplitView from '$lib/components/SplitView.svelte';
   import type { ScriptRunResponse, ScriptSummaryResponse } from '$lib/types';
+  import type { ManifestInsertKind } from '$lib/workbench/manifest_snippets';
 
   type Props = {
     scripts: ScriptSummaryResponse[];
@@ -15,6 +16,8 @@
     onScriptStdin: (next: string) => void;
     onScriptRun: () => Promise<void>;
     onCopyToClipboard: (text: string, label: string) => Promise<void>;
+    onOpenManifestEditor: () => void;
+    onCreateManifestObject: (kind: ManifestInsertKind) => void;
   };
 
   let {
@@ -29,7 +32,9 @@
     onSelectScript,
     onScriptStdin,
     onScriptRun,
-    onCopyToClipboard
+    onCopyToClipboard,
+    onOpenManifestEditor,
+    onCreateManifestObject
   }: Props = $props();
 
   function activateOnKey(event: KeyboardEvent, action: () => void): void {
@@ -51,6 +56,14 @@
     <div class="section__title">
       <span>Scripts</span>
       <strong>{scripts.length}</strong>
+    </div>
+    <div class="chips chips--tight" aria-label="Scripts actions">
+      <button class="chip" onclick={() => onCreateManifestObject('script')} type="button">
+        新建 script
+      </button>
+      <button class="chip" onclick={onOpenManifestEditor} type="button">
+        编辑 manifest
+      </button>
     </div>
     <ul class="list">
       {#if scripts.length === 0}
@@ -85,6 +98,14 @@
     </div>
 
     <div class="canvas__actions">
+      <md-text-button
+        onclick={onOpenManifestEditor}
+        onkeydown={(event) => activateOnKey(event, onOpenManifestEditor)}
+        role="button"
+        tabindex="0"
+      >
+        编辑 manifest
+      </md-text-button>
       <md-outlined-button
         disabled={!selectedScript || busyScriptRun}
         onclick={() => void onScriptRun()}
@@ -174,4 +195,3 @@
     </SplitView>
   </div>
 </main>
-

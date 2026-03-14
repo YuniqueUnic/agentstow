@@ -12,6 +12,10 @@
   --surface: oklch(0.965 0.004 92);
   --surface-strong: oklch(0.93 0.008 88);
   --surface-muted: oklch(0.9 0.01 84);
+  --topbar-bg: oklch(0.935 0.008 86);
+  --rail-bg: oklch(0.885 0.018 86);
+  --explorer-bg: oklch(0.915 0.012 88);
+  --panel-bg: oklch(0.972 0.004 92);
   --line: oklch(0.82 0.012 80);
   --line-strong: oklch(0.68 0.02 72);
   --ink: oklch(0.28 0.02 58);
@@ -66,7 +70,9 @@ body,
 body {
   margin: 0;
   color: var(--ink);
-  background: linear-gradient(180deg, color-mix(in oklch, white 16%, var(--canvas)), var(--canvas));
+  background:
+    linear-gradient(180deg, color-mix(in oklch, white 14%, var(--canvas)), var(--canvas)),
+    linear-gradient(120deg, color-mix(in oklch, var(--primary) 6%, transparent), transparent 34%);
 }
 
 body::before {

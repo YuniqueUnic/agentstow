@@ -12,6 +12,7 @@
     watchPill: WatchPill;
     watchActivity: string;
     busySummary: boolean;
+    onOpenPalette: () => void;
     onSwitchWorkspace: () => void;
     onRefresh: () => Promise<void>;
   };
@@ -22,6 +23,7 @@
     watchPill,
     watchActivity,
     busySummary,
+    onOpenPalette,
     onSwitchWorkspace,
     onRefresh
   }: Props = $props();
@@ -68,6 +70,15 @@
   </div>
 
   <div class="topbar__actions">
+    <md-text-button
+      onclick={onOpenPalette}
+      onkeydown={(event) => activateOnKey(event, onOpenPalette)}
+      role="button"
+      tabindex="0"
+    >
+      Command
+      <span class="topbar__shortcut mono">Cmd/Ctrl+K</span>
+    </md-text-button>
     <md-outlined-button
       disabled={busySummary}
       onclick={() => void onRefresh()}
@@ -79,4 +90,3 @@
     </md-outlined-button>
   </div>
 </header>
-

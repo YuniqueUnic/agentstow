@@ -6,7 +6,7 @@
 .surface {
   background: color-mix(in oklch, var(--surface) 74%, white);
   border: 1px solid color-mix(in oklch, var(--line) 70%, white);
-  border-radius: 26px;
+  border-radius: 12px;
   box-shadow: var(--shadow);
 }
 
@@ -123,9 +123,10 @@
   height: 100vh;
   padding: 0;
   display: grid;
-  grid-template-columns: 64px minmax(280px, 340px) minmax(0, 1fr);
+  grid-template-columns: 64px minmax(248px, var(--explorer-width, 332px)) 14px minmax(0, 1fr);
   grid-template-rows: 48px 1fr;
   gap: 0;
+  overflow: hidden;
   background:
     linear-gradient(180deg, color-mix(in oklch, var(--surface) 70%, white), var(--canvas));
 }
@@ -144,7 +145,8 @@
   justify-content: space-between;
   min-height: 48px;
   padding: 0 14px;
-  background: color-mix(in oklch, var(--surface) 74%, white);
+  gap: 16px;
+  background: color-mix(in oklch, var(--topbar-bg) 92%, white);
   border-bottom: 1px solid color-mix(in oklch, var(--line) 82%, white);
 }
 
@@ -180,10 +182,15 @@
   align-items: baseline;
   gap: 10px;
   min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
 }
 
 .topbar__workspace .mono {
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: min(42vw, 560px);
 }
 
 .topbar__status {
@@ -229,15 +236,24 @@
   display: flex;
   align-items: center;
   gap: 10px;
+  flex: 0 0 auto;
+}
+
+.topbar__shortcut {
+  margin-inline-start: 8px;
+  font-size: 11px;
+  color: var(--ink-soft);
 }
 
 .rail {
+  grid-column: 1;
+  grid-row: 2;
   padding: 8px 6px;
   display: flex;
   flex-direction: column;
   gap: 4px;
   align-items: stretch;
-  background: color-mix(in oklch, var(--surface-muted) 84%, white);
+  background: color-mix(in oklch, var(--rail-bg) 92%, white);
   border-right: 1px solid color-mix(in oklch, var(--line) 82%, white);
 }
 
@@ -279,13 +295,46 @@
 }
 
 .explorer {
+  grid-column: 2;
+  grid-row: 2;
   padding: 10px 0 12px;
   display: flex;
   flex-direction: column;
   gap: 12px;
   overflow: hidden;
-  background: color-mix(in oklch, var(--surface-muted) 78%, white);
+  background: color-mix(in oklch, var(--explorer-bg) 94%, white);
   border-right: 1px solid color-mix(in oklch, var(--line) 82%, white);
+}
+
+.shell-gutter {
+  grid-column: 3;
+  grid-row: 2;
+  width: 14px;
+  padding: 0;
+  border: 0;
+  background: color-mix(in oklch, var(--canvas) 78%, transparent);
+  cursor: col-resize;
+  position: relative;
+  touch-action: none;
+}
+
+.shell-gutter::before {
+  content: '';
+  position: absolute;
+  top: 10px;
+  bottom: 10px;
+  left: calc(50% - 1px);
+  width: 2px;
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--line-strong) 36%, transparent);
+  transition: background 140ms ease, transform 140ms ease;
+}
+
+.shell-gutter:hover::before,
+.shell-gutter:focus-visible::before,
+.shell-gutter[data-dragging='true']::before {
+  background: color-mix(in oklch, var(--primary) 48%, transparent);
+  transform: scaleX(1.2);
 }
 
 .explorer__head {
@@ -354,7 +403,7 @@
   overflow: auto;
   border: 1px solid color-mix(in oklch, var(--line) 70%, white);
   background: color-mix(in oklch, white 70%, transparent);
-  border-radius: 10px;
+  border-radius: 8px;
   padding: 4px;
 }
 
@@ -367,14 +416,14 @@
   overflow: auto;
   border: 1px solid color-mix(in oklch, var(--line) 70%, white);
   background: color-mix(in oklch, white 70%, transparent);
-  border-radius: 10px;
+  border-radius: 8px;
   padding: 4px;
 }
 
 .virtual-list {
   position: relative;
   overflow: auto;
-  border-radius: 10px;
+  border-radius: 8px;
   padding: 4px;
   border: 1px solid color-mix(in oklch, var(--line) 70%, white);
   background: color-mix(in oklch, white 70%, transparent);
@@ -577,13 +626,14 @@ summary.tree__row::-webkit-details-marker {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+  min-width: 0;
 }
 
 .chip {
   border: 1px solid color-mix(in oklch, var(--line) 70%, white);
   background: color-mix(in oklch, white 88%, transparent);
   border-radius: 999px;
-  padding: 8px 12px;
+  padding: 7px 11px;
   font-size: 12px;
   letter-spacing: 0.12em;
   text-transform: uppercase;
@@ -609,10 +659,14 @@ summary.tree__row::-webkit-details-marker {
 }
 
 .canvas {
+  grid-column: 4;
+  grid-row: 2;
   display: grid;
   grid-template-rows: auto auto 1fr;
   gap: 12px;
   min-width: 0;
+  min-height: 0;
+  overflow: hidden;
   background: color-mix(in oklch, var(--surface) 42%, transparent);
 }
 
@@ -632,7 +686,8 @@ summary.tree__row::-webkit-details-marker {
 .canvas__head {
   display: flex;
   justify-content: space-between;
-  align-items: baseline;
+  align-items: center;
+  flex-wrap: wrap;
   gap: 14px;
   min-height: 48px;
   padding: 10px 14px 0;
@@ -642,12 +697,15 @@ summary.tree__row::-webkit-details-marker {
 .canvas__head .title {
   font-size: 16px;
   letter-spacing: -0.02em;
+  min-width: 0;
 }
 
 .canvas__actions {
   display: flex;
   gap: 10px;
   align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .status-line {
@@ -660,6 +718,7 @@ summary.tree__row::-webkit-details-marker {
 .split {
   min-height: 0;
   padding: 0;
+  overflow: hidden;
 }
 
 .pane {
@@ -668,7 +727,8 @@ summary.tree__row::-webkit-details-marker {
   grid-template-rows: auto 1fr;
   gap: 10px;
   min-height: 0;
-  background: color-mix(in oklch, var(--surface) 82%, white);
+  min-width: 0;
+  background: color-mix(in oklch, var(--panel-bg) 94%, white);
 }
 
 .pane__title {
@@ -678,12 +738,14 @@ summary.tree__row::-webkit-details-marker {
   color: var(--ink-soft);
   padding: 10px 12px;
   border-bottom: 1px solid color-mix(in oklch, var(--line) 74%, white);
-  background: color-mix(in oklch, var(--surface-strong) 70%, white);
+  background: color-mix(in oklch, var(--surface-strong) 78%, white);
 }
 
 .pane__body {
   min-height: 0;
+  min-width: 0;
   padding: 12px;
+  overflow: hidden;
 }
 
 .pane__body--stack {
@@ -853,7 +915,7 @@ summary.tree__row::-webkit-details-marker {
   height: 100%;
   margin: 0;
   padding: 14px;
-  border-radius: 18px;
+  border-radius: 10px;
   background: color-mix(in oklch, white 86%, transparent);
   border: 1px solid color-mix(in oklch, var(--line) 68%, white);
   overflow: auto;
@@ -888,6 +950,14 @@ md-text-button {
   .explorer {
     display: none;
   }
+
+  .shell-gutter {
+    display: none;
+  }
+
+  .canvas {
+    grid-column: 2;
+  }
 }
 
 @media (max-width: 680px) {
@@ -898,8 +968,14 @@ md-text-button {
 
   .rail {
     grid-column: 1;
+    grid-row: 2;
     flex-direction: row;
     justify-content: space-between;
+  }
+
+  .canvas {
+    grid-column: 1;
+    grid-row: 3;
   }
 }
 
@@ -919,7 +995,7 @@ md-text-button {
   flex-wrap: nowrap;
   overflow: auto;
   border: 1px solid color-mix(in oklch, var(--line) 70%, white);
-  border-radius: 10px;
+  border-radius: 8px;
   background: color-mix(in oklch, var(--surface-strong) 72%, white);
 }
 
@@ -998,7 +1074,7 @@ md-text-button {
   gap: 0;
   align-items: center;
   padding: 2px;
-  border-radius: 8px;
+  border-radius: 6px;
   background: color-mix(in oklch, var(--surface-strong) 72%, white);
   border: 1px solid color-mix(in oklch, var(--line) 76%, white);
   width: fit-content;
@@ -1047,7 +1123,7 @@ md-text-button {
   height: 100%;
   margin: 0;
   padding: 14px;
-  border-radius: 18px;
+  border-radius: 10px;
   background: color-mix(in oklch, white 92%, transparent);
   border: 1px solid color-mix(in oklch, var(--line) 68%, white);
   overflow: auto;
@@ -1060,7 +1136,7 @@ md-text-button {
 
 .diff-viewer__empty {
   padding: 14px;
-  border-radius: 18px;
+  border-radius: 10px;
   background: color-mix(in oklch, white 92%, transparent);
   border: 1px dashed color-mix(in oklch, var(--line) 70%, white);
   color: var(--ink-soft);
@@ -1072,7 +1148,7 @@ md-text-button {
   z-index: 90;
   width: 240px;
   padding: 8px;
-  border-radius: 10px;
+  border-radius: 8px;
   box-shadow: 0 16px 36px rgba(30, 26, 20, 0.14);
   display: grid;
   gap: 6px;
@@ -1085,7 +1161,7 @@ md-text-button {
   border: 0;
   cursor: pointer;
   text-align: left;
-  border-radius: 16px;
+  border-radius: 6px;
   padding: 10px 12px;
   color: var(--ink);
   background: transparent;
@@ -1133,7 +1209,7 @@ md-text-button {
   padding: 10px;
   background: color-mix(in oklch, var(--surface) 95%, white);
   border: 1px solid color-mix(in oklch, var(--line) 82%, white);
-  border-radius: 12px;
+  border-radius: 10px;
 }
 
 .palette__head {
@@ -1160,7 +1236,7 @@ md-text-button {
   appearance: none;
   border: 1px solid color-mix(in oklch, var(--line) 62%, white);
   background: color-mix(in oklch, white 88%, transparent);
-  border-radius: 18px;
+  border-radius: 8px;
   padding: 10px 12px;
   cursor: pointer;
   display: grid;

@@ -3,6 +3,7 @@
 
   import CommandPalette, { type PaletteCommand } from '$lib/workbench/CommandPalette.svelte';
   import WorkspaceBoot from '$lib/workbench/WorkspaceBoot.svelte';
+  import ShellGutter from '$lib/workbench/ShellGutter.svelte';
   import WorkbenchRail from '$lib/workbench/WorkbenchRail.svelte';
   import WorkbenchTopbar from '$lib/workbench/WorkbenchTopbar.svelte';
   import ArtifactsView from '$lib/workbench/views/ArtifactsView.svelte';
@@ -46,6 +47,7 @@
     formatRelativeTime,
     truncateMiddle
   } from '$lib/utils/format';
+  import type { ManifestInsertKind } from '$lib/workbench/manifest_snippets';
 
   type ViewKey = 'artifacts' | 'links' | 'env' | 'scripts' | 'mcp' | 'impact';
   type ImpactMode = 'artifact' | 'profile' | 'artifact_profile';
@@ -53,6 +55,8 @@
   let view = $state<ViewKey>('artifacts');
   let paletteOpen = $state(false);
   let artifactRequestId = $state<string | null>(null);
+  let manifestInsertRequest = $state<ManifestInsertKind | null>(null);
+  let explorerWidth = $state(332);
 
   let workspaceState = $state<WorkspaceStateResponse | null>(null);
   let workspaceInput = $state('');
@@ -528,6 +532,26 @@
     artifactRequestId = id;
   }
 
+  function openManifestEditor(): void {
+    view = 'artifacts';
+    artifactRequestId = '$manifest';
+    statusLine = '已切换到 manifest 编辑器。';
+  }
+
+  function requestManifestInsert(kind: ManifestInsertKind): void {
+    view = 'artifacts';
+    artifactRequestId = '$manifest';
+    manifestInsertRequest = kind;
+  }
+
+  function resizeExplorer(deltaPx: number): void {
+    explorerWidth = Math.min(520, Math.max(248, explorerWidth + deltaPx));
+  }
+
+  function resetExplorerWidth(): void {
+    explorerWidth = 332;
+  }
+
   const paletteCommands = $derived.by((): PaletteCommand[] => {
     const cmds: PaletteCommand[] = [];
 
@@ -571,6 +595,37 @@
         returnToWorkspaceBoot();
       }
     });
+
+    cmds.push({
+      id: 'manifest:open',
+      group: 'Manifest',
+      title: 'Open workspace manifest',
+      keywords: 'manifest workspace config toml',
+      disabled: !manifestPresent,
+      run: () => {
+        openManifestEditor();
+      }
+    });
+
+    for (const kind of [
+      'profile',
+      'artifact',
+      'target',
+      'env_set',
+      'script',
+      'mcp_server'
+    ] as const) {
+      cmds.push({
+        id: `manifest:new:${kind}`,
+        group: 'Create',
+        title: `New ${kind.replace('_', ' ')}`,
+        keywords: `new create ${kind} manifest`,
+        disabled: !manifestPresent,
+        run: () => {
+          requestManifestInsert(kind);
+        }
+      });
+    }
 
     cmds.push({
       id: 'links:status',
@@ -799,18 +854,20 @@
       onInitWorkspace={() => void handleInitWorkspace()}
     />
   {:else}
-    <div class="workbench">
+    <div class="workbench" style={`--explorer-width:${explorerWidth}px;`}>
       <WorkbenchTopbar
         workspaceRoot={workspaceRoot}
         workspaceLabel={workspaceLabel}
         watchPill={watchPill}
         watchActivity={watchActivity}
         busySummary={busy.summary}
+        onOpenPalette={() => (paletteOpen = true)}
         onSwitchWorkspace={returnToWorkspaceBoot}
         onRefresh={bootstrapConfigured}
       />
 
       <WorkbenchRail view={view} onChange={(next) => (view = next)} />
+      <ShellGutter onResize={resizeExplorer} onReset={resetExplorerWidth} />
 
       {#if view === 'artifacts'}
         <ArtifactsView
@@ -824,6 +881,12 @@
           onRequestHandled={(id) => {
             if (artifactRequestId === id) {
               artifactRequestId = null;
+            }
+          }}
+          requestedManifestInsert={manifestInsertRequest}
+          onManifestInsertHandled={(kind) => {
+            if (manifestInsertRequest === kind) {
+              manifestInsertRequest = null;
             }
           }}
           shortcutsEnabled={!paletteOpen}
@@ -876,6 +939,8 @@
           onSelectShell={(shell) => (selectedShell = shell)}
           onEnvEmit={handleEnvEmit}
           onCopyToClipboard={copyToClipboard}
+          onOpenManifestEditor={openManifestEditor}
+          onCreateManifestObject={requestManifestInsert}
         />
       {:else if view === 'scripts'}
         <ScriptsView
@@ -891,6 +956,8 @@
           onScriptStdin={(next) => (scriptStdin = next)}
           onScriptRun={handleScriptRun}
           onCopyToClipboard={copyToClipboard}
+          onOpenManifestEditor={openManifestEditor}
+          onCreateManifestObject={requestManifestInsert}
         />
       {:else if view === 'impact'}
         <ImpactView
@@ -913,6 +980,8 @@
           statusLine={statusLine}
           onSelectMcpServer={selectMcpServer}
           onCopyToClipboard={copyToClipboard}
+          onOpenManifestEditor={openManifestEditor}
+          onCreateManifestObject={requestManifestInsert}
         />
       {/if}
 
