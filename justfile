@@ -103,20 +103,25 @@ serve *ARGS="":
 serve *ARGS="":
     pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File ./scripts/justfile/serve.ps1 {{ ARGS }}
 
+[unix]
 web-install:
-    cd web && bun install
+    ./scripts/justfile/web.sh install
+
+[windows]
+web-install:
+    pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File ./scripts/justfile/web.ps1 install
 
 web-bindings:
     cargo run -p agentstow-web-types --bin export_bindings -- --out web/src/lib/bindings
 
 web-dev *ARGS="":
     just web-bindings
-    cd web && bun install
+    just web-install
     cd web && bun run dev -- {{ ARGS }}
 
 web-build:
     just web-bindings
-    cd web && bun install
+    just web-install
     cd web && bun run build
 
 web-preview *ARGS="":
@@ -124,7 +129,7 @@ web-preview *ARGS="":
 
 web-check:
     just web-bindings
-    cd web && bun install
+    just web-install
     cd web && bun run typecheck
 
 [unix]

@@ -35,6 +35,7 @@ pub async fn serve(cfg: ServerConfig) -> Result<()> {
     let listener = tokio::net::TcpListener::bind(addr)
         .await
         .map_err(AgentStowError::from)?;
+    tracing::info!("Serve on: http://{addr}");
     axum::serve(listener, app)
         .await
         .map_err(|error| AgentStowError::Other(anyhow::anyhow!("axum serve 失败：{error}")))?;
