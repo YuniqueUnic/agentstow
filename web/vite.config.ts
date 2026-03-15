@@ -34,6 +34,9 @@ export default defineConfig(({ mode }) => {
     build: {
       target: 'es2022',
       sourcemap: true
+    },
+    optimizeDeps: {
+      include: ['@codemirror/lang-jinja', '@codemirror/state', 'codemirror']
     }
   };
 });

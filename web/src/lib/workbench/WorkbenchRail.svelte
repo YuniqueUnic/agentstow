@@ -57,6 +57,8 @@
       onclick={() => onChange(item.key)}
       type="button"
       title={item.label}
+      aria-label={item.label}
+      aria-current={view === item.key ? 'page' : undefined}
     >
       <span class="rail__glyph" aria-hidden="true">
         <svg
@@ -72,7 +74,6 @@
           {/each}
         </svg>
       </span>
-      <span class="rail__label">{item.label}</span>
     </button>
   {/each}
 </nav>

@@ -9,9 +9,10 @@
     value: string;
     readonly?: boolean;
     onChange?: (next: string) => void;
+    testId?: string;
   };
 
-  let { value, readonly = false, onChange }: Props = $props();
+  let { value, readonly = false, onChange, testId }: Props = $props();
 
   let host: HTMLDivElement | null = null;
   let view: EditorViewType | null = null;
@@ -268,7 +269,7 @@
   });
 </script>
 
-<div class="editor">
+<div class="editor" data-testid={testId}>
   <div class="editor__host" bind:this={host}></div>
   {#if loading || loadError}
     <div class={['editor__loading', loadError ? 'editor__loading--error' : ''].join(' ')}>

@@ -30,6 +30,7 @@
   } from '$lib/api/client';
   import type {
     EnvEmitResponse,
+    EnvUsageRefResponse,
     ImpactAnalysisResponse,
     LinkApplyRequest,
     LinkOperationResponse,
@@ -39,6 +40,7 @@
     McpServerSummaryResponse,
     ScriptRunResponse,
     ShellKindResponse,
+    WatchTraceEventResponse,
     WorkspaceGitSummaryResponse,
     WorkspaceStateResponse,
     WorkspaceSummaryResponse,
@@ -81,6 +83,7 @@
   let activeDocId = $state<string | null>(null);
   let themePreference = $state<ThemePreference>('system');
   let resolvedTheme = $state<ResolvedTheme>('dark');
+  let watchTraceOpen = $state(false);
 
   let workspaceState = $state<WorkspaceStateResponse | null>(null);
   let workspaceInput = $state('');
@@ -185,6 +188,20 @@
     }
     return `${watchStatus.last_event} · ${formatRelativeTime(watchStatus.last_event_at)}`;
   });
+
+  const watchTraceEvents = $derived(watchStatus?.recent_events ?? []);
+  const watchTraceCount = $derived(watchTraceEvents.length);
+
+  function watchTraceTone(level: WatchTraceEventResponse['level']): 'ok' | 'warn' | 'neutral' {
+    return level === 'change' ? 'ok' : 'warn';
+  }
+
+  function describeWatchRefreshed(): void {
+    statusLine =
+      watchTraceCount > 0
+        ? `已刷新 watcher trace（${watchTraceCount} events）。`
+        : '已刷新 watcher 状态。';
+  }
 
   const viewLabels: Record<ViewKey, string> = {
     artifacts: 'Artifacts',
@@ -484,6 +501,7 @@
       workspace_root: workspaceRoot,
       manifest_present: false
     };
+    watchTraceOpen = false;
     gitInfo = null;
     editorDocs = [];
     activeDocId = null;
@@ -601,13 +619,15 @@
     }
   }
 
-  async function refreshWatchStatus(): Promise<void> {
+  async function refreshWatchStatus(): Promise<boolean> {
     busy.watch = true;
     try {
       watchStatus = await getWatchStatus();
+      return true;
     } catch (error) {
       watchStatus = null;
       errorMessage ??= describeError(error, '无法读取 watcher 状态。');
+      return false;
     } finally {
       busy.watch = false;
     }
@@ -883,6 +903,18 @@
     openTargetDocument(targetId);
   }
 
+  function openEnvUsageRef(ref: EnvUsageRefResponse): void {
+    if (ref.owner_kind === 'env_set') {
+      openEnvDocument(ref.owner_id);
+      return;
+    }
+    if (ref.owner_kind === 'script') {
+      openScriptDocument(ref.owner_id);
+      return;
+    }
+    openMcpDocument(ref.owner_id);
+  }
+
   function requestOpenArtifact(id: string): void {
     openArtifactsWorkspace(id);
   }
@@ -911,6 +943,22 @@
     applyResolvedTheme(resolvedTheme);
     statusLine = `已切换主题：${next}（当前生效：${resolvedTheme}）。`;
   }
+
+  async function toggleWatchTrace(force?: boolean): Promise<void> {
+    const next = force ?? !watchTraceOpen;
+    watchTraceOpen = next;
+    if (next && manifestPresent) {
+      if (await refreshWatchStatus()) {
+        describeWatchRefreshed();
+      }
+    }
+  }
+
+  const themeChoices: Array<{ id: ThemePreference; label: string }> = [
+    { id: 'system', label: 'Auto' },
+    { id: 'light', label: 'Light' },
+    { id: 'dark', label: 'Dark' }
+  ];
 
   const paletteCommands = $derived.by((): PaletteCommand[] => {
     const cmds: PaletteCommand[] = [];
@@ -953,6 +1001,17 @@
       disabled: !manifestPresent,
       run: () => {
         returnToWorkspaceBoot();
+      }
+    });
+
+    cmds.push({
+      id: 'watch:trace',
+      group: 'Watch',
+      title: watchTraceOpen ? 'Hide watch trace' : 'Open watch trace',
+      keywords: 'watch trace events statusbar',
+      disabled: !manifestPresent,
+      run: async () => {
+        await toggleWatchTrace();
       }
     });
 
@@ -1249,6 +1308,9 @@
 
   $effect(() => {
     if (!manifestPresent) {
+      if (watchTraceOpen) {
+        watchTraceOpen = false;
+      }
       if (linkStatus !== null) {
         linkStatus = null;
       }
@@ -1287,16 +1349,8 @@
       <WorkbenchTopbar
         workspaceRoot={workspaceRoot}
         workspaceLabel={workspaceLabel}
-        gitInfo={gitInfo}
-        watchPill={watchPill}
-        watchActivity={watchActivity}
-        busySummary={busy.summary}
-        themePreference={themePreference}
-        resolvedTheme={resolvedTheme}
         onOpenPalette={() => (paletteOpen = true)}
-        onSetTheme={setThemePreference}
         onSwitchWorkspace={returnToWorkspaceBoot}
-        onRefresh={bootstrapConfigured}
       />
 
       <WorkbenchRail view={view} onChange={openDefaultDocument} />
@@ -1322,6 +1376,9 @@
             onFocusArtifact={focusArtifact}
             onOpenTarget={openTargetInLinks}
             onRefreshWorkspace={bootstrapConfigured}
+            onSourceSaved={async () => {
+              await Promise.all([refreshWorkspaceGit(), refreshWatchStatus()]);
+            }}
             requestedArtifactId={artifactRequestId}
             onRequestHandled={(id) => {
               if (artifactRequestId === id) {
@@ -1384,6 +1441,7 @@
             onSelectShell={(shell) => (selectedShell = shell)}
             onEnvEmit={handleEnvEmit}
             onCopyToClipboard={copyToClipboard}
+            onOpenUsageRef={openEnvUsageRef}
             onOpenManifestEditor={openManifestEditor}
             onCreateManifestObject={requestManifestInsert}
           />
@@ -1441,8 +1499,112 @@
         onClose={() => (paletteOpen = false)}
       />
 
+      {#if watchTraceOpen}
+        <section class="workbench-trace" aria-label="Watcher trace panel" data-testid="watch-trace-panel">
+          <div class="workbench-trace__head">
+            <div class="workbench-trace__title">
+              <strong>Watcher Trace</strong>
+              <span class="muted">
+                {watchStatus
+                  ? `${watchStatus.mode} · ${watchTraceCount} events`
+                  : 'trace unavailable'}
+              </span>
+            </div>
+            <div class="workbench-trace__actions">
+              <button
+                class="ui-button ui-button--subtle"
+                disabled={busy.watch}
+                type="button"
+                onclick={() => void toggleWatchTrace(true)}
+              >
+                {busy.watch ? '刷新中…' : '刷新 trace'}
+              </button>
+              <button
+                class="ui-button ui-button--subtle"
+                type="button"
+                onclick={() => void toggleWatchTrace(false)}
+              >
+                隐藏
+              </button>
+            </div>
+          </div>
+
+          <div class="workbench-trace__body">
+            <section class="workbench-trace__meta" aria-label="Watcher roots">
+              <div class="section__title">
+                <span>Watch Roots</span>
+                <strong>{watchStatus?.watch_roots.length ?? 0}</strong>
+              </div>
+              {#if !watchStatus}
+                <p class="empty">（watcher 状态尚未加载）</p>
+              {:else}
+                <div class="subject-summary">
+                  <div class="summary-row">
+                    <span class="summary-row__label">Mode</span>
+                    <span class="summary-row__value mono">{watchStatus.mode}</span>
+                  </div>
+                  <div class="summary-row">
+                    <span class="summary-row__label">Revision</span>
+                    <span class="summary-row__value mono">{watchStatus.revision}</span>
+                  </div>
+                  <div class="summary-row">
+                    <span class="summary-row__label">Health</span>
+                    <span class="summary-row__value mono">{watchStatus.healthy ? 'healthy' : 'attention'}</span>
+                  </div>
+                  {#if watchStatus.poll_interval_ms}
+                    <div class="summary-row">
+                      <span class="summary-row__label">Poll</span>
+                      <span class="summary-row__value mono">{watchStatus.poll_interval_ms} ms</span>
+                    </div>
+                  {/if}
+                </div>
+
+                {#if watchStatus.last_error}
+                  <p class="notice notice--error">{watchStatus.last_error}</p>
+                {/if}
+
+                <ul class="trace-roots" aria-label="Watcher roots list">
+                  {#each watchStatus.watch_roots as root (root)}
+                    <li class="trace-roots__item mono" title={root}>{truncateMiddle(root, 72)}</li>
+                  {/each}
+                </ul>
+              {/if}
+            </section>
+
+            <section class="workbench-trace__events" aria-label="Recent watcher events">
+              <div class="section__title">
+                <span>Recent Events</span>
+                <strong>{watchTraceCount}</strong>
+              </div>
+
+              {#if !watchStatus}
+                <p class="empty">（watcher 状态尚未加载）</p>
+              {:else if watchTraceEvents.length === 0}
+                <p class="empty">（暂无 watcher events，可在保存 source 后再展开查看）</p>
+              {:else}
+                <ul class="trace-list">
+                  {#each watchTraceEvents as event (`${event.at}:${event.summary}`)}
+                    <li class="trace-list__item">
+                      <span class={['pill', `pill--${watchTraceTone(event.level)}`].join(' ')}>
+                        {event.level}
+                      </span>
+                      <div class="trace-list__main">
+                        <span class="trace-list__summary">{event.summary}</span>
+                        <span class="trace-list__meta mono">
+                          rev:{event.revision} · {formatRelativeTime(event.at)}
+                        </span>
+                      </div>
+                    </li>
+                  {/each}
+                </ul>
+              {/if}
+            </section>
+          </div>
+        </section>
+      {/if}
+
       <footer class="statusbar" aria-live="polite">
-        <div class="statusbar__group">
+        <div class="statusbar__group statusbar__group--context">
           <span
             class={[
               'statusbar__badge',
@@ -1456,7 +1618,33 @@
           </span>
         </div>
 
-        <div class="statusbar__group statusbar__group--right">
+        <div class="statusbar__group statusbar__group--actions">
+          <button
+            class="statusbar__button"
+            data-testid="watch-trace-toggle"
+            disabled={!manifestPresent}
+            type="button"
+            onclick={() => void toggleWatchTrace()}
+          >
+            {watchTraceOpen ? 'trace 打开' : `trace ${watchTraceCount}`}
+          </button>
+          <button
+            class="statusbar__button"
+            disabled={busy.summary}
+            type="button"
+            onclick={() => void bootstrapConfigured()}
+          >
+            {busy.summary ? '同步中…' : '同步'}
+          </button>
+        </div>
+
+        <div class="statusbar__group statusbar__group--telemetry">
+          <span class={['statusbar__item', `statusbar__item--${watchPill.tone}`].join(' ')}>
+            watch <strong class="mono">{watchPill.label}</strong>
+          </span>
+          <span class="statusbar__item" title={watchActivity}>
+            event <strong class="mono">{truncateMiddle(watchActivity, 30)}</strong>
+          </span>
           {#if gitInfo}
             <span
               class={[
@@ -1474,9 +1662,21 @@
               profile <strong class="mono">{selectedProfile}</strong>
             </span>
           {/if}
-          <span class="statusbar__item">
-            theme <strong class="mono">{resolvedTheme}</strong>
-          </span>
+          <div class="statusbar__segment" role="group" aria-label="Theme">
+            {#each themeChoices as theme (theme.id)}
+              <button
+                class={[
+                  'statusbar__segment-item',
+                  themePreference === theme.id ? 'statusbar__segment-item--active' : ''
+                ].join(' ')}
+                type="button"
+                aria-pressed={themePreference === theme.id}
+                onclick={() => setThemePreference(theme.id)}
+              >
+                {theme.label}
+              </button>
+            {/each}
+          </div>
           <span class="statusbar__item mono">{statusFocus}</span>
           <span class="statusbar__item mono">{workspaceLabel}</span>
         </div>

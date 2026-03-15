@@ -1,5 +1,9 @@
 import type {
   ArtifactDetailResponse,
+  ArtifactGitCompareResponse,
+  ArtifactGitHistoryResponse,
+  ArtifactGitRollbackRequest,
+  ArtifactGitRollbackResponse,
   ArtifactSourceResponse,
   ApiError,
   EnvEmitRequest,
@@ -14,6 +18,9 @@ import type {
   ManifestResponse,
   ManifestSourceResponse,
   ManifestSourceUpdateRequest,
+  McpRenderResponse,
+  McpTestResponse,
+  McpValidateResponse,
   ProfileDetailResponse,
   RenderResponse,
   ScriptRunRequest,
@@ -211,6 +218,47 @@ export function getArtifactSource(artifact: string): Promise<ArtifactSourceRespo
   return fetchJson<ArtifactSourceResponse>(`/api/artifacts/${encodeURIComponent(artifact)}/source`);
 }
 
+export function getArtifactGitHistory(
+  artifact: string,
+  limit = 20
+): Promise<ArtifactGitHistoryResponse> {
+  return fetchJson<ArtifactGitHistoryResponse>(
+    `/api/artifacts/${encodeURIComponent(artifact)}/git/history`,
+    { limit }
+  );
+}
+
+export function getArtifactGitCompare(query: {
+  artifact: string;
+  base: string;
+  head?: string | null;
+}): Promise<ArtifactGitCompareResponse> {
+  return fetchJson<ArtifactGitCompareResponse>(
+    `/api/artifacts/${encodeURIComponent(query.artifact)}/git/compare`,
+    {
+      base: query.base,
+      head: query.head ?? undefined
+    }
+  );
+}
+
+export function rollbackArtifactToRevision(
+  artifact: string,
+  request: ArtifactGitRollbackRequest
+): Promise<ArtifactGitRollbackResponse> {
+  return fetchJson<ArtifactGitRollbackResponse>(
+    `/api/artifacts/${encodeURIComponent(artifact)}/git/rollback`,
+    undefined,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(request)
+    }
+  );
+}
+
 export function updateArtifactSource(
   artifact: string,
   content: string
@@ -250,6 +298,22 @@ export function emitEnv(request: EnvEmitRequest): Promise<EnvEmitResponse> {
       'Content-Type': 'application/json'
     },
     body: JSON.stringify(request)
+  });
+}
+
+export function validateMcpServer(serverId: string): Promise<McpValidateResponse> {
+  return fetchJson<McpValidateResponse>(`/api/mcp/${encodeURIComponent(serverId)}/validate`, undefined, {
+    method: 'POST'
+  });
+}
+
+export function renderMcpServer(serverId: string): Promise<McpRenderResponse> {
+  return fetchJson<McpRenderResponse>(`/api/mcp/${encodeURIComponent(serverId)}/render`);
+}
+
+export function testMcpServer(serverId: string): Promise<McpTestResponse> {
+  return fetchJson<McpTestResponse>(`/api/mcp/${encodeURIComponent(serverId)}/test`, undefined, {
+    method: 'POST'
   });
 }
 

@@ -1,11 +1,13 @@
+use std::path::Path;
 use std::sync::Arc;
 
-use agentstow_core::{AgentStowError, ArtifactId, ProfileName};
+use agentstow_core::{AgentStowError, ArtifactId, ProfileName, normalize_for_display};
 use agentstow_web_types::{
-    ApiError, ArtifactSourceUpdateRequest, EnvEmitRequest, HealthResponse, LinkApplyRequest,
-    LinkPlanRequest, LinkRepairRequest, ManifestSourceUpdateRequest, ScriptRunRequest,
-    WorkspaceGitSummaryResponse, WorkspaceInitRequest, WorkspaceInitResponse,
-    WorkspaceSelectRequest, WorkspaceSelectResponse, WorkspaceStateResponse,
+    ApiError, ArtifactGitRollbackRequest, ArtifactSourceUpdateRequest, EnvEmitRequest,
+    HealthResponse, LinkApplyRequest, LinkPlanRequest, LinkRepairRequest,
+    ManifestSourceUpdateRequest, ScriptRunRequest, WorkspaceGitSummaryResponse,
+    WorkspaceInitRequest, WorkspaceInitResponse, WorkspaceSelectRequest, WorkspaceSelectResponse,
+    WorkspaceStateResponse,
 };
 use axum::Router;
 use axum::extract::{Path as AxumPath, Query, State};
@@ -44,6 +46,21 @@ pub(crate) fn routes() -> Router<Arc<ServerState>> {
             "/api/artifacts/{artifact}/source",
             get(api_artifact_source).put(api_artifact_source_update),
         )
+        .route(
+            "/api/artifacts/{artifact}/git/history",
+            get(api_artifact_git_history),
+        )
+        .route(
+            "/api/artifacts/{artifact}/git/compare",
+            get(api_artifact_git_compare),
+        )
+        .route(
+            "/api/artifacts/{artifact}/git/rollback",
+            post(api_artifact_git_rollback),
+        )
+        .route("/api/mcp/{server}/validate", post(api_mcp_validate))
+        .route("/api/mcp/{server}/render", get(api_mcp_render))
+        .route("/api/mcp/{server}/test", post(api_mcp_test))
         .route("/api/env/emit", post(api_env_emit))
         .route("/api/scripts/{script}/run", post(api_script_run))
         .route("/api/profiles/{profile}", get(api_profile_detail))
@@ -61,6 +78,17 @@ struct RenderQuery {
 struct ImpactQuery {
     artifact: Option<String>,
     profile: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ArtifactGitHistoryQuery {
+    limit: Option<usize>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ArtifactGitCompareQuery {
+    base: String,
+    head: Option<String>,
 }
 
 async fn api_not_found() -> Response {
@@ -226,7 +254,19 @@ async fn api_manifest_source_update(
         Err(error) => return api_error(StatusCode::BAD_REQUEST, error),
     };
 
-    handle_result(queries.update_manifest_source(&req.content))
+    match queries.update_manifest_source(&req.content) {
+        Ok(response) => {
+            if let Ok(workspace_root) = selected_workspace_root(&st).await {
+                record_watch_change(
+                    &st,
+                    watch_change_summary(&workspace_root, &response.source_path, "save"),
+                )
+                .await;
+            }
+            Json(response).into_response()
+        }
+        Err(error) => api_error(StatusCode::BAD_REQUEST, error),
+    }
 }
 
 async fn api_render(
@@ -373,7 +413,158 @@ async fn api_artifact_source_update(
         Err(error) => return api_error(StatusCode::BAD_REQUEST, error),
     };
 
-    handle_result(queries.update_artifact_source(&artifact_id, &req.content))
+    match queries.update_artifact_source(&artifact_id, &req.content) {
+        Ok(response) => {
+            if let Ok(workspace_root) = selected_workspace_root(&st).await {
+                record_watch_change(
+                    &st,
+                    watch_change_summary(&workspace_root, &response.source_path, "save"),
+                )
+                .await;
+            }
+            Json(response).into_response()
+        }
+        Err(error) => api_error(StatusCode::BAD_REQUEST, error),
+    }
+}
+
+async fn api_artifact_git_history(
+    State(st): State<Arc<ServerState>>,
+    AxumPath(artifact): AxumPath<String>,
+    Query(query): Query<ArtifactGitHistoryQuery>,
+) -> Response {
+    let artifact_id = match ArtifactId::parse(artifact) {
+        Ok(artifact_id) => artifact_id,
+        Err(error) => return api_error(StatusCode::BAD_REQUEST, error),
+    };
+
+    let queries = match queries_from_state(&st).await {
+        Ok(queries) => queries,
+        Err(error) => return api_error(StatusCode::BAD_REQUEST, error),
+    };
+
+    handle_result(
+        queries
+            .artifact_git_history(&artifact_id, query.limit.unwrap_or(20))
+            .await,
+    )
+}
+
+async fn api_artifact_git_compare(
+    State(st): State<Arc<ServerState>>,
+    AxumPath(artifact): AxumPath<String>,
+    Query(query): Query<ArtifactGitCompareQuery>,
+) -> Response {
+    if query.base.trim().is_empty() {
+        return api_error(StatusCode::BAD_REQUEST, "base revision 不能为空");
+    }
+
+    let artifact_id = match ArtifactId::parse(artifact) {
+        Ok(artifact_id) => artifact_id,
+        Err(error) => return api_error(StatusCode::BAD_REQUEST, error),
+    };
+
+    let queries = match queries_from_state(&st).await {
+        Ok(queries) => queries,
+        Err(error) => return api_error(StatusCode::BAD_REQUEST, error),
+    };
+
+    let head = query
+        .head
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or(agentstow_git::WORKTREE_REVISION);
+    handle_result(
+        queries
+            .artifact_git_compare(&artifact_id, &query.base, head)
+            .await,
+    )
+}
+
+async fn api_artifact_git_rollback(
+    State(st): State<Arc<ServerState>>,
+    AxumPath(artifact): AxumPath<String>,
+    Json(req): Json<ArtifactGitRollbackRequest>,
+) -> Response {
+    if req.revision.trim().is_empty() {
+        return api_error(StatusCode::BAD_REQUEST, "revision 不能为空");
+    }
+
+    let artifact_id = match ArtifactId::parse(artifact) {
+        Ok(artifact_id) => artifact_id,
+        Err(error) => return api_error(StatusCode::BAD_REQUEST, error),
+    };
+
+    let queries = match queries_from_state(&st).await {
+        Ok(queries) => queries,
+        Err(error) => return api_error(StatusCode::BAD_REQUEST, error),
+    };
+
+    match queries
+        .artifact_git_rollback(&artifact_id, &req.revision)
+        .await
+    {
+        Ok(response) => {
+            if let Ok(workspace_root) = selected_workspace_root(&st).await {
+                let summary = format!(
+                    "rollback {} <= {}",
+                    workspace_relative_display(&workspace_root, &response.source.source_path),
+                    response.commit.short_revision
+                );
+                record_watch_change(&st, summary).await;
+            }
+            Json(response).into_response()
+        }
+        Err(error) => api_error(StatusCode::BAD_REQUEST, error),
+    }
+}
+
+async fn api_mcp_validate(
+    State(st): State<Arc<ServerState>>,
+    AxumPath(server): AxumPath<String>,
+) -> Response {
+    if server.trim().is_empty() {
+        return api_error(StatusCode::BAD_REQUEST, "server id 不能为空");
+    }
+
+    let queries = match queries_from_state(&st).await {
+        Ok(queries) => queries,
+        Err(error) => return api_error(StatusCode::BAD_REQUEST, error),
+    };
+
+    handle_result(queries.mcp_validate(&server))
+}
+
+async fn api_mcp_render(
+    State(st): State<Arc<ServerState>>,
+    AxumPath(server): AxumPath<String>,
+) -> Response {
+    if server.trim().is_empty() {
+        return api_error(StatusCode::BAD_REQUEST, "server id 不能为空");
+    }
+
+    let queries = match queries_from_state(&st).await {
+        Ok(queries) => queries,
+        Err(error) => return api_error(StatusCode::BAD_REQUEST, error),
+    };
+
+    handle_result(queries.mcp_render(&server))
+}
+
+async fn api_mcp_test(
+    State(st): State<Arc<ServerState>>,
+    AxumPath(server): AxumPath<String>,
+) -> Response {
+    if server.trim().is_empty() {
+        return api_error(StatusCode::BAD_REQUEST, "server id 不能为空");
+    }
+
+    let queries = match queries_from_state(&st).await {
+        Ok(queries) => queries,
+        Err(error) => return api_error(StatusCode::BAD_REQUEST, error),
+    };
+
+    handle_result(queries.mcp_test(&server))
 }
 
 async fn api_env_emit(
@@ -462,7 +653,8 @@ fn handle_result<T: serde::Serialize>(result: Result<T, AgentStowError>) -> Resp
                 | AgentStowError::Manifest { .. }
                 | AgentStowError::Render { .. }
                 | AgentStowError::Validate { .. }
-                | AgentStowError::Mcp { .. } => StatusCode::BAD_REQUEST,
+                | AgentStowError::Mcp { .. }
+                | AgentStowError::Git { .. } => StatusCode::BAD_REQUEST,
                 AgentStowError::LinkConflict { .. } => StatusCode::CONFLICT,
                 _ => StatusCode::INTERNAL_SERVER_ERROR,
             };
@@ -474,14 +666,38 @@ fn handle_result<T: serde::Serialize>(result: Result<T, AgentStowError>) -> Resp
 async fn queries_from_state(
     st: &Arc<ServerState>,
 ) -> Result<WorkspaceQueryService, AgentStowError> {
-    let workspace_root =
-        st.workspace_root
-            .read()
-            .await
-            .clone()
-            .ok_or_else(|| AgentStowError::InvalidArgs {
-                message: "workspace 未选择，请先通过 /api/workspace 设置或使用 CLI --workspace"
-                    .into(),
-            })?;
+    let workspace_root = selected_workspace_root(st).await?;
     Ok(WorkspaceQueryService::new(workspace_root))
+}
+
+async fn selected_workspace_root(
+    st: &Arc<ServerState>,
+) -> Result<std::path::PathBuf, AgentStowError> {
+    st.workspace_root
+        .read()
+        .await
+        .clone()
+        .ok_or_else(|| AgentStowError::InvalidArgs {
+            message: "workspace 未选择，请先通过 /api/workspace 设置或使用 CLI --workspace".into(),
+        })
+}
+
+async fn record_watch_change(st: &Arc<ServerState>, summary: String) {
+    let watch = st.watch.read().await.clone();
+    watch.record_change(summary);
+}
+
+fn watch_change_summary(workspace_root: &Path, source_path: &str, action: &str) -> String {
+    format!(
+        "{action} {}",
+        workspace_relative_display(workspace_root, source_path)
+    )
+}
+
+fn workspace_relative_display(workspace_root: &Path, source_path: &str) -> String {
+    let source_path = Path::new(source_path);
+    match source_path.strip_prefix(workspace_root) {
+        Ok(relative) => normalize_for_display(relative),
+        Err(_) => source_path.display().to_string(),
+    }
 }

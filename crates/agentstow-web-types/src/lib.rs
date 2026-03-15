@@ -41,6 +41,58 @@ pub struct WorkspaceGitSummaryResponse {
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
+pub struct GitCommitSummaryResponse {
+    pub revision: String,
+    pub short_revision: String,
+    pub summary: String,
+    pub author_name: String,
+    pub authored_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct ArtifactGitHistoryResponse {
+    pub artifact_id: String,
+    pub source_path: String,
+    pub repo_relative_path: String,
+    pub branch: Option<String>,
+    pub head: String,
+    pub head_short: String,
+    pub dirty: bool,
+    pub commits: Vec<GitCommitSummaryResponse>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct ArtifactGitCompareResponse {
+    pub artifact_id: String,
+    pub source_path: String,
+    pub repo_relative_path: String,
+    pub base_revision: String,
+    pub head_revision: String,
+    pub base_label: String,
+    pub head_label: String,
+    pub base_content: String,
+    pub head_content: String,
+    pub changed: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct ArtifactGitRollbackRequest {
+    pub revision: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct ArtifactGitRollbackResponse {
+    pub artifact_id: String,
+    pub commit: GitCommitSummaryResponse,
+    pub source: ArtifactSourceResponse,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct WorkspaceSelectRequest {
     pub workspace_root: String,
 }
@@ -180,6 +232,23 @@ pub enum McpTransportKindResponse {
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
 #[ts(export)]
+pub enum SecretBindingKindResponse {
+    Literal,
+    Env,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
+pub enum EnvUsageOwnerKindResponse {
+    EnvSet,
+    Script,
+    McpServer,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
 pub enum ImpactSubjectKindResponse {
     Artifact,
     Profile,
@@ -193,6 +262,14 @@ pub enum WatchModeResponse {
     Native,
     Poll,
     Manual,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
+pub enum WatchTraceLevelResponse {
+    Change,
+    Error,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -305,6 +382,17 @@ pub struct WatchStatusResponse {
     pub last_event_at: Option<String>,
     pub last_error: Option<String>,
     pub watch_roots: Vec<String>,
+    pub recent_events: Vec<WatchTraceEventResponse>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct WatchTraceEventResponse {
+    #[ts(type = "number")]
+    pub revision: u64,
+    pub level: WatchTraceLevelResponse,
+    pub summary: String,
+    pub at: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -365,6 +453,20 @@ pub struct ProfileVarResponse {
 pub struct EnvVarSummaryResponse {
     pub key: String,
     pub binding: String,
+    pub binding_kind: SecretBindingKindResponse,
+    pub source_env_var: Option<String>,
+    pub rendered_placeholder: String,
+    pub available: bool,
+    pub diagnostic: Option<String>,
+    pub referrers: Vec<EnvUsageRefResponse>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct EnvUsageRefResponse {
+    pub owner_kind: EnvUsageOwnerKindResponse,
+    pub owner_id: String,
+    pub label: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -372,6 +474,9 @@ pub struct EnvVarSummaryResponse {
 pub struct EnvSetSummaryResponse {
     pub id: String,
     pub vars: Vec<EnvVarSummaryResponse>,
+    pub available_count: usize,
+    pub missing_count: usize,
+    pub referrers: Vec<EnvUsageRefResponse>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -382,6 +487,7 @@ pub struct ScriptSummaryResponse {
     pub entry: String,
     pub args: Vec<String>,
     pub env_keys: Vec<String>,
+    pub env_bindings: Vec<EnvVarSummaryResponse>,
     #[ts(type = "number | null")]
     pub timeout_ms: Option<u64>,
 }
@@ -405,6 +511,50 @@ pub struct McpServerSummaryResponse {
 pub struct McpHeaderResponse {
     pub key: String,
     pub value: String,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
+pub enum McpCheckStatusResponse {
+    Ok,
+    Warn,
+    Error,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct McpCheckResponse {
+    pub code: String,
+    pub status: McpCheckStatusResponse,
+    pub message: String,
+    pub detail: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct McpValidateResponse {
+    pub server_id: String,
+    pub ok: bool,
+    pub issues: Vec<ValidationIssueResponse>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct McpRenderResponse {
+    pub server_id: String,
+    pub transport_kind: McpTransportKindResponse,
+    pub launcher_preview: String,
+    pub config_json: String,
+    pub env_bindings: Vec<EnvVarSummaryResponse>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct McpTestResponse {
+    pub server_id: String,
+    pub ok: bool,
+    pub checks: Vec<McpCheckResponse>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -469,6 +619,11 @@ pub fn export_bindings() -> Result<(), ts_rs::ExportError> {
     ManifestResponse::export_all(&config)?;
     WorkspaceStateResponse::export_all(&config)?;
     WorkspaceGitSummaryResponse::export_all(&config)?;
+    GitCommitSummaryResponse::export_all(&config)?;
+    ArtifactGitHistoryResponse::export_all(&config)?;
+    ArtifactGitCompareResponse::export_all(&config)?;
+    ArtifactGitRollbackRequest::export_all(&config)?;
+    ArtifactGitRollbackResponse::export_all(&config)?;
     WorkspaceSelectRequest::export_all(&config)?;
     WorkspaceSelectResponse::export_all(&config)?;
     WorkspaceInitRequest::export_all(&config)?;
@@ -487,8 +642,11 @@ pub fn export_bindings() -> Result<(), ts_rs::ExportError> {
     ArtifactKindResponse::export_all(&config)?;
     ValidateAsResponse::export_all(&config)?;
     McpTransportKindResponse::export_all(&config)?;
+    SecretBindingKindResponse::export_all(&config)?;
+    EnvUsageOwnerKindResponse::export_all(&config)?;
     ImpactSubjectKindResponse::export_all(&config)?;
     WatchModeResponse::export_all(&config)?;
+    WatchTraceLevelResponse::export_all(&config)?;
     LinkRecordResponse::export_all(&config)?;
     LinkStatusResponseItem::export_all(&config)?;
     LinkPlanRequest::export_all(&config)?;
@@ -499,16 +657,23 @@ pub fn export_bindings() -> Result<(), ts_rs::ExportError> {
     LinkOperationActionResponse::export_all(&config)?;
     LinkOperationItemResponse::export_all(&config)?;
     LinkOperationResponse::export_all(&config)?;
+    WatchTraceEventResponse::export_all(&config)?;
     WatchStatusResponse::export_all(&config)?;
     WorkspaceCountsResponse::export_all(&config)?;
     TargetSummaryResponse::export_all(&config)?;
     ArtifactSummaryResponse::export_all(&config)?;
     ProfileSummaryResponse::export_all(&config)?;
     ProfileVarResponse::export_all(&config)?;
+    EnvUsageRefResponse::export_all(&config)?;
     EnvVarSummaryResponse::export_all(&config)?;
     EnvSetSummaryResponse::export_all(&config)?;
     ScriptSummaryResponse::export_all(&config)?;
     McpServerSummaryResponse::export_all(&config)?;
+    McpCheckStatusResponse::export_all(&config)?;
+    McpCheckResponse::export_all(&config)?;
+    McpValidateResponse::export_all(&config)?;
+    McpRenderResponse::export_all(&config)?;
+    McpTestResponse::export_all(&config)?;
     ValidationIssueResponse::export_all(&config)?;
     WorkspaceSummaryResponse::export_all(&config)?;
     ArtifactDetailResponse::export_all(&config)?;

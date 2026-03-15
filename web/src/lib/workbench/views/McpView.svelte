@@ -1,7 +1,13 @@
 <script lang="ts">
   import SplitView from '$lib/components/SplitView.svelte';
 
-  import type { McpServerSummaryResponse } from '$lib/types';
+  import { ApiClientError, renderMcpServer, testMcpServer, validateMcpServer } from '$lib/api/client';
+  import type {
+    McpRenderResponse,
+    McpServerSummaryResponse,
+    McpTestResponse,
+    McpValidateResponse
+  } from '$lib/types';
   import { truncateMiddle } from '$lib/utils/format';
   import type { ManifestInsertKind } from '$lib/workbench/manifest_snippets';
 
@@ -17,6 +23,10 @@
     onCreateManifestObject: (kind: ManifestInsertKind) => void;
   };
 
+  type RenderLoadOptions = {
+    resetChecks?: boolean;
+  };
+
   let {
     mcpServers,
     selectedMcpServerId,
@@ -29,74 +39,6 @@
     onCreateManifestObject
   }: Props = $props();
 
-  function quoteShellArg(part: string): string {
-    return /[\s"'\\]/.test(part) ? JSON.stringify(part) : part;
-  }
-
-  function summarizeBinding(binding: string): string {
-    if (binding.startsWith('env:')) {
-      return `\${${binding.slice(4)}}`;
-    }
-    if (binding === 'literal') {
-      return '<literal>';
-    }
-    return `<${binding}>`;
-  }
-
-  function buildLauncherPreview(server: McpServerSummaryResponse | null): string {
-    if (!server) {
-      return '';
-    }
-
-    if (server.transport_kind === 'stdio') {
-      const parts = [server.command ?? server.location, ...server.args].filter(
-        (part): part is string => Boolean(part)
-      );
-      return parts.map((part) => quoteShellArg(part)).join(' ');
-    }
-
-    return [
-      `GET ${server.url ?? server.location}`,
-      server.headers.map((header) => `${header.key}: ${header.value}`).join('\n')
-    ]
-      .filter(Boolean)
-      .join('\n');
-  }
-
-  function buildConfigPreview(server: McpServerSummaryResponse | null): string {
-    if (!server) {
-      return '';
-    }
-
-    const env = Object.fromEntries(
-      server.env_bindings.map((binding) => [binding.key, summarizeBinding(binding.binding)])
-    );
-
-    const payload =
-      server.transport_kind === 'stdio'
-        ? {
-            command: server.command ?? server.location,
-            args: server.args,
-            env
-          }
-        : {
-            type: 'http',
-            url: server.url ?? server.location,
-            headers: Object.fromEntries(server.headers.map((header) => [header.key, header.value])),
-            env
-          };
-
-    return JSON.stringify(
-      {
-        mcpServers: {
-          [server.id]: payload
-        }
-      },
-      null,
-      2
-    );
-  }
-
   function buildServerMeta(server: McpServerSummaryResponse): string {
     const details = [`${server.env_bindings.length} env`];
     if (server.headers.length > 0) {
@@ -108,8 +50,149 @@
     return `${server.transport_kind} · ${details.join(' · ')}`;
   }
 
-  const launcherPreview = $derived.by(() => buildLauncherPreview(activeMcpServer));
-  const renderedConfigPreview = $derived.by(() => buildConfigPreview(activeMcpServer));
+  function badgeClass(status: string): string {
+    return ['pill', status === 'ok' ? 'pill--ok' : 'pill--warn'].join(' ');
+  }
+
+  let renderState = $state<McpRenderResponse | null>(null);
+  let validateState = $state<McpValidateResponse | null>(null);
+  let testState = $state<McpTestResponse | null>(null);
+  let localError = $state<string | null>(null);
+  let busyRender = $state(false);
+  let busyValidate = $state(false);
+  let busyTest = $state(false);
+  let renderToken = 0;
+  let validateToken = 0;
+  let testToken = 0;
+
+  function describeError(error: unknown, fallback: string): string {
+    if (error instanceof ApiClientError) {
+      return error.message;
+    }
+    if (error instanceof Error && error.message) {
+      return error.message;
+    }
+    return fallback;
+  }
+
+  async function loadRenderState(
+    serverId: string | null,
+    options: RenderLoadOptions = {}
+  ): Promise<void> {
+    const token = ++renderToken;
+
+    if (!serverId) {
+      renderState = null;
+      validateState = null;
+      testState = null;
+      localError = null;
+      busyRender = false;
+      return;
+    }
+
+    busyRender = true;
+    localError = null;
+    renderState = null;
+    if (options.resetChecks ?? false) {
+      validateState = null;
+      testState = null;
+    }
+
+    try {
+      const rendered = await renderMcpServer(serverId);
+      if (token !== renderToken || activeMcpServer?.id !== serverId) {
+        return;
+      }
+      renderState = rendered;
+    } catch (error) {
+      if (token !== renderToken || activeMcpServer?.id !== serverId) {
+        return;
+      }
+      renderState = null;
+      localError = describeError(error, '无法渲染 MCP 配置。');
+    } finally {
+      if (token === renderToken && activeMcpServer?.id === serverId) {
+        busyRender = false;
+      }
+    }
+  }
+
+  async function refreshRender(): Promise<void> {
+    await loadRenderState(activeMcpServer?.id ?? null);
+  }
+
+  async function runValidate(): Promise<void> {
+    const serverId = activeMcpServer?.id;
+    if (!serverId || busyValidate) {
+      return;
+    }
+    const token = ++validateToken;
+
+    busyValidate = true;
+    localError = null;
+    try {
+      const result = await validateMcpServer(serverId);
+      if (token !== validateToken || activeMcpServer?.id !== serverId) {
+        return;
+      }
+      validateState = result;
+    } catch (error) {
+      if (token !== validateToken || activeMcpServer?.id !== serverId) {
+        return;
+      }
+      validateState = null;
+      localError = describeError(error, 'MCP 校验失败。');
+    } finally {
+      if (token === validateToken && activeMcpServer?.id === serverId) {
+        busyValidate = false;
+      }
+    }
+  }
+
+  async function runTest(): Promise<void> {
+    const serverId = activeMcpServer?.id;
+    if (!serverId || busyTest) {
+      return;
+    }
+    const token = ++testToken;
+
+    busyTest = true;
+    localError = null;
+    try {
+      const result = await testMcpServer(serverId);
+      if (token !== testToken || activeMcpServer?.id !== serverId) {
+        return;
+      }
+      testState = result;
+    } catch (error) {
+      if (token !== testToken || activeMcpServer?.id !== serverId) {
+        return;
+      }
+      testState = null;
+      localError = describeError(error, 'MCP dry-run 测试失败。');
+    } finally {
+      if (token === testToken && activeMcpServer?.id === serverId) {
+        busyTest = false;
+      }
+    }
+  }
+
+  $effect(() => {
+    void loadRenderState(activeMcpServer?.id ?? null, { resetChecks: true });
+  });
+
+  const launcherPreview = $derived(renderState?.launcher_preview ?? '');
+  const renderedConfigPreview = $derived(renderState?.config_json ?? '');
+  const runtimeEnvBindings = $derived(renderState?.env_bindings ?? activeMcpServer?.env_bindings ?? []);
+  const runtimeAvailableCount = $derived(
+    runtimeEnvBindings.reduce((count, binding) => count + (binding.available ? 1 : 0), 0)
+  );
+  const validateIssueCount = $derived(validateState?.issues.length ?? 0);
+  const testCheckCount = $derived(testState?.checks.length ?? 0);
+  const testAttentionCount = $derived(
+    testState?.checks.reduce((count, check) => count + (check.status === 'ok' ? 0 : 1), 0) ?? 0
+  );
+  const viewError = $derived(localError ?? errorMessage);
 </script>
 
 <SplitView autoSaveId="workbench:view:mcp" initialLeftPct={22} minLeftPx={256} minRightPx={760}>
@@ -144,6 +227,7 @@
               <li>
                 <button
                   class={['list__item', selectedMcpServerId === server.id ? 'list__item--active' : ''].join(' ')}
+                  data-testid={`mcp-server-item:${server.id}`}
                   onclick={() => onSelectMcpServer(server.id)}
                   title={server.location}
                   type="button"
@@ -178,6 +262,33 @@
           </button>
           <button
             class="ui-button ui-button--ghost"
+            data-testid="mcp-validate-run"
+            disabled={!activeMcpServer || busyValidate}
+            type="button"
+            onclick={() => void runValidate()}
+          >
+            {busyValidate ? '校验中…' : '校验'}
+          </button>
+          <button
+            class="ui-button ui-button--ghost"
+            data-testid="mcp-render-run"
+            disabled={!activeMcpServer || busyRender}
+            type="button"
+            onclick={() => void refreshRender()}
+          >
+            {busyRender ? '渲染中…' : '重新渲染'}
+          </button>
+          <button
+            class="ui-button ui-button--ghost"
+            data-testid="mcp-test-run"
+            disabled={!activeMcpServer || busyTest}
+            type="button"
+            onclick={() => void runTest()}
+          >
+            {busyTest ? '测试中…' : 'dry-run 测试'}
+          </button>
+          <button
+            class="ui-button ui-button--ghost"
             disabled={!activeMcpServer}
             type="button"
             onclick={() => void onCopyToClipboard(activeMcpServer?.id ?? '', 'MCP id')}
@@ -187,8 +298,8 @@
         </div>
       </div>
 
-      {#if errorMessage}
-        <p class="notice notice--error">{errorMessage}</p>
+      {#if viewError}
+        <p class="notice notice--error">{viewError}</p>
       {/if}
       <p class="status-line" aria-live="polite">{statusLine}</p>
 
@@ -259,22 +370,28 @@
                   <div class="inspector-section">
                     <div class="section__title">
                       <span>Launcher</span>
-                      <strong>{activeMcpServer.transport_kind === 'stdio' ? 'spawn' : 'http'}</strong>
+                      <strong>{busyRender ? 'loading' : activeMcpServer.transport_kind === 'stdio' ? 'spawn' : 'http'}</strong>
                     </div>
 
                     <div class="terminal">
-                      <pre class="terminal__screen">{launcherPreview}</pre>
+                      <pre class="terminal__screen" data-testid="mcp-launcher-preview">
+                        {busyRender && !launcherPreview ? '正在重新渲染 launcher preview…' : launcherPreview || '（暂无 launcher preview）'}
+                      </pre>
                     </div>
                   </div>
 
                   <div class="inspector-section">
                     <div class="section__title">
                       <span>Rendered Config Preview</span>
-                      <strong>json</strong>
+                      <strong>{busyRender ? 'loading' : 'json'}</strong>
                     </div>
 
                     <div class="terminal">
-                      <pre class="terminal__screen">{renderedConfigPreview}</pre>
+                      <pre class="terminal__screen" data-testid="mcp-rendered-config">
+                        {busyRender && !renderedConfigPreview
+                          ? '正在重新渲染 MCP config…'
+                          : renderedConfigPreview || '（暂无 rendered config preview）'}
+                      </pre>
                     </div>
                   </div>
                 {/if}
@@ -285,11 +402,11 @@
           {#snippet right()}
             <section class="region secondary-sidebar" aria-label="MCP runtime sidebar">
               <div class="region__header">
-                <span>Env Bindings</span>
-                <span class="mono">{activeMcpServer?.env_bindings.length ?? 0}</span>
+                <span>Runtime Inspector</span>
+                <span class="mono">{runtimeEnvBindings.length}</span>
               </div>
 
-              <div class="panel__body panel__body--flush">
+              <div class="region__body">
                 {#if !activeMcpServer}
                   <p class="empty empty--flush">（选择 MCP server 后查看环境绑定和快捷操作）</p>
                 {:else}
@@ -300,8 +417,10 @@
                     </div>
                     <div class="subject-summary">
                       <div class="summary-row">
-                        <span class="summary-row__label">Env</span>
-                        <span class="summary-row__value mono">{activeMcpServer.env_bindings.length}</span>
+                        <span class="summary-row__label">Ready</span>
+                        <span class="summary-row__value mono">
+                          {runtimeAvailableCount}/{runtimeEnvBindings.length}
+                        </span>
                       </div>
                       <div class="summary-row">
                         <span class="summary-row__label">Headers</span>
@@ -311,28 +430,119 @@
                         <span class="summary-row__label">Args</span>
                         <span class="summary-row__value mono">{activeMcpServer.args.length}</span>
                       </div>
+                      <div class="summary-row">
+                        <span class="summary-row__label">Validate</span>
+                        <span class="summary-row__value mono">
+                          {validateState ? (validateIssueCount === 0 && validateState.ok ? 'ok' : `${validateIssueCount} issue`) : 'idle'}
+                        </span>
+                      </div>
+                      <div class="summary-row">
+                        <span class="summary-row__label">Dry-run</span>
+                        <span class="summary-row__value mono">
+                          {testState ? (testAttentionCount === 0 && testState.ok ? 'ok' : `${testAttentionCount} attention`) : 'idle'}
+                        </span>
+                      </div>
                     </div>
                   </div>
 
                   <div class="inspector-section">
                     <div class="section__title">
-                      <span>Env Bindings</span>
-                      <strong>{activeMcpServer.env_bindings.length}</strong>
+                      <span>Validate</span>
+                      <strong>{validateState ? (validateState.ok && validateIssueCount === 0 ? 'ok' : 'attention') : 'idle'}</strong>
                     </div>
 
-                    {#if activeMcpServer.env_bindings.length === 0}
+                    {#if busyValidate}
+                      <p class="empty empty--flush">（正在执行 validate，请稍候…）</p>
+                    {:else if !validateState}
+                      <p class="empty empty--flush">（尚未执行 validate，可先点击顶部“校验”）</p>
+                    {:else if validateState.issues.length === 0}
+                      <p class="empty empty--flush">（校验通过，未发现问题）</p>
+                    {:else}
+                      <ul class="result-list" aria-label="MCP validate issues" data-testid="mcp-validate-issues">
+                        {#each validateState.issues as issue (`${issue.code}:${issue.subject_id}:${issue.message}`)}
+                          <li class="result-row">
+                            <span class={badgeClass(issue.severity === 'info' ? 'ok' : 'warn')}>
+                              {issue.severity}
+                            </span>
+                            <div class="result-row__main">
+                              <span class="result-row__title">{issue.message}</span>
+                              <span class="result-row__detail mono">
+                                {issue.scope} · {issue.subject_id} · {issue.code}
+                              </span>
+                            </div>
+                          </li>
+                        {/each}
+                      </ul>
+                    {/if}
+                  </div>
+
+                  <div class="inspector-section">
+                    <div class="section__title">
+                      <span>Test</span>
+                      <strong>{testState ? (testState.ok && testAttentionCount === 0 ? 'ok' : 'attention') : 'idle'}</strong>
+                    </div>
+
+                    {#if busyTest}
+                      <p class="empty empty--flush">（正在执行 dry-run 测试，请稍候…）</p>
+                    {:else if !testState}
+                      <p class="empty empty--flush">（尚未执行 dry-run 测试）</p>
+                    {:else if testCheckCount === 0}
+                      <p class="empty empty--flush">（dry-run 未返回 checks）</p>
+                    {:else}
+                      <ul class="result-list" aria-label="MCP test checks" data-testid="mcp-test-checks">
+                        {#each testState.checks as check (`${check.code}:${check.message}`)}
+                          <li class="result-row">
+                            <span class={badgeClass(check.status)}>{check.status}</span>
+                            <div class="result-row__main">
+                              <span class="result-row__title">{check.message}</span>
+                              <span class="result-row__detail mono">{check.code}</span>
+                              {#if check.detail}
+                                <span class="result-row__detail mono">{check.detail}</span>
+                              {/if}
+                            </div>
+                          </li>
+                        {/each}
+                      </ul>
+                    {/if}
+                  </div>
+
+                  <div class="inspector-section">
+                    <div class="section__title">
+                      <span>Env Bindings</span>
+                      <strong>{runtimeEnvBindings.length}</strong>
+                    </div>
+
+                    {#if runtimeEnvBindings.length === 0}
                       <p class="empty empty--flush">（该 MCP server 未声明 env bindings）</p>
                     {:else}
-                      <div class="inspector-table">
-                        {#each activeMcpServer.env_bindings as binding (binding.key)}
-                          <div class="inspector-row">
-                            <span class="inspector-row__label">{binding.key}</span>
-                            <span class="inspector-row__value inspector-row__value--mono">
-                              {binding.binding}
+                      <ul class="result-list" aria-label="MCP env bindings" data-testid="mcp-env-bindings">
+                        {#each runtimeEnvBindings as binding (binding.key)}
+                          <li class="result-row">
+                            <span class={['pill', binding.available ? 'pill--ok' : 'pill--warn'].join(' ')}>
+                              {binding.available ? 'ready' : 'missing'}
                             </span>
-                          </div>
+                            <div class="result-row__main">
+                              <span class="result-row__title">{binding.key}</span>
+                              <span class="result-row__detail mono">
+                                {binding.binding_kind} · {binding.binding} · {binding.rendered_placeholder}
+                              </span>
+                              {#if binding.source_env_var}
+                                <span class="result-row__detail mono">
+                                  source env: {binding.source_env_var}
+                                </span>
+                              {/if}
+                              {#if binding.diagnostic}
+                                <span class="result-row__detail">{binding.diagnostic}</span>
+                              {/if}
+                              {#if binding.referrers.length > 0}
+                                <span class="result-row__detail mono">
+                                  refs: {binding.referrers.map((ref) => `${ref.owner_kind}:${ref.owner_id}`).join(', ')}
+                                </span>
+                              {/if}
+                            </div>
+                          </li>
                         {/each}
-                      </div>
+                      </ul>
                     {/if}
                   </div>
 
@@ -347,7 +557,7 @@
                       </button>
                       <button
                         class="chip"
-                        disabled={activeMcpServer.transport_kind !== 'stdio'}
+                        disabled={!launcherPreview}
                         type="button"
                         onclick={() => void onCopyToClipboard(launcherPreview, 'launcher command')}
                       >
@@ -363,6 +573,7 @@
                       </button>
                       <button
                         class="chip"
+                        disabled={!renderedConfigPreview}
                         type="button"
                         onclick={() => void onCopyToClipboard(renderedConfigPreview, 'MCP JSON')}
                       >

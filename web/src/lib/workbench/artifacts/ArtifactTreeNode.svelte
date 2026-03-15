@@ -41,6 +41,7 @@
   {:else}
     <button
       class={['tree__row', 'tree__row--file', isActiveFile ? 'tree__row--active' : ''].join(' ')}
+      data-testid={`artifact-tree-item:${node.artifact.id}`}
       onclick={() => onOpenArtifact(node.artifact.id)}
       type="button"
       title={`${node.artifact.id} · ${node.rel_source_path}`}

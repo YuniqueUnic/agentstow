@@ -8,14 +8,19 @@
   import SplitView from '$lib/components/SplitView.svelte';
   import {
     ApiClientError,
+    getArtifactGitCompare,
+    getArtifactGitHistory,
     getArtifactSource,
     getProfileDetail,
     getManifestSource,
     renderArtifact,
+    rollbackArtifactToRevision,
     updateArtifactSource,
     updateManifestSource
   } from '$lib/api/client';
   import type {
+    ArtifactGitCompareResponse,
+    ArtifactGitHistoryResponse,
     ArtifactSourceResponse,
     ManifestSourceResponse,
     ProfileDetailResponse,
@@ -40,6 +45,7 @@
     onFocusArtifact?: (id: string | null) => void;
     onOpenTarget?: (id: string) => void;
     onRefreshWorkspace?: () => Promise<void>;
+    onSourceSaved?: () => Promise<void>;
     requestedArtifactId?: string | null;
     onRequestHandled?: (id: string) => void;
     requestedManifestInsert?: ManifestInsertKind | null;
@@ -58,6 +64,7 @@
     onFocusArtifact,
     onOpenTarget,
     onRefreshWorkspace,
+    onSourceSaved,
     requestedArtifactId,
     onRequestHandled,
     requestedManifestInsert,
@@ -94,6 +101,16 @@
   let profileDetailBusy = $state(false);
   let profileDetailError = $state<string | null>(null);
   let profileRequestToken = 0;
+  let gitHistory = $state<ArtifactGitHistoryResponse | null>(null);
+  let gitHistoryBusy = $state(false);
+  let gitHistoryError = $state<string | null>(null);
+  let gitCompare = $state<ArtifactGitCompareResponse | null>(null);
+  let gitCompareBusy = $state(false);
+  let gitCompareError = $state<string | null>(null);
+  let selectedGitRevision = $state<string | null>(null);
+  let gitHistoryToken = 0;
+  let gitCompareToken = 0;
+  let rollbackBusy = $state(false);
 
   const fileArtifacts = $derived((summary?.artifacts ?? []).filter((a) => a.kind === 'file'));
   const dirArtifacts = $derived((summary?.artifacts ?? []).filter((a) => a.kind === 'dir'));
@@ -150,6 +167,14 @@
     source: ArtifactSourceResponse | ManifestSourceResponse | null | undefined
   ): string {
     return source?.content ?? '';
+  }
+
+  function summarySourcePathOf(documentId: string | null): string | null {
+    if (!documentId || documentId === MANIFEST_DOC_ID) {
+      return workspaceRoot ? `${workspaceRoot}/agentstow.toml` : MANIFEST_DOC_ID;
+    }
+
+    return fileArtifacts.find((artifact) => artifact.id === documentId)?.source_path ?? null;
   }
 
   function validateAsOf(
@@ -344,6 +369,8 @@
       setStatusLine(activeTab === MANIFEST_DOC_ID ? '已保存 manifest。' : '已保存 source。');
       if (activeTab === MANIFEST_DOC_ID) {
         await onRefreshWorkspace?.();
+      } else {
+        await onSourceSaved?.();
       }
     } catch (error) {
       setErrorMessage(describeError(error, '保存失败。'));
@@ -412,6 +439,129 @@
       if (token === profileRequestToken) {
         profileDetailBusy = false;
       }
+    }
+  }
+
+  async function loadGitHistory(documentId: string | null): Promise<void> {
+    const token = ++gitHistoryToken;
+
+    if (!documentId || isManifestTab(documentId)) {
+      gitHistory = null;
+      gitHistoryError = null;
+      gitHistoryBusy = false;
+      gitCompare = null;
+      gitCompareError = null;
+      selectedGitRevision = null;
+      return;
+    }
+
+    gitHistoryBusy = true;
+    gitHistoryError = null;
+    gitCompare = null;
+    gitCompareError = null;
+    selectedGitRevision = null;
+
+    try {
+      const history = await getArtifactGitHistory(documentId, 24);
+      if (token !== gitHistoryToken || activeTab !== documentId) {
+        return;
+      }
+      gitHistory = history;
+    } catch (error) {
+      if (token !== gitHistoryToken || activeTab !== documentId) {
+        return;
+      }
+      gitHistory = null;
+      gitHistoryError = describeError(error, '无法读取 Git history。');
+    } finally {
+      if (token === gitHistoryToken && activeTab === documentId) {
+        gitHistoryBusy = false;
+      }
+    }
+  }
+
+  async function compareRevision(revision: string): Promise<void> {
+    const documentId = activeTab;
+    if (!documentId || isManifestTab(documentId) || gitCompareBusy) {
+      return;
+    }
+
+    const token = ++gitCompareToken;
+    gitCompareBusy = true;
+    gitCompareError = null;
+
+    try {
+      const compare = await getArtifactGitCompare({
+        artifact: documentId,
+        base: revision,
+        head: 'WORKTREE'
+      });
+      if (token !== gitCompareToken || activeTab !== documentId) {
+        return;
+      }
+      gitCompare = compare;
+      selectedGitRevision = revision;
+      rightMode = 'diff';
+      setStatusLine(`已加载 ${compare.base_label} -> ${compare.head_label} 的 Git 对比。`);
+    } catch (error) {
+      if (token !== gitCompareToken || activeTab !== documentId) {
+        return;
+      }
+      gitCompare = null;
+      gitCompareError = describeError(error, '无法读取 Git compare。');
+    } finally {
+      if (token === gitCompareToken && activeTab === documentId) {
+        gitCompareBusy = false;
+      }
+    }
+  }
+
+  function clearGitCompare(): void {
+    gitCompare = null;
+    gitCompareError = null;
+    selectedGitRevision = null;
+    setStatusLine('已返回编辑差异视图。');
+  }
+
+  async function rollbackRevision(revision: string): Promise<void> {
+    const documentId = activeTab;
+    if (!documentId || isManifestTab(documentId) || rollbackBusy) {
+      return;
+    }
+
+    const confirmed =
+      typeof window === 'undefined'
+        ? true
+        : window.confirm(`将 ${documentId} 的 source 回退到 ${revision.slice(0, 7)}？这会覆盖当前已保存文件。`);
+    if (!confirmed) {
+      return;
+    }
+
+    rollbackBusy = true;
+    selectedGitRevision = revision;
+    setErrorMessage(null);
+    try {
+      const updated = await rollbackArtifactToRevision(documentId, { revision });
+      const st = editors[documentId];
+      if (st) {
+        st.source = updated.source;
+        st.editorText = updated.source.content;
+        st.previewText = '';
+        st.dirty = false;
+      }
+      gitCompare = null;
+      gitCompareError = null;
+      await loadGitHistory(documentId);
+      selectedGitRevision = updated.commit.revision;
+      if (activeTab === documentId) {
+        await refreshPreview();
+      }
+      await onSourceSaved?.();
+      setStatusLine(`已将 ${documentId} 回退到 ${updated.commit.short_revision} · ${updated.commit.summary}。`);
+    } catch (error) {
+      setErrorMessage(describeError(error, 'Git 回退失败。'));
+    } finally {
+      rollbackBusy = false;
     }
   }
 
@@ -494,7 +644,51 @@
   });
 
   $effect(() => {
+    if (!summary) {
+      return;
+    }
+
+    const validIds = new Set(fileArtifacts.map((artifact) => artifact.id));
+    const nextTabs = openTabs.filter((id) => id === MANIFEST_DOC_ID || validIds.has(id));
+    if (nextTabs.length !== openTabs.length) {
+      openTabs = nextTabs.length > 0 ? nextTabs : [MANIFEST_DOC_ID];
+    }
+
+    if (activeTab && activeTab !== MANIFEST_DOC_ID && !validIds.has(activeTab)) {
+      activeTab = nextTabs[0] ?? MANIFEST_DOC_ID;
+    }
+
+    let needsReload = false;
+    for (const documentId of nextTabs) {
+      const st = editors[documentId];
+      if (!st || st.dirty) {
+        continue;
+      }
+
+      const expectedPath = summarySourcePathOf(documentId);
+      const currentPath = sourcePathOf(st.source);
+      if (expectedPath && currentPath && expectedPath !== currentPath) {
+        st.source = null;
+        st.editorText = '';
+        st.previewText = '';
+        st.dirty = false;
+        if (activeTab === documentId) {
+          needsReload = true;
+        }
+      }
+    }
+
+    if (needsReload && activeTab) {
+      void loadEditorSource(activeTab);
+    }
+  });
+
+  $effect(() => {
     void loadProfileDetail(selectedProfile ?? null);
+  });
+
+  $effect(() => {
+    void loadGitHistory(activeTab);
   });
 
   $effect(() => {
@@ -568,6 +762,18 @@
 
   const activeValidateAs = $derived(validateAsOf(activeTab, activeEditor?.source));
   const previewMode = $derived(activeValidateAs === 'markdown' ? 'markdown' : 'plain');
+  const diffOriginalText = $derived.by(() =>
+    gitCompare ? gitCompare.base_content : savedContentOf(activeEditor?.source)
+  );
+  const diffModifiedText = $derived.by(() =>
+    gitCompare ? gitCompare.head_content : activeEditor?.editorText ?? ''
+  );
+  const diffFromLabel = $derived.by(() =>
+    gitCompare ? gitCompare.base_label : activeTab ? `${activeTab} (saved)` : 'saved'
+  );
+  const diffToLabel = $derived.by(() =>
+    gitCompare ? gitCompare.head_label : activeTab ? `${activeTab} (edited)` : 'edited'
+  );
   const activeArtifactSummary = $derived.by(() => {
     if (!activeTab || activeTab === MANIFEST_DOC_ID) {
       return null;
@@ -841,20 +1047,23 @@
                       {:else if activeEditor?.busySource}
                         <p class="muted">读取中…</p>
                       {:else}
-                        <CodeEditor
-                          value={activeEditor?.editorText ?? ''}
-                          onChange={(next) => {
-                            if (!activeTab) {
-                              return;
-                            }
-                            const st = editors[activeTab];
-                            if (!st) {
-                              return;
-                            }
-                            st.editorText = next;
-                            st.dirty = savedContentOf(st.source) !== next;
-                          }}
-                        />
+                        {#key `${activeTab}:${activeSourcePath ?? 'unresolved'}`}
+                          <CodeEditor
+                            testId="artifact-source-editor"
+                            value={activeEditor?.editorText ?? ''}
+                            onChange={(next) => {
+                              if (!activeTab) {
+                                return;
+                              }
+                              const st = editors[activeTab];
+                              if (!st) {
+                                return;
+                              }
+                              st.editorText = next;
+                              st.dirty = savedContentOf(st.source) !== next;
+                            }}
+                          />
+                        {/key}
                       {/if}
                     </div>
                   </div>
@@ -862,7 +1071,17 @@
 
                 {#snippet right()}
                   <div class="pane">
-                    <div class="pane__title">Preview</div>
+                    <div class="pane__title">
+                      <span>Preview</span>
+                      {#if gitCompare}
+                        <div class="chips chips--tight" aria-label="Git compare actions">
+                          <span class="pill pill--warn mono">{gitCompare.base_revision.slice(0, 7)}</span>
+                          <button class="chip" onclick={clearGitCompare} type="button">
+                            返回编辑差异
+                          </button>
+                        </div>
+                      {/if}
+                    </div>
                     <div class="pane__body">
                       <Tabs.Root value={rightMode} onValueChange={(next) => (rightMode = next as typeof rightMode)}>
                         <Tabs.List class="tabs" aria-label="Preview mode">
@@ -875,11 +1094,15 @@
                         </Tabs.Content>
 
                         <Tabs.Content class="tabs__panel" value="diff">
+                          {#if gitCompare && activeEditor?.dirty}
+                            <p class="stack-note">当前 Git 对比基于已保存 worktree，未保存编辑不会反映在右侧内容中。</p>
+                          {/if}
                           <DiffViewer
-                            original={savedContentOf(activeEditor?.source)}
-                            modified={activeEditor?.editorText ?? ''}
-                            fromLabel={activeTab ? `${activeTab} (saved)` : 'saved'}
-                            toLabel={activeTab ? `${activeTab} (edited)` : 'edited'}
+                            testId="artifact-diff-viewer"
+                            original={diffOriginalText}
+                            modified={diffModifiedText}
+                            fromLabel={diffFromLabel}
+                            toLabel={diffToLabel}
                           />
                         </Tabs.Content>
                       </Tabs.Root>
@@ -946,7 +1169,10 @@
                       </div>
                       <div class="inspector-row">
                         <span class="inspector-row__label">Source</span>
-                        <span class="inspector-row__value inspector-row__value--mono">
+                        <span
+                          class="inspector-row__value inspector-row__value--mono"
+                          data-testid="artifact-source-path"
+                        >
                           {activeSourcePath ?? activeArtifactSummary?.source_path ?? '（未加载）'}
                         </span>
                       </div>
@@ -1015,6 +1241,85 @@
                           </li>
                         {/each}
                       </ul>
+                    {/if}
+                  </div>
+
+                  <div class="inspector-section">
+                    <div class="section__title">
+                      <span>Git History</span>
+                      <strong>{gitHistory?.commits.length ?? 0}</strong>
+                    </div>
+
+                    {#if gitHistoryBusy}
+                      <p class="empty empty--flush">读取 Git history 中…</p>
+                    {:else if gitHistoryError}
+                      <p class="empty empty--flush">{gitHistoryError}</p>
+                    {:else if !gitHistory || gitHistory.commits.length === 0}
+                      <p class="empty empty--flush">（当前 artifact 暂无可用 commit history）</p>
+                    {:else}
+                      <div class="subject-summary">
+                        <div class="summary-row">
+                          <span class="summary-row__label">Branch</span>
+                          <span class="summary-row__value mono">{gitHistory.branch ?? 'detached'}</span>
+                        </div>
+                        <div class="summary-row">
+                          <span class="summary-row__label">Head</span>
+                          <span class="summary-row__value mono">
+                            {gitHistory.head_short} · {gitHistory.head.slice(0, 12)}
+                          </span>
+                        </div>
+                        <div class="summary-row">
+                          <span class="summary-row__label">Workspace</span>
+                          <span class="summary-row__value">
+                            {gitHistory.dirty ? 'dirty' : 'clean'} · {gitHistory.repo_relative_path}
+                          </span>
+                        </div>
+                      </div>
+
+                      <ul class="result-list" aria-label="Artifact Git history" data-testid="artifact-git-history">
+                        {#each gitHistory.commits as commit (commit.revision)}
+                          <li class="result-row result-row--triple">
+                            <span
+                              class={[
+                                'pill',
+                                selectedGitRevision === commit.revision ? 'pill--warn' : 'pill--neutral'
+                              ].join(' ')}
+                            >
+                              {commit.short_revision}
+                            </span>
+                            <div class="result-row__main">
+                              <span class="result-row__title">{commit.summary}</span>
+                              <span class="result-row__detail">
+                                {commit.author_name} · {commit.authored_at}
+                              </span>
+                            </div>
+                            <div class="chips chips--tight">
+                              <button
+                                class={['chip', selectedGitRevision === commit.revision ? 'chip--active' : ''].join(' ')}
+                                disabled={gitCompareBusy}
+                                type="button"
+                                data-testid={`artifact-git-compare:${commit.short_revision}`}
+                                onclick={() => void compareRevision(commit.revision)}
+                              >
+                                {selectedGitRevision === commit.revision ? '对比中' : '对比'}
+                              </button>
+                              <button
+                                class="chip"
+                                disabled={rollbackBusy}
+                                type="button"
+                                data-testid={`artifact-git-rollback:${commit.short_revision}`}
+                                onclick={() => void rollbackRevision(commit.revision)}
+                              >
+                                {rollbackBusy && selectedGitRevision === commit.revision ? '回退中…' : '回退'}
+                              </button>
+                            </div>
+                          </li>
+                        {/each}
+                      </ul>
+                    {/if}
+
+                    {#if gitCompareError}
+                      <p class="empty empty--flush">{gitCompareError}</p>
                     {/if}
                   </div>
                 {/if}

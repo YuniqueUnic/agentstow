@@ -1,7 +1,12 @@
 <script lang="ts">
   import CodeEditor from '$lib/components/CodeEditor.svelte';
   import SplitView from '$lib/components/SplitView.svelte';
-  import type { EnvEmitResponse, EnvSetSummaryResponse, ShellKindResponse } from '$lib/types';
+  import type {
+    EnvEmitResponse,
+    EnvSetSummaryResponse,
+    EnvUsageRefResponse,
+    ShellKindResponse
+  } from '$lib/types';
   import type { ManifestInsertKind } from '$lib/workbench/manifest_snippets';
 
   type Props = {
@@ -18,6 +23,7 @@
     onSelectShell: (shell: ShellKindResponse) => void;
     onEnvEmit: () => Promise<void>;
     onCopyToClipboard: (text: string, label: string) => Promise<void>;
+    onOpenUsageRef: (ref: EnvUsageRefResponse) => void;
     onOpenManifestEditor: () => void;
     onCreateManifestObject: (kind: ManifestInsertKind) => void;
   };
@@ -36,9 +42,30 @@
     onSelectShell,
     onEnvEmit,
     onCopyToClipboard,
+    onOpenUsageRef,
     onOpenManifestEditor,
     onCreateManifestObject
   }: Props = $props();
+
+  const envObjectPreview = $derived.by(() =>
+    JSON.stringify(
+      Object.fromEntries(
+        (activeEnvSet?.vars ?? []).map((binding) => [binding.key, binding.rendered_placeholder])
+      ),
+      null,
+      2
+    )
+  );
+
+  function refKindLabel(ref: EnvUsageRefResponse): string {
+    if (ref.owner_kind === 'env_set') {
+      return 'env';
+    }
+    if (ref.owner_kind === 'script') {
+      return 'script';
+    }
+    return 'mcp';
+  }
 </script>
 
 <SplitView autoSaveId="workbench:view:env" initialLeftPct={22} minLeftPx={256} minRightPx={760}>
@@ -81,7 +108,9 @@
             >
               <span class="list__dot" aria-hidden="true"></span>
               <span class="list__name">{envSet.id}</span>
-              <span class="list__meta">{envSet.vars.length} vars</span>
+              <span class="list__meta">
+                {envSet.available_count}/{envSet.vars.length} ready{envSet.missing_count ? ` · ${envSet.missing_count} missing` : ''}
+              </span>
             </button>
           </li>
         {/each}
@@ -165,22 +194,125 @@
         <section class="region secondary-sidebar" aria-label="变量检查器">
           <div class="region__header">
             <span>Variables</span>
-            <span class="mono">{activeEnvSet?.vars.length ?? 0} keys</span>
+            <span class="mono">
+              {activeEnvSet ? `${activeEnvSet.available_count}/${activeEnvSet.vars.length} ready` : '0'}
+            </span>
           </div>
 
-          <div class="panel__body panel__body--flush">
+          <div class="region__body">
             {#if !activeEnvSet}
               <p class="empty empty--flush">（选择 env set 后可查看变量绑定）</p>
             {:else if activeEnvSet.vars.length === 0}
               <p class="empty empty--flush">（该 env set 暂无变量）</p>
             {:else}
-              <div class="inspector-table">
-                {#each activeEnvSet.vars as v (v.key)}
-                  <div class="inspector-row">
-                    <span class="inspector-row__label">{v.key}</span>
-                    <span class="inspector-row__value inspector-row__value--mono">{v.binding}</span>
+              <div class="inspector-section">
+                <div class="section__title">
+                  <span>Health</span>
+                  <strong>{activeEnvSet.missing_count === 0 ? 'ready' : 'attention'}</strong>
+                </div>
+                <div class="subject-summary">
+                  <div class="summary-row">
+                    <span class="summary-row__label">Ready</span>
+                    <span class="summary-row__value mono">{activeEnvSet.available_count}</span>
                   </div>
-                {/each}
+                  <div class="summary-row">
+                    <span class="summary-row__label">Missing</span>
+                    <span class="summary-row__value mono">{activeEnvSet.missing_count}</span>
+                  </div>
+                  <div class="summary-row">
+                    <span class="summary-row__label">Refs</span>
+                    <span class="summary-row__value mono">{activeEnvSet.referrers.length}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="inspector-section">
+                <div class="section__title">
+                  <span>Bindings</span>
+                  <strong>{activeEnvSet.vars.length}</strong>
+                </div>
+                <ul class="result-list" aria-label="Env bindings">
+                  {#each activeEnvSet.vars as v (v.key)}
+                    <li class="result-row">
+                      <span class={['pill', v.available ? 'pill--ok' : 'pill--warn'].join(' ')}>
+                        {v.available ? 'ready' : 'missing'}
+                      </span>
+                      <div class="result-row__main">
+                        <span class="result-row__title">{v.key}</span>
+                        <span class="result-row__detail mono">
+                          {v.binding_kind} · {v.binding} · {v.rendered_placeholder}
+                        </span>
+                        {#if v.source_env_var}
+                          <span class="result-row__detail mono">source env: {v.source_env_var}</span>
+                        {/if}
+                        {#if v.diagnostic}
+                          <span class="result-row__detail">{v.diagnostic}</span>
+                        {/if}
+                        {#if v.referrers.length > 0}
+                          <div class="chips chips--tight" aria-label={`Env referrers for ${v.key}`}>
+                            {#each v.referrers as ref (`${v.key}:${ref.owner_kind}:${ref.owner_id}`)}
+                              <button class="chip" type="button" onclick={() => onOpenUsageRef(ref)}>
+                                {ref.label}
+                              </button>
+                            {/each}
+                          </div>
+                        {/if}
+                      </div>
+                    </li>
+                  {/each}
+                </ul>
+              </div>
+
+              <div class="inspector-section">
+                <div class="section__title">
+                  <span>Host Env Object</span>
+                  <strong>json</strong>
+                </div>
+                <div class="terminal">
+                  <pre class="terminal__screen" data-testid="env-object-preview">{envObjectPreview}</pre>
+                </div>
+                <div class="chips chips--tight">
+                  <button
+                    class="chip"
+                    disabled={activeEnvSet.vars.length === 0}
+                    type="button"
+                    onclick={() => void onCopyToClipboard(envObjectPreview, 'env object')}
+                  >
+                    复制 env object
+                  </button>
+                </div>
+              </div>
+
+              <div class="inspector-section">
+                <div class="section__title">
+                  <span>Usage</span>
+                  <strong>{activeEnvSet.referrers.length}</strong>
+                </div>
+                {#if activeEnvSet.referrers.length === 0}
+                  <p class="empty empty--flush">（当前 env set 尚未被 script 或 MCP 引用）</p>
+                {:else}
+                  <div class="token-action-list" data-testid="env-referrer-list">
+                    {#each activeEnvSet.referrers as ref (`${ref.owner_kind}:${ref.owner_id}`)}
+                      <div class="token-action-row">
+                        <button
+                          class="token token--interactive token--object"
+                          type="button"
+                          onclick={() => onOpenUsageRef(ref)}
+                        >
+                          <span>{ref.label}</span>
+                          <span class="token__meta">{refKindLabel(ref)} · {ref.owner_id}</span>
+                        </button>
+                        <button
+                          class="ui-button ui-button--ghost ui-button--icon"
+                          type="button"
+                          onclick={() => void onCopyToClipboard(ref.owner_id, `${refKindLabel(ref)} id`)}
+                        >
+                          复制
+                        </button>
+                      </div>
+                    {/each}
+                  </div>
+                {/if}
               </div>
             {/if}
           </div>

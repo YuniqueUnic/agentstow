@@ -7,8 +7,8 @@ use pretty_assertions::assert_eq;
 use serial_test::serial;
 
 use super::{
-    WatchMode, WatchStatusHandle, WatchStatusSnapshot, build_app_with_ui_dist_and_watch,
-    resolve_ui_dist_dir_for_test, ui_dist_missing_page,
+    WatchMode, WatchStatusHandle, WatchStatusSnapshot, WatchTraceEvent, WatchTraceLevel,
+    build_app_with_ui_dist_and_watch, resolve_ui_dist_dir_for_test, ui_dist_missing_page,
 };
 
 fn write_minimal_workspace(temp: &assert_fs::TempDir) {
@@ -147,20 +147,29 @@ env = [
 }
 
 fn init_git_repo(temp: &assert_fs::TempDir) {
-    let run = |args: &[&str]| {
-        let status = std::process::Command::new("git")
-            .args(args)
-            .current_dir(temp.path())
-            .status()
-            .unwrap();
-        assert!(status.success(), "git {:?} should succeed", args);
-    };
+    git_stdout(temp, &["init"]);
+    git_stdout(temp, &["config", "user.name", "AgentStow Tests"]);
+    git_stdout(
+        temp,
+        &["config", "user.email", "agentstow-tests@example.com"],
+    );
+    git_stdout(temp, &["add", "."]);
+    git_stdout(temp, &["commit", "-m", "initial workspace"]);
+}
 
-    run(&["init"]);
-    run(&["config", "user.name", "AgentStow Tests"]);
-    run(&["config", "user.email", "agentstow-tests@example.com"]);
-    run(&["add", "."]);
-    run(&["commit", "-m", "initial workspace"]);
+fn git_stdout(temp: &assert_fs::TempDir, args: &[&str]) -> String {
+    let output = std::process::Command::new("git")
+        .args(args)
+        .current_dir(temp.path())
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "git {:?} should succeed: {}",
+        args,
+        String::from_utf8_lossy(&output.stderr)
+    );
+    String::from_utf8_lossy(&output.stdout).trim().to_string()
 }
 
 fn with_test_home(temp: &assert_fs::TempDir, f: impl FnOnce()) {
@@ -353,6 +362,7 @@ async fn api_watch_status_should_return_manual_snapshot() {
         body["watch_roots"],
         serde_json::json!([temp.path().display().to_string()])
     );
+    assert_eq!(body["recent_events"], serde_json::json!([]));
 }
 
 #[tokio::test]
@@ -371,6 +381,20 @@ async fn api_watch_status_should_expose_poll_fallback_details() {
             last_event_at: Some("2026-03-13T12:00:00Z".to_string()),
             last_error: Some("native watcher 不可用，已回退到 polling".to_string()),
             watch_roots: vec![temp.path().display().to_string()],
+            recent_events: vec![
+                WatchTraceEvent {
+                    revision: 7,
+                    level: WatchTraceLevel::Change,
+                    summary: "1 条事件 · Modify(Data(Content)) · agentstow.toml".to_string(),
+                    at: "2026-03-13T12:00:00Z".to_string(),
+                },
+                WatchTraceEvent {
+                    revision: 0,
+                    level: WatchTraceLevel::Error,
+                    summary: "native watcher 不可用，已回退到 polling".to_string(),
+                    at: "2026-03-13T11:59:58Z".to_string(),
+                },
+            ],
         },
     );
 
@@ -385,6 +409,18 @@ async fn api_watch_status_should_expose_poll_fallback_details() {
     assert_eq!(
         body["last_error"],
         serde_json::json!("native watcher 不可用，已回退到 polling")
+    );
+    assert_eq!(
+        body["recent_events"][0]["level"],
+        serde_json::json!("change")
+    );
+    assert_eq!(
+        body["recent_events"][0]["summary"],
+        serde_json::json!("1 条事件 · Modify(Data(Content)) · agentstow.toml")
+    );
+    assert_eq!(
+        body["recent_events"][1]["level"],
+        serde_json::json!("error")
     );
 }
 
@@ -471,6 +507,15 @@ method = "copy"
 
     let updated = std::fs::read_to_string(temp.child("agentstow.toml").path()).unwrap();
     assert_eq!(updated, updated_manifest);
+
+    let watch_resp = server.get("/api/watch-status").await;
+    watch_resp.assert_status_ok();
+    let watch_body: serde_json::Value = watch_resp.json();
+    assert_eq!(watch_body["revision"], serde_json::json!(1));
+    assert_eq!(
+        watch_body["recent_events"][0]["summary"],
+        serde_json::json!("save agentstow.toml")
+    );
 }
 
 #[tokio::test]
@@ -545,6 +590,123 @@ fn api_workspace_git_should_expose_branch_and_head_short() {
     });
 }
 
+#[test]
+#[serial]
+fn api_artifact_git_history_should_return_file_commits() {
+    let temp = assert_fs::TempDir::new().unwrap();
+    write_minimal_workspace(&temp);
+    init_git_repo(&temp);
+    temp.child("artifacts/hello.txt.tera")
+        .write_str("Hello {{ name }} from Git!")
+        .unwrap();
+    git_stdout(&temp, &["add", "."]);
+    git_stdout(&temp, &["commit", "-m", "update hello template"]);
+
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+    runtime.block_on(async {
+        let server = test_server(&temp, temp.child("missing-dist").path().to_path_buf());
+        let resp = server
+            .get("/api/artifacts/hello/git/history")
+            .add_query_param("limit", "5")
+            .await;
+
+        resp.assert_status_ok();
+        let body: serde_json::Value = resp.json();
+        assert_eq!(body["artifact_id"], serde_json::json!("hello"));
+        assert_eq!(
+            body["repo_relative_path"],
+            serde_json::json!("artifacts/hello.txt.tera")
+        );
+        assert_eq!(body["dirty"], serde_json::json!(false));
+        assert!(body["head"].as_str().unwrap().len() == 40);
+        assert!(!body["head_short"].as_str().unwrap().is_empty());
+        assert_eq!(body["commits"].as_array().unwrap().len(), 2);
+        assert_eq!(
+            body["commits"][0]["summary"],
+            serde_json::json!("update hello template")
+        );
+    });
+}
+
+#[test]
+#[serial]
+fn api_artifact_git_compare_should_return_revision_and_worktree_contents() {
+    let temp = assert_fs::TempDir::new().unwrap();
+    write_minimal_workspace(&temp);
+    init_git_repo(&temp);
+    let initial = git_stdout(&temp, &["rev-parse", "HEAD"]);
+    temp.child("artifacts/hello.txt.tera")
+        .write_str("Hello {{ name }} from Worktree!")
+        .unwrap();
+
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+    runtime.block_on(async {
+        let server = test_server(&temp, temp.child("missing-dist").path().to_path_buf());
+        let resp = server
+            .get("/api/artifacts/hello/git/compare")
+            .add_query_param("base", &initial)
+            .await;
+
+        resp.assert_status_ok();
+        let body: serde_json::Value = resp.json();
+        assert_eq!(body["artifact_id"], serde_json::json!("hello"));
+        assert_eq!(body["base_revision"], serde_json::json!(initial));
+        assert_eq!(body["head_revision"], serde_json::json!("WORKTREE"));
+        assert_eq!(body["base_content"], serde_json::json!("Hello {{ name }}!"));
+        assert_eq!(body["changed"], serde_json::json!(true));
+        assert_eq!(
+            body["head_content"],
+            serde_json::json!("Hello {{ name }} from Worktree!")
+        );
+    });
+}
+
+#[test]
+#[serial]
+fn api_artifact_git_rollback_should_restore_file_content() {
+    let temp = assert_fs::TempDir::new().unwrap();
+    write_minimal_workspace(&temp);
+    init_git_repo(&temp);
+    let initial = git_stdout(&temp, &["rev-parse", "HEAD"]);
+    temp.child("artifacts/hello.txt.tera")
+        .write_str("Hello {{ name }} from rollback!")
+        .unwrap();
+
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+    runtime.block_on(async {
+        let server = test_server(&temp, temp.child("missing-dist").path().to_path_buf());
+        let resp = server
+            .post("/api/artifacts/hello/git/rollback")
+            .json(&serde_json::json!({ "revision": initial }))
+            .await;
+
+        resp.assert_status_ok();
+        let body: serde_json::Value = resp.json();
+        assert_eq!(body["artifact_id"], serde_json::json!("hello"));
+        assert_eq!(body["commit"]["revision"], serde_json::json!(initial));
+        assert_eq!(body["source"]["artifact_id"], serde_json::json!("hello"));
+        assert_eq!(
+            body["source"]["content"],
+            serde_json::json!("Hello {{ name }}!")
+        );
+        assert_eq!(
+            std::fs::read_to_string(temp.child("artifacts/hello.txt.tera").path()).unwrap(),
+            "Hello {{ name }}!"
+        );
+
+        let watch_resp = server.get("/api/watch-status").await;
+        watch_resp.assert_status_ok();
+        let watch_body: serde_json::Value = watch_resp.json();
+        assert_eq!(watch_body["revision"], serde_json::json!(1));
+        assert!(
+            watch_body["recent_events"][0]["summary"]
+                .as_str()
+                .unwrap()
+                .starts_with("rollback artifacts/hello.txt.tera <=")
+        );
+    });
+}
+
 #[tokio::test]
 async fn api_render_should_validate_rendered_output() {
     let temp = assert_fs::TempDir::new().unwrap();
@@ -602,6 +764,15 @@ async fn api_artifact_source_should_read_and_update_file_artifact() {
 
     let updated = std::fs::read_to_string(temp.child("artifacts/hello.txt.tera").path()).unwrap();
     assert_eq!(updated, "Hi {{ name }}!");
+
+    let watch_resp = server.get("/api/watch-status").await;
+    watch_resp.assert_status_ok();
+    let watch_body: serde_json::Value = watch_resp.json();
+    assert_eq!(watch_body["revision"], serde_json::json!(1));
+    assert_eq!(
+        watch_body["recent_events"][0]["summary"],
+        serde_json::json!("save artifacts/hello.txt.tera")
+    );
 }
 
 #[test]
@@ -873,12 +1044,26 @@ fn api_workspace_summary_should_expose_prd_read_model() {
             assert_eq!(body["mcp_servers"][0]["url"], serde_json::Value::Null);
             assert_eq!(body["mcp_servers"][0]["headers"], serde_json::json!([]));
             assert_eq!(
-                body["mcp_servers"][0]["env_bindings"][0],
-                serde_json::json!({
-                    "key": "OPENAI_API_KEY",
-                    "binding": "env:OPENAI_API_KEY"
-                })
+                body["mcp_servers"][0]["env_bindings"][0]["key"],
+                serde_json::json!("OPENAI_API_KEY")
             );
+            assert_eq!(
+                body["mcp_servers"][0]["env_bindings"][0]["binding"],
+                serde_json::json!("env:OPENAI_API_KEY")
+            );
+            assert_eq!(
+                body["mcp_servers"][0]["env_bindings"][0]["binding_kind"],
+                serde_json::json!("env")
+            );
+            assert_eq!(
+                body["mcp_servers"][0]["env_bindings"][0]["rendered_placeholder"],
+                serde_json::json!("${OPENAI_API_KEY}")
+            );
+            assert_eq!(
+                body["mcp_servers"][0]["env_bindings"][0]["available"],
+                serde_json::json!(false)
+            );
+            assert_eq!(body["env_sets"][0]["missing_count"], serde_json::json!(1));
             assert_eq!(
                 body["issues"][0]["code"],
                 serde_json::json!("target_profile_missing")
@@ -917,6 +1102,59 @@ fn api_workspace_summary_should_expose_http_mcp_headers() {
                 ])
             );
         });
+    });
+}
+
+#[test]
+#[serial]
+fn api_mcp_validate_render_and_test_should_close_the_loop() {
+    let temp = assert_fs::TempDir::new().unwrap();
+    write_http_mcp_workspace(&temp);
+
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+    runtime.block_on(async {
+        let server = test_server(&temp, temp.child("missing-dist").path().to_path_buf());
+
+        let validate = server.post("/api/mcp/remote/validate").await;
+        validate.assert_status_ok();
+        let validate_body: serde_json::Value = validate.json();
+        assert_eq!(validate_body["server_id"], serde_json::json!("remote"));
+        assert_eq!(validate_body["ok"], serde_json::json!(true));
+        assert_eq!(
+            validate_body["issues"][0]["code"],
+            serde_json::json!("mcp_env_unavailable")
+        );
+
+        let render = server.get("/api/mcp/remote/render").await;
+        render.assert_status_ok();
+        let render_body: serde_json::Value = render.json();
+        assert_eq!(render_body["server_id"], serde_json::json!("remote"));
+        assert_eq!(render_body["transport_kind"], serde_json::json!("http"));
+        assert!(
+            render_body["launcher_preview"]
+                .as_str()
+                .unwrap()
+                .contains("GET https://example.com/mcp")
+        );
+        assert!(
+            render_body["config_json"]
+                .as_str()
+                .unwrap()
+                .contains("\"remote\"")
+        );
+
+        let test = server.post("/api/mcp/remote/test").await;
+        test.assert_status_ok();
+        let test_body: serde_json::Value = test.json();
+        assert_eq!(test_body["server_id"], serde_json::json!("remote"));
+        assert_eq!(test_body["ok"], serde_json::json!(false));
+        assert!(
+            test_body["checks"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|check| check["code"] == "env:OPENAI_API_KEY" && check["status"] == "error")
+        );
     });
 }
 

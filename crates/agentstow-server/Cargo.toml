@@ -10,6 +10,7 @@ agentstow-env = { path = "../agentstow-env" }
 agentstow-git = { path = "../agentstow-git" }
 agentstow-linker = { path = "../agentstow-linker" }
 agentstow-manifest = { path = "../agentstow-manifest" }
+agentstow-mcp = { path = "../agentstow-mcp" }
 agentstow-render = { path = "../agentstow-render" }
 agentstow-scripts = { path = "../agentstow-scripts" }
 agentstow-state = { path = "../agentstow-state" }

@@ -15,6 +15,7 @@ use time::format_description::well_known::Rfc3339;
 const DEFAULT_POLL_INTERVAL: Duration = Duration::from_secs(2);
 const DEBOUNCE_TIMEOUT: Duration = Duration::from_millis(900);
 const DEBOUNCE_TICK: Duration = Duration::from_millis(225);
+const MAX_RECENT_EVENTS: usize = 24;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum WatchMode {
@@ -33,6 +34,21 @@ pub(crate) struct WatchStatusSnapshot {
     pub(crate) last_event_at: Option<String>,
     pub(crate) last_error: Option<String>,
     pub(crate) watch_roots: Vec<String>,
+    pub(crate) recent_events: Vec<WatchTraceEvent>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum WatchTraceLevel {
+    Change,
+    Error,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct WatchTraceEvent {
+    pub(crate) revision: u64,
+    pub(crate) level: WatchTraceLevel,
+    pub(crate) summary: String,
+    pub(crate) at: String,
 }
 
 impl WatchStatusSnapshot {
@@ -46,6 +62,7 @@ impl WatchStatusSnapshot {
             last_event_at: None,
             last_error,
             watch_roots,
+            recent_events: Vec::new(),
         }
     }
 }
@@ -172,6 +189,26 @@ impl WatchStatusHandle {
             .clone()
     }
 
+    pub(crate) fn record_change(&self, summary: impl Into<String>) {
+        let now = now_rfc3339();
+        let summary = summary.into();
+        let mut state = self.inner.lock().expect("watch status mutex poisoned");
+        state.snapshot.revision = state.snapshot.revision.saturating_add(1);
+        let revision = state.snapshot.revision;
+        state.snapshot.last_event = Some(summary.clone());
+        state.snapshot.last_event_at = Some(now.clone());
+        state.snapshot.last_error = None;
+        push_recent_event(
+            &mut state.snapshot.recent_events,
+            WatchTraceEvent {
+                revision,
+                level: WatchTraceLevel::Change,
+                summary,
+                at: now,
+            },
+        );
+    }
+
     fn install_native(&self, debouncer: Debouncer<notify::RecommendedWatcher, RecommendedCache>) {
         let mut state = self.inner.lock().expect("watch status mutex poisoned");
         state.snapshot.mode = WatchMode::Native;
@@ -198,35 +235,76 @@ impl WatchStatusHandle {
                     return;
                 }
 
+                let now = now_rfc3339();
                 let mut state = self.inner.lock().expect("watch status mutex poisoned");
                 state.snapshot.healthy = true;
                 state.snapshot.revision = state.snapshot.revision.saturating_add(1);
-                state.snapshot.last_event = summary;
-                state.snapshot.last_event_at = Some(now_rfc3339());
+                let revision = state.snapshot.revision;
+                let summary = summary.expect("summary checked above");
+                state.snapshot.last_event = Some(summary.clone());
+                state.snapshot.last_event_at = Some(now.clone());
                 state.snapshot.last_error = None;
+                push_recent_event(
+                    &mut state.snapshot.recent_events,
+                    WatchTraceEvent {
+                        revision,
+                        level: WatchTraceLevel::Change,
+                        summary,
+                        at: now,
+                    },
+                );
             }
             Err(errors) => {
+                let now = now_rfc3339();
+                let summary = errors
+                    .into_iter()
+                    .map(|error| error.to_string())
+                    .collect::<Vec<_>>()
+                    .join(" | ");
                 let mut state = self.inner.lock().expect("watch status mutex poisoned");
+                let revision = state.snapshot.revision;
                 state.snapshot.healthy = false;
-                state.snapshot.last_error = Some(
-                    errors
-                        .into_iter()
-                        .map(|error| error.to_string())
-                        .collect::<Vec<_>>()
-                        .join(" | "),
+                state.snapshot.last_error = Some(summary.clone());
+                state.snapshot.last_event_at = Some(now.clone());
+                push_recent_event(
+                    &mut state.snapshot.recent_events,
+                    WatchTraceEvent {
+                        revision,
+                        level: WatchTraceLevel::Error,
+                        summary,
+                        at: now,
+                    },
                 );
-                state.snapshot.last_event_at = Some(now_rfc3339());
             }
         }
     }
 
     fn record_error(&self, mode: WatchMode, poll_interval_ms: Option<u64>, error: impl ToString) {
+        let now = now_rfc3339();
+        let summary = error.to_string();
         let mut state = self.inner.lock().expect("watch status mutex poisoned");
+        let revision = state.snapshot.revision;
         state.snapshot.mode = mode;
         state.snapshot.healthy = false;
         state.snapshot.poll_interval_ms = poll_interval_ms;
-        state.snapshot.last_error = Some(error.to_string());
-        state.snapshot.last_event_at = Some(now_rfc3339());
+        state.snapshot.last_error = Some(summary.clone());
+        state.snapshot.last_event_at = Some(now.clone());
+        push_recent_event(
+            &mut state.snapshot.recent_events,
+            WatchTraceEvent {
+                revision,
+                level: WatchTraceLevel::Error,
+                summary,
+                at: now,
+            },
+        );
+    }
+}
+
+fn push_recent_event(events: &mut Vec<WatchTraceEvent>, event: WatchTraceEvent) {
+    events.insert(0, event);
+    if events.len() > MAX_RECENT_EVENTS {
+        events.truncate(MAX_RECENT_EVENTS);
     }
 }
 

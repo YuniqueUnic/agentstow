@@ -231,7 +231,7 @@
             </button>
           </div>
 
-          <div class="panel__body panel__body--flush">
+          <div class="region__body">
             {#if !activeScript}
               <p class="empty empty--flush">（选择 script 后查看 entry / args / env keys）</p>
             {:else}

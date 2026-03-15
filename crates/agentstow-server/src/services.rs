@@ -1,5 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use agentstow_core::{
     AgentStowDirs, AgentStowError, ArtifactId, ArtifactKind, InstallMethod, ProfileName, Result,
@@ -7,28 +7,33 @@ use agentstow_core::{
 };
 use agentstow_git::Git;
 use agentstow_linker::{ApplyOptions, InstallSource, LinkJob, RenderStore, apply_job, plan_job};
-use agentstow_manifest::{Manifest, McpTransport};
+use agentstow_manifest::{EnvVarDef, Manifest, McpTransport};
+use agentstow_mcp::{Mcp, McpDryRunCheckStatus};
 use agentstow_render::Renderer;
 use agentstow_scripts::ScriptRunner;
 use agentstow_state::{LinkInstanceRecord, StateDb};
 use agentstow_validate::Validator;
 use agentstow_web_types::{
-    ArtifactDetailResponse, ArtifactKindResponse, ArtifactSourceResponse, ArtifactSummaryResponse,
-    EnvEmitResponse, EnvSetSummaryResponse, EnvVarSummaryResponse, ImpactAnalysisResponse,
+    ArtifactDetailResponse, ArtifactGitCompareResponse, ArtifactGitHistoryResponse,
+    ArtifactGitRollbackResponse, ArtifactKindResponse, ArtifactSourceResponse,
+    ArtifactSummaryResponse, EnvEmitResponse, EnvSetSummaryResponse, EnvUsageOwnerKindResponse,
+    EnvUsageRefResponse, EnvVarSummaryResponse, GitCommitSummaryResponse, ImpactAnalysisResponse,
     ImpactSubjectKindResponse, InstallMethodResponse, LinkApplyRequest, LinkDesiredInstallResponse,
     LinkOperationActionResponse, LinkOperationItemResponse, LinkOperationResponse,
     LinkPlanItemResponse, LinkPlanRequest, LinkRecordResponse, LinkRepairRequest,
-    LinkStatusResponseItem, ManifestResponse, ManifestSourceResponse, McpHeaderResponse,
-    McpServerSummaryResponse, McpTransportKindResponse, ProfileDetailResponse,
+    LinkStatusResponseItem, ManifestResponse, ManifestSourceResponse, McpCheckResponse,
+    McpCheckStatusResponse, McpHeaderResponse, McpRenderResponse, McpServerSummaryResponse,
+    McpTestResponse, McpTransportKindResponse, McpValidateResponse, ProfileDetailResponse,
     ProfileSummaryResponse, ProfileVarResponse, RenderResponse, ScriptRunResponse,
-    ScriptSummaryResponse, ShellKindResponse, TargetSummaryResponse, ValidateAsResponse,
-    ValidationIssueResponse, WatchModeResponse, WatchStatusResponse, WorkspaceCountsResponse,
+    ScriptSummaryResponse, SecretBindingKindResponse, ShellKindResponse, TargetSummaryResponse,
+    ValidateAsResponse, ValidationIssueResponse, WatchModeResponse, WatchStatusResponse,
+    WatchTraceEventResponse, WatchTraceLevelResponse, WorkspaceCountsResponse,
     WorkspaceGitSummaryResponse, WorkspaceSummaryResponse,
 };
 use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
 
-use crate::watch::{WatchMode, WatchStatusSnapshot};
+use crate::watch::{WatchMode, WatchStatusSnapshot, WatchTraceLevel};
 
 #[derive(Debug, Clone)]
 pub(crate) struct WorkspaceQueryService {
@@ -391,9 +396,10 @@ impl WorkspaceQueryService {
         let targets = build_target_summaries(&manifest);
         let profiles = build_profile_summaries(&manifest, &targets);
         let artifacts = build_artifact_summaries(&manifest, &targets);
-        let env_sets = build_env_set_summaries(&manifest);
-        let scripts = build_script_summaries(&manifest);
-        let mcp_servers = build_mcp_server_summaries(&manifest);
+        let env_usage = build_env_usage_index(&manifest);
+        let env_sets = build_env_set_summaries(&manifest, &env_usage);
+        let scripts = build_script_summaries(&manifest, &env_usage);
+        let mcp_servers = build_mcp_server_summaries(&manifest, &env_usage);
         let issues = collect_workspace_issues(&manifest, &targets, &link_status);
 
         let healthy_link_count = link_status.iter().filter(|item| item.ok).count();
@@ -440,6 +446,217 @@ impl WorkspaceQueryService {
             }
             Err(error) => Err(error),
         }
+    }
+
+    pub(crate) async fn artifact_git_history(
+        &self,
+        artifact_id: &ArtifactId,
+        limit: usize,
+    ) -> Result<ArtifactGitHistoryResponse> {
+        let source = self.artifact_source(artifact_id)?;
+        let source_path = fs_err::canonicalize(&source.source_path)
+            .unwrap_or_else(|_| PathBuf::from(&source.source_path));
+        let git = Git::detect(&self.workspace_root).await?;
+        let commits = Git::history(
+            &self.workspace_root,
+            Some(&source_path),
+            limit.clamp(1, 100),
+        )
+        .await?;
+        let repo_relative_path = workspace_relative_display(&git.repo_root, &source_path);
+
+        Ok(ArtifactGitHistoryResponse {
+            artifact_id: artifact_id.as_str().to_string(),
+            source_path: source.source_path,
+            repo_relative_path,
+            branch: git.branch,
+            head: git.head,
+            head_short: git.head_short,
+            dirty: git.dirty,
+            commits: commits
+                .into_iter()
+                .map(|commit| GitCommitSummaryResponse {
+                    revision: commit.revision,
+                    short_revision: commit.short_revision,
+                    summary: commit.summary,
+                    author_name: commit.author_name,
+                    authored_at: commit.authored_at,
+                })
+                .collect(),
+        })
+    }
+
+    pub(crate) async fn artifact_git_compare(
+        &self,
+        artifact_id: &ArtifactId,
+        base_revision: &str,
+        head_revision: &str,
+    ) -> Result<ArtifactGitCompareResponse> {
+        let source = self.artifact_source(artifact_id)?;
+        let source_path = fs_err::canonicalize(&source.source_path)
+            .unwrap_or_else(|_| PathBuf::from(&source.source_path));
+        let compare = Git::compare_file(
+            &self.workspace_root,
+            &source_path,
+            base_revision,
+            head_revision,
+        )
+        .await?;
+        let changed = compare.base_content != compare.head_content;
+
+        Ok(ArtifactGitCompareResponse {
+            artifact_id: artifact_id.as_str().to_string(),
+            source_path: source.source_path,
+            repo_relative_path: compare
+                .repo_relative_path
+                .to_string_lossy()
+                .replace('\\', "/"),
+            base_revision: compare.base_revision,
+            head_revision: compare.head_revision,
+            base_label: compare.base_label,
+            head_label: compare.head_label,
+            base_content: compare.base_content,
+            head_content: compare.head_content,
+            changed,
+        })
+    }
+
+    pub(crate) async fn artifact_git_rollback(
+        &self,
+        artifact_id: &ArtifactId,
+        revision: &str,
+    ) -> Result<ArtifactGitRollbackResponse> {
+        let current_source = self.artifact_source(artifact_id)?;
+        let source_path = fs_err::canonicalize(&current_source.source_path)
+            .unwrap_or_else(|_| PathBuf::from(&current_source.source_path));
+        Git::rollback_file(&self.workspace_root, &source_path, revision).await?;
+        let commit = Git::resolve_commit(&self.workspace_root, revision).await?;
+        let source = self.artifact_source(artifact_id)?;
+
+        Ok(ArtifactGitRollbackResponse {
+            artifact_id: artifact_id.as_str().to_string(),
+            commit: GitCommitSummaryResponse {
+                revision: commit.revision,
+                short_revision: commit.short_revision,
+                summary: commit.summary,
+                author_name: commit.author_name,
+                authored_at: commit.authored_at,
+            },
+            source,
+        })
+    }
+
+    pub(crate) fn mcp_validate(&self, server_id: &str) -> Result<McpValidateResponse> {
+        let manifest = self.load_manifest()?;
+        let env_usage = build_env_usage_index(&manifest);
+        let server =
+            manifest
+                .mcp_servers
+                .get(server_id)
+                .ok_or_else(|| AgentStowError::Manifest {
+                    message: format!("mcp server 不存在：{server_id}").into(),
+                })?;
+        let env_bindings = build_env_var_summaries(&server.env, &env_usage);
+        let mut issues = Vec::new();
+
+        if let Err(error) = Mcp::validate_server(server_id, server) {
+            issues.push(issue(
+                "error",
+                "mcp_server",
+                server_id,
+                "mcp_invalid",
+                error.to_string(),
+            ));
+        }
+
+        for binding in &env_bindings {
+            if let Some(message) = &binding.diagnostic {
+                issues.push(issue(
+                    "warning",
+                    "mcp_server",
+                    server_id,
+                    "mcp_env_unavailable",
+                    format!("{}: {}", binding.key, message),
+                ));
+            }
+        }
+
+        Ok(McpValidateResponse {
+            server_id: server_id.to_string(),
+            ok: !issues.iter().any(|item| item.severity == "error"),
+            issues,
+        })
+    }
+
+    pub(crate) fn mcp_render(&self, server_id: &str) -> Result<McpRenderResponse> {
+        let manifest = self.load_manifest()?;
+        let env_usage = build_env_usage_index(&manifest);
+        let server =
+            manifest
+                .mcp_servers
+                .get(server_id)
+                .ok_or_else(|| AgentStowError::Manifest {
+                    message: format!("mcp server 不存在：{server_id}").into(),
+                })?;
+        let env_bindings = build_env_var_summaries(&server.env, &env_usage);
+
+        Ok(McpRenderResponse {
+            server_id: server_id.to_string(),
+            transport_kind: match server.transport {
+                McpTransport::Stdio { .. } => McpTransportKindResponse::Stdio,
+                McpTransport::Http { .. } => McpTransportKindResponse::Http,
+            },
+            launcher_preview: Mcp::launcher_preview(server),
+            config_json: Mcp::render_server_json(server_id, server)?,
+            env_bindings,
+        })
+    }
+
+    pub(crate) fn mcp_test(&self, server_id: &str) -> Result<McpTestResponse> {
+        let manifest = self.load_manifest()?;
+        let env_usage = build_env_usage_index(&manifest);
+        let server =
+            manifest
+                .mcp_servers
+                .get(server_id)
+                .ok_or_else(|| AgentStowError::Manifest {
+                    message: format!("mcp server 不存在：{server_id}").into(),
+                })?;
+        let env_bindings = build_env_var_summaries(&server.env, &env_usage);
+        let mut checks: Vec<McpCheckResponse> = Mcp::test_server_dry_run(server_id, server)
+            .into_iter()
+            .map(|check| McpCheckResponse {
+                code: check.code,
+                status: mcp_check_status_response(check.status),
+                message: check.message,
+                detail: check.detail,
+            })
+            .collect();
+
+        for binding in &env_bindings {
+            checks.push(McpCheckResponse {
+                code: format!("env:{}", binding.key),
+                status: if binding.available {
+                    McpCheckStatusResponse::Ok
+                } else {
+                    McpCheckStatusResponse::Error
+                },
+                message: if binding.available {
+                    format!("环境变量 `{}` 可用", binding.key)
+                } else {
+                    format!("环境变量 `{}` 缺失", binding.key)
+                },
+                detail: binding.diagnostic.clone(),
+            });
+        }
+
+        Ok(McpTestResponse {
+            server_id: server_id.to_string(),
+            ok: !checks
+                .iter()
+                .any(|check| matches!(check.status, McpCheckStatusResponse::Error)),
+            checks,
+        })
     }
 
     pub(crate) fn artifact_detail(
@@ -680,6 +897,27 @@ fn shell_kind(shell: ShellKindResponse) -> agentstow_core::ShellKind {
         ShellKindResponse::Fish => agentstow_core::ShellKind::Fish,
         ShellKindResponse::Powershell => agentstow_core::ShellKind::Powershell,
         ShellKindResponse::Cmd => agentstow_core::ShellKind::Cmd,
+    }
+}
+
+fn workspace_relative_display(workspace_root: &Path, path: &Path) -> String {
+    let canonical_root =
+        fs_err::canonicalize(workspace_root).unwrap_or_else(|_| workspace_root.to_path_buf());
+    let canonical_path = fs_err::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+
+    canonical_path
+        .strip_prefix(&canonical_root)
+        .or_else(|_| path.strip_prefix(workspace_root))
+        .unwrap_or(path)
+        .to_string_lossy()
+        .replace('\\', "/")
+}
+
+fn mcp_check_status_response(status: McpDryRunCheckStatus) -> McpCheckStatusResponse {
+    match status {
+        McpDryRunCheckStatus::Ok => McpCheckStatusResponse::Ok,
+        McpDryRunCheckStatus::Warn => McpCheckStatusResponse::Warn,
+        McpDryRunCheckStatus::Error => McpCheckStatusResponse::Error,
     }
 }
 
@@ -979,40 +1217,52 @@ fn build_profile_vars(
     Ok(vars)
 }
 
-fn build_env_set_summaries(manifest: &Manifest) -> Vec<EnvSetSummaryResponse> {
+fn build_env_set_summaries(
+    manifest: &Manifest,
+    usage: &BTreeMap<String, Vec<EnvUsageRefResponse>>,
+) -> Vec<EnvSetSummaryResponse> {
     manifest
         .env_sets
         .iter()
-        .map(|(name, env_set)| EnvSetSummaryResponse {
-            id: name.clone(),
-            vars: env_set
-                .vars
-                .iter()
-                .map(|env_var| EnvVarSummaryResponse {
-                    key: env_var.key.clone(),
-                    binding: summarize_secret_binding(&env_var.binding),
-                })
-                .collect(),
+        .map(|(name, env_set)| {
+            let vars = build_env_var_summaries(&env_set.vars, usage);
+            EnvSetSummaryResponse {
+                id: name.clone(),
+                available_count: vars.iter().filter(|var| var.available).count(),
+                missing_count: vars.iter().filter(|var| !var.available).count(),
+                referrers: collect_env_referrers(&vars),
+                vars,
+            }
         })
         .collect()
 }
 
-fn build_script_summaries(manifest: &Manifest) -> Vec<ScriptSummaryResponse> {
+fn build_script_summaries(
+    manifest: &Manifest,
+    usage: &BTreeMap<String, Vec<EnvUsageRefResponse>>,
+) -> Vec<ScriptSummaryResponse> {
     manifest
         .scripts
         .iter()
-        .map(|(name, script)| ScriptSummaryResponse {
-            id: name.clone(),
-            kind: script.kind.clone(),
-            entry: script.entry.clone(),
-            args: script.args.clone(),
-            env_keys: script.env.iter().map(|env| env.key.clone()).collect(),
-            timeout_ms: script.timeout_ms,
+        .map(|(name, script)| {
+            let env_bindings = build_env_var_summaries(&script.env, usage);
+            ScriptSummaryResponse {
+                id: name.clone(),
+                kind: script.kind.clone(),
+                entry: script.entry.clone(),
+                args: script.args.clone(),
+                env_keys: env_bindings.iter().map(|env| env.key.clone()).collect(),
+                env_bindings,
+                timeout_ms: script.timeout_ms,
+            }
         })
         .collect()
 }
 
-fn build_mcp_server_summaries(manifest: &Manifest) -> Vec<McpServerSummaryResponse> {
+fn build_mcp_server_summaries(
+    manifest: &Manifest,
+    usage: &BTreeMap<String, Vec<EnvUsageRefResponse>>,
+) -> Vec<McpServerSummaryResponse> {
     manifest
         .mcp_servers
         .iter()
@@ -1049,14 +1299,7 @@ fn build_mcp_server_summaries(manifest: &Manifest) -> Vec<McpServerSummaryRespon
                     )
                 }
             };
-            let env_bindings: Vec<_> = server
-                .env
-                .iter()
-                .map(|env| EnvVarSummaryResponse {
-                    key: env.key.clone(),
-                    binding: summarize_secret_binding(&env.binding),
-                })
-                .collect();
+            let env_bindings = build_env_var_summaries(&server.env, usage);
 
             McpServerSummaryResponse {
                 id: name.clone(),
@@ -1071,6 +1314,119 @@ fn build_mcp_server_summaries(manifest: &Manifest) -> Vec<McpServerSummaryRespon
             }
         })
         .collect()
+}
+
+fn build_env_usage_index(manifest: &Manifest) -> BTreeMap<String, Vec<EnvUsageRefResponse>> {
+    let mut usage = BTreeMap::<String, Vec<EnvUsageRefResponse>>::new();
+
+    for (env_set_id, env_set) in &manifest.env_sets {
+        for env_var in &env_set.vars {
+            usage
+                .entry(env_var.key.clone())
+                .or_default()
+                .push(EnvUsageRefResponse {
+                    owner_kind: EnvUsageOwnerKindResponse::EnvSet,
+                    owner_id: env_set_id.clone(),
+                    label: format!("Env Set · {env_set_id}"),
+                });
+        }
+    }
+
+    for (script_id, script) in &manifest.scripts {
+        for env_var in &script.env {
+            usage
+                .entry(env_var.key.clone())
+                .or_default()
+                .push(EnvUsageRefResponse {
+                    owner_kind: EnvUsageOwnerKindResponse::Script,
+                    owner_id: script_id.clone(),
+                    label: format!("Script · {script_id}"),
+                });
+        }
+    }
+
+    for (server_id, server) in &manifest.mcp_servers {
+        for env_var in &server.env {
+            usage
+                .entry(env_var.key.clone())
+                .or_default()
+                .push(EnvUsageRefResponse {
+                    owner_kind: EnvUsageOwnerKindResponse::McpServer,
+                    owner_id: server_id.clone(),
+                    label: format!("MCP · {server_id}"),
+                });
+        }
+    }
+
+    usage
+}
+
+fn build_env_var_summaries(
+    envs: &[EnvVarDef],
+    usage: &BTreeMap<String, Vec<EnvUsageRefResponse>>,
+) -> Vec<EnvVarSummaryResponse> {
+    envs.iter()
+        .map(|env_var| {
+            let (binding_kind, source_env_var, rendered_placeholder, available, diagnostic) =
+                inspect_secret_binding(&env_var.binding);
+            EnvVarSummaryResponse {
+                key: env_var.key.clone(),
+                binding: summarize_secret_binding(&env_var.binding),
+                binding_kind,
+                source_env_var,
+                rendered_placeholder,
+                available,
+                diagnostic,
+                referrers: usage.get(&env_var.key).cloned().unwrap_or_default(),
+            }
+        })
+        .collect()
+}
+
+fn collect_env_referrers(vars: &[EnvVarSummaryResponse]) -> Vec<EnvUsageRefResponse> {
+    let mut dedup = BTreeMap::new();
+    for var in vars {
+        for referrer in &var.referrers {
+            dedup
+                .entry(format!("{:?}:{}", referrer.owner_kind, referrer.owner_id))
+                .or_insert_with(|| referrer.clone());
+        }
+    }
+    dedup.into_values().collect()
+}
+
+fn inspect_secret_binding(
+    binding: &SecretBinding,
+) -> (
+    SecretBindingKindResponse,
+    Option<String>,
+    String,
+    bool,
+    Option<String>,
+) {
+    match binding {
+        SecretBinding::Literal { .. } => (
+            SecretBindingKindResponse::Literal,
+            None,
+            "<literal>".to_string(),
+            true,
+            None,
+        ),
+        SecretBinding::Env { var } => {
+            let available = std::env::var_os(var).is_some();
+            (
+                SecretBindingKindResponse::Env,
+                Some(var.clone()),
+                format!("${{{var}}}"),
+                available,
+                if available {
+                    None
+                } else {
+                    Some(format!("缺少环境变量：{var}"))
+                },
+            )
+        }
+    }
 }
 
 fn collect_workspace_issues(
@@ -1129,6 +1485,57 @@ fn collect_workspace_issues(
                     "render_failed",
                     error.to_string(),
                 )),
+            }
+        }
+    }
+
+    for (env_set_id, env_set) in &manifest.env_sets {
+        for env_var in &env_set.vars {
+            if let Some(message) = inspect_secret_binding(&env_var.binding).4 {
+                issues.push(issue(
+                    "warning",
+                    "env_set",
+                    env_set_id,
+                    "env_binding_unavailable",
+                    format!("{}: {}", env_var.key, message),
+                ));
+            }
+        }
+    }
+
+    for (script_id, script) in &manifest.scripts {
+        for env_var in &script.env {
+            if let Some(message) = inspect_secret_binding(&env_var.binding).4 {
+                issues.push(issue(
+                    "warning",
+                    "script",
+                    script_id,
+                    "script_env_unavailable",
+                    format!("{}: {}", env_var.key, message),
+                ));
+            }
+        }
+    }
+
+    for (server_id, server) in &manifest.mcp_servers {
+        if let Err(error) = Mcp::validate_server(server_id, server) {
+            issues.push(issue(
+                "error",
+                "mcp_server",
+                server_id,
+                "mcp_invalid",
+                error.to_string(),
+            ));
+        }
+        for env_var in &server.env {
+            if let Some(message) = inspect_secret_binding(&env_var.binding).4 {
+                issues.push(issue(
+                    "warning",
+                    "mcp_server",
+                    server_id,
+                    "mcp_env_unavailable",
+                    format!("{}: {}", env_var.key, message),
+                ));
             }
         }
     }
@@ -1336,5 +1743,18 @@ pub(crate) fn watch_status_response(snapshot: WatchStatusSnapshot) -> WatchStatu
         last_event_at: snapshot.last_event_at,
         last_error: snapshot.last_error,
         watch_roots: snapshot.watch_roots,
+        recent_events: snapshot
+            .recent_events
+            .into_iter()
+            .map(|event| WatchTraceEventResponse {
+                revision: event.revision,
+                level: match event.level {
+                    WatchTraceLevel::Change => WatchTraceLevelResponse::Change,
+                    WatchTraceLevel::Error => WatchTraceLevelResponse::Error,
+                },
+                summary: event.summary,
+                at: event.at,
+            })
+            .collect(),
     }
 }

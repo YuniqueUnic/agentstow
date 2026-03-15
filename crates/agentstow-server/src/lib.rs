@@ -86,7 +86,8 @@ pub(crate) use ui::resolve_ui_dist_dir_for_test;
 pub(crate) use ui::ui_dist_missing_page;
 #[cfg(test)]
 pub(crate) use watch::{
-    WatchMode, WatchPlan, WatchStatusHandle, WatchStatusSnapshot, summarize_events,
+    WatchMode, WatchPlan, WatchStatusHandle, WatchStatusSnapshot, WatchTraceEvent, WatchTraceLevel,
+    summarize_events,
 };
 
 #[cfg(test)]
