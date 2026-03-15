@@ -36,7 +36,13 @@ export default defineConfig(({ mode }) => {
       sourcemap: true
     },
     optimizeDeps: {
-      include: ['@codemirror/lang-jinja', '@codemirror/state', 'codemirror']
+      include: [
+        '@codemirror/lang-jinja',
+        '@codemirror/lang-json',
+        '@codemirror/legacy-modes/mode/toml',
+        '@codemirror/state',
+        'codemirror'
+      ]
     }
   };
 });

@@ -64,6 +64,7 @@ describe('McpView', () => {
       'data-language',
       'json'
     );
+    expect(document.querySelector('[data-testid="mcp-rendered-config"] .cm-doc-token-key')).not.toBeNull();
 
     await screen.getByTestId('mcp-validate-run').click();
     await expect.element(screen.getByTestId('mcp-validate-issues')).toHaveTextContent(

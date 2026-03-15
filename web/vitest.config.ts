@@ -20,7 +20,9 @@ export default defineConfig({
       '@codemirror/lang-html',
       '@codemirror/lang-javascript',
       '@codemirror/lang-jinja',
+      '@codemirror/lang-json',
       '@codemirror/language',
+      '@codemirror/legacy-modes/mode/toml',
       '@codemirror/state',
       '@codemirror/view',
       'codemirror'

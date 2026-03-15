@@ -63,10 +63,7 @@
 
   const declaredRowsSnapshot = $derived(JSON.stringify(buildRows(detail)));
   const dirty = $derived(JSON.stringify(draftRows) !== declaredRowsSnapshot);
-  const mergedOnlyRows = $derived.by(() => {
-    const declaredKeys = new Set((detail?.declared_vars ?? []).map((item) => item.key));
-    return (detail?.merged_vars ?? []).filter((item) => !declaredKeys.has(item.key));
-  });
+  const declaredKeySet = $derived.by(() => new Set((detail?.declared_vars ?? []).map((item) => item.key)));
 
   function replaceRow(index: number, patch: Partial<ProfileVarUpdateItemRequest>): void {
     const next = draftRows.slice();
@@ -137,6 +134,35 @@
 
       <p class="stack-note">{syntaxModeHint(detail?.syntax_mode)}</p>
 
+      {#if detail && detail.merged_vars.length > 0}
+        <div class="inspector-table">
+          {#each detail.merged_vars as item (item.key)}
+            <div class="inspector-row">
+              <span class="inspector-row__label">{item.key}</span>
+              <div class="inspector-row__value inspector-row__value--actions">
+                <span class="inspector-row__value inspector-row__value--mono inspector-row__value-token">
+                  {item.value_json}
+                </span>
+                <div class="chips chips--tight">
+                  {#if !declaredKeySet.has(item.key)}
+                    <span class="pill mono">inherited</span>
+                  {/if}
+                  <button
+                    class="chip"
+                    type="button"
+                    onclick={() => void onCopyPlaceholder(`{{ ${item.key} }}`, 'Tera 占位符')}
+                  >
+                    复制 {`{{ ${item.key} }}`}
+                  </button>
+                </div>
+              </div>
+            </div>
+          {/each}
+        </div>
+      {:else}
+        <p class="empty empty--flush">（当前 profile 没有 merged vars）</p>
+      {/if}
+
       <div class="vars-editor__rows">
         {#if draftRows.length === 0}
           <p class="empty empty--flush">（当前 profile 还没有显式声明 vars，可直接新增）</p>
@@ -186,42 +212,6 @@
           {saving ? '保存中…' : '保存 vars'}
         </button>
       </div>
-
-      <div class="section__title">
-        <span>Merged Preview</span>
-        <strong>{detail?.merged_vars.length ?? 0}</strong>
-      </div>
-
-      {#if !detail || detail.merged_vars.length === 0}
-        <p class="empty empty--flush">（当前 profile 没有 merged vars）</p>
-      {:else}
-        <div class="inspector-table">
-          {#each detail.merged_vars as item (item.key)}
-            <div class="inspector-row">
-              <span class="inspector-row__label">{item.key}</span>
-              <div class="inspector-row__value inspector-row__value--actions">
-                <span class="inspector-row__value inspector-row__value--mono inspector-row__value-token">
-                  {item.value_json}
-                </span>
-                <button
-                  class="chip"
-                  type="button"
-                  onclick={() => void onCopyPlaceholder(`{{ ${item.key} }}`, 'Tera 占位符')}
-                >
-                  复制 {`{{ ${item.key} }}`}
-                </button>
-              </div>
-            </div>
-          {/each}
-        </div>
-      {/if}
-
-      {#if mergedOnlyRows.length > 0}
-        <p class="stack-note">
-          继承得到但未在当前 profile 显式声明的变量：
-          {mergedOnlyRows.map((item) => item.key).join(', ')}
-        </p>
-      {/if}
     </div>
   {/if}
 </div>

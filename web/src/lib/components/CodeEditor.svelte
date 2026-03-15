@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
 
+  import { tags } from '@lezer/highlight';
   import type { CompletionSource } from '@codemirror/autocomplete';
   import type { Compartment as CompartmentType, Extension } from '@codemirror/state';
   import type { Decoration, DecorationSet, ViewUpdate } from '@codemirror/view';
@@ -23,6 +24,7 @@
     testId?: string;
     documentLanguage?: EditorDocumentLanguage;
     documentPath?: string | null;
+    revealToken?: number;
   };
 
   type LoadedCodeMirror = {
@@ -33,9 +35,11 @@
     commands: typeof import('@codemirror/commands');
     language: typeof import('@codemirror/language');
     langJinja: typeof import('@codemirror/lang-jinja');
+    langJson: typeof import('@codemirror/lang-json');
     langJavascript: typeof import('@codemirror/lang-javascript');
     langHtml: typeof import('@codemirror/lang-html');
     langCss: typeof import('@codemirror/lang-css');
+    legacyToml: typeof import('@codemirror/legacy-modes/mode/toml');
   };
 
   type CompletionEntry = {
@@ -156,7 +160,8 @@
     onChange,
     testId,
     documentLanguage = 'auto',
-    documentPath = null
+    documentPath = null,
+    revealToken = 0
   }: Props = $props();
 
   let host: HTMLDivElement | null = null;
@@ -177,6 +182,7 @@
   let alive = true;
   let themeObserver: MutationObserver | null = null;
   let mediaQuery: MediaQueryList | null = null;
+  let lastRevealToken = 0;
 
   function normalizePath(path: string | null | undefined): string | null {
     if (!path) {
@@ -465,6 +471,22 @@
     );
   }
 
+  function buildHighlightExtension(language: typeof import('@codemirror/language')): Extension {
+    return language.syntaxHighlighting(
+      language.HighlightStyle.define([
+        { tag: [tags.comment, tags.lineComment, tags.blockComment], color: 'var(--ink-soft)', fontStyle: 'italic' },
+        { tag: [tags.keyword, tags.controlKeyword, tags.operatorKeyword], color: 'color-mix(in oklch, var(--primary) 74%, var(--ink))' },
+        { tag: [tags.string, tags.special(tags.string)], color: 'color-mix(in oklch, var(--primary) 56%, var(--ink))' },
+        { tag: [tags.number, tags.integer, tags.float, tags.bool, tags.null], color: 'color-mix(in oklch, var(--accent) 78%, var(--ink))' },
+        { tag: [tags.propertyName, tags.attributeName], color: 'color-mix(in oklch, var(--ink) 72%, var(--primary))', fontWeight: '600' },
+        { tag: [tags.variableName, tags.special(tags.variableName)], color: 'color-mix(in oklch, var(--ink) 86%, var(--primary))' },
+        { tag: [tags.brace, tags.squareBracket, tags.paren, tags.separator], color: 'color-mix(in oklch, var(--ink) 84%, transparent)' },
+        { tag: [tags.meta, tags.processingInstruction], color: 'color-mix(in oklch, var(--primary) 62%, var(--ink))' },
+        { tag: [tags.heading], color: 'var(--ink)', fontWeight: '700' }
+      ])
+    );
+  }
+
   function readResolvedTheme(): 'light' | 'dark' {
     if (typeof document === 'undefined') {
       return 'dark';
@@ -491,6 +513,7 @@
 
     const buildDecorations = (text: string): DecorationSet => {
       const builder = new deps.state.RangeSetBuilder<Decoration>();
+      const ranges: Array<{ from: number; to: number; className: string }> = [];
 
       for (const pattern of patterns) {
         pattern.regexp.lastIndex = 0;
@@ -502,7 +525,11 @@
           const range = indices?.[pattern.group ?? 0];
 
           if (range && range[0] < range[1]) {
-            builder.add(range[0], range[1], Decoration.mark({ class: pattern.className }));
+            ranges.push({
+              from: range[0],
+              to: range[1],
+              className: pattern.className
+            });
           }
 
           if (match[0].length === 0) {
@@ -510,6 +537,17 @@
           }
         }
       }
+
+      ranges
+        .sort((left, right) => {
+          if (left.from !== right.from) {
+            return left.from - right.from;
+          }
+          return left.to - right.to;
+        })
+        .forEach((range) => {
+          builder.add(range.from, range.to, Decoration.mark({ class: range.className }));
+        });
 
       return builder.finish();
     };
@@ -594,10 +632,13 @@
         extensions.push(deps.langCss.css());
         break;
       case 'toml':
-        extensions.push(...buildRegexHighlightExtension(deps, TOML_PATTERNS));
+        extensions.push(
+          deps.language.StreamLanguage.define(deps.legacyToml.toml),
+          ...buildRegexHighlightExtension(deps, TOML_PATTERNS)
+        );
         break;
       case 'json':
-        extensions.push(...buildRegexHighlightExtension(deps, JSON_PATTERNS));
+        extensions.push(deps.langJson.json(), ...buildRegexHighlightExtension(deps, JSON_PATTERNS));
         break;
       case 'shell':
         extensions.push(...buildRegexHighlightExtension(deps, SHELL_PATTERNS));
@@ -665,7 +706,7 @@
     loadError = null;
 
     try {
-      const [state, viewModule, cm, autocomplete, commands, language, langJinja, langJavascript, langHtml, langCss] =
+      const [state, viewModule, cm, autocomplete, commands, language, langJinja, langJson, langJavascript, langHtml, langCss, legacyToml] =
         await Promise.all([
           import('@codemirror/state'),
           import('@codemirror/view'),
@@ -674,9 +715,11 @@
           import('@codemirror/commands'),
           import('@codemirror/language'),
           import('@codemirror/lang-jinja'),
+          import('@codemirror/lang-json'),
           import('@codemirror/lang-javascript'),
           import('@codemirror/lang-html'),
-          import('@codemirror/lang-css')
+          import('@codemirror/lang-css'),
+          import('@codemirror/legacy-modes/mode/toml')
         ]);
 
       if (!alive || !host) {
@@ -691,9 +734,11 @@
         commands,
         language,
         langJinja,
+        langJson,
         langJavascript,
         langHtml,
-        langCss
+        langCss,
+        legacyToml
       };
 
       editable = new state.Compartment();
@@ -712,6 +757,7 @@
         extensions: [
           cm.basicSetup,
           themeConfig.of(buildTheme(cm, activeTheme)),
+          buildHighlightExtension(language),
           languageConfig.of(buildLanguageExtensions(deps, activeLanguage)),
           completionConfig.of(buildCompletionExtension(deps, activeLanguage)),
           attrsConfig.of(buildContentAttributes(cm, activeLanguage)),
@@ -841,6 +887,41 @@
       ]
     });
   });
+
+  $effect(() => {
+    if (!view || !codeMirrorDeps) {
+      return;
+    }
+    if (revealToken === lastRevealToken) {
+      return;
+    }
+
+    lastRevealToken = revealToken;
+    const currentView = view;
+    const currentDeps = codeMirrorDeps;
+    const reveal = () => {
+      if (view !== currentView) {
+        return;
+      }
+      const end = currentView.state.doc.length;
+      currentView.focus();
+      currentView.dispatch({
+        selection: { anchor: end },
+        effects: currentDeps.view.EditorView.scrollIntoView(end, { y: 'end' })
+      });
+      currentView.scrollDOM.scrollTop = currentView.scrollDOM.scrollHeight;
+    };
+
+    if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
+      const outerFrame = window.requestAnimationFrame(() => {
+        const innerFrame = window.requestAnimationFrame(reveal);
+        return () => window.cancelAnimationFrame(innerFrame);
+      });
+      return () => window.cancelAnimationFrame(outerFrame);
+    }
+
+    reveal();
+  });
 </script>
 
 <div class="editor" data-language={activeLanguage} data-testid={testId}>
@@ -876,6 +957,8 @@
     height: 100%;
     min-height: 0;
     min-width: 0;
+    display: grid;
+    grid-template-rows: minmax(0, 1fr);
     overflow: hidden;
   }
 
@@ -889,6 +972,7 @@
   .editor :global(.cm-scroller),
   .editor :global(.cm-content),
   .editor :global(.cm-gutters) {
+    height: 100%;
     min-height: 0;
     min-width: 0;
   }

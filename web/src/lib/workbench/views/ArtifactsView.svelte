@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy, onMount } from 'svelte';
+  import { onDestroy, onMount, untrack } from 'svelte';
 
   import { Tabs } from 'bits-ui';
 
@@ -93,12 +93,45 @@
   };
 
   const MANIFEST_DOC_ID = '$manifest';
+  const PREVIEW_PANE_STORAGE_KEY = 'agentstow:artifacts:preview-pane-open';
+
+  function readPreviewPanePreference(): boolean {
+    if (typeof window === 'undefined') {
+      return true;
+    }
+
+    try {
+      const stored = window.localStorage.getItem(PREVIEW_PANE_STORAGE_KEY);
+      if (stored === '0') {
+        return false;
+      }
+      if (stored === '1') {
+        return true;
+      }
+    } catch {
+      // Ignore storage failures and keep runtime defaults.
+    }
+
+    return true;
+  }
+
+  function writePreviewPanePreference(next: boolean): void {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    try {
+      window.localStorage.setItem(PREVIEW_PANE_STORAGE_KEY, next ? '1' : '0');
+    } catch {
+      // Ignore storage failures and keep runtime state only.
+    }
+  }
 
   let openTabs = $state<string[]>([]);
   let activeTab = $state<string | null>(null);
   let editors = $state<Record<string, EditorState>>({});
   let rightMode = $state<'preview' | 'diff'>('preview');
-  let previewPaneOpen = $state(true);
+  let previewPaneOpen = $state(readPreviewPanePreference());
   let autoOpened = $state(false);
   let artifactSearch = $state('');
   let tabMenu = $state<{ id: string; x: number; y: number } | null>(null);
@@ -121,6 +154,7 @@
   let profileVarsSaving = $state(false);
   let manifestInsertKind = $state<ManifestInsertKind>('profile');
   let pendingArtifactBootstrap = $state<PendingArtifactBootstrap | null>(null);
+  let revealTokens = $state<Record<string, number>>({});
 
   const fileArtifacts = $derived((summary?.artifacts ?? []).filter((a) => a.kind === 'file'));
   const dirArtifacts = $derived((summary?.artifacts ?? []).filter((a) => a.kind === 'dir'));
@@ -153,6 +187,18 @@
       return null;
     }
     return editors[activeTab] ?? null;
+  });
+  const activeEditorText = $derived.by(() => {
+    if (!activeTab) {
+      return '';
+    }
+    return editors[activeTab]?.editorText ?? '';
+  });
+  const activeBusySource = $derived.by(() => {
+    if (!activeTab) {
+      return false;
+    }
+    return editors[activeTab]?.busySource ?? false;
   });
 
   const tabsModel = $derived.by(() =>
@@ -238,6 +284,28 @@ Hello {{ name }}.
     return 'Hello {{ name }}\n';
   }
 
+  function bumpRevealToken(documentId: string): void {
+    revealTokens[documentId] = (revealTokens[documentId] ?? 0) + 1;
+  }
+
+  function revealSourceEditorBottom(): void {
+    if (typeof window === 'undefined' || typeof window.requestAnimationFrame !== 'function') {
+      return;
+    }
+
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        const scroller = document.querySelector<HTMLElement>(
+          '[data-testid="artifact-source-editor"] .cm-scroller'
+        );
+        scroller?.focus();
+        if (scroller) {
+          scroller.scrollTop = scroller.scrollHeight;
+        }
+      });
+    });
+  }
+
   async function bootstrapPendingArtifactSource(): Promise<void> {
     const pending = pendingArtifactBootstrap;
     if (!pending) {
@@ -258,7 +326,6 @@ Hello {{ name }}.
         busyPreview: false
       };
       openDocument(pending.artifactId);
-      previewPaneOpen = true;
       await onSourceSaved?.();
       setStatusLine(`已创建 ${pending.artifactId} source：${pending.sourcePath}`);
     } catch (error) {
@@ -286,13 +353,26 @@ Hello {{ name }}.
     return fallback;
   }
 
+  function setPreviewPaneOpen(next: boolean): void {
+    previewPaneOpen = next;
+    writePreviewPanePreference(next);
+  }
+
   function openDocument(id: string): void {
+    const isSameTab = activeTab === id;
     if (!openTabs.includes(id)) {
       openTabs = [...openTabs, id];
     }
     activeTab = id;
     rightMode = 'preview';
     setStatusLine(id === MANIFEST_DOC_ID ? '已打开 workspace manifest。' : `已打开 artifact：${id}`);
+
+    if (isSameTab) {
+      const st = editors[id];
+      if (!st || (!st.source && !st.busySource)) {
+        void loadEditorSource(id);
+      }
+    }
   }
 
   function closeActiveArtifact(): void {
@@ -403,6 +483,8 @@ Hello {{ name }}.
           content: defaultArtifactSourceContent(artifactBootstrap.sourcePath, artifactBootstrap.artifactId)
         }
       : null;
+    bumpRevealToken(MANIFEST_DOC_ID);
+    revealSourceEditorBottom();
     setErrorMessage(null);
     setStatusLine(`已插入 ${manifestInsertLabel(kind)} 模板，保存后生效。`);
   }
@@ -419,7 +501,7 @@ Hello {{ name }}.
     st.dirty = false;
   }
 
-  async function loadEditorSource(documentId: string): Promise<void> {
+  async function loadEditorSource(documentId: string, options: { force?: boolean } = {}): Promise<void> {
     editors[documentId] ??= {
       source: null,
       editorText: '',
@@ -431,7 +513,7 @@ Hello {{ name }}.
     };
 
     const st = editors[documentId]!;
-    if (st.busySource || st.source) {
+    if (st.busySource || (st.source && !options.force)) {
       return;
     }
 
@@ -492,11 +574,25 @@ Hello {{ name }}.
     }
   }
 
-  async function refreshPreview(): Promise<void> {
-    if (!activeTab) {
+  async function refreshPreview(
+    options: {
+      announce?: boolean;
+      revealPane?: boolean;
+      showRenderedTab?: boolean;
+      documentId?: string | null;
+    } = {}
+  ): Promise<void> {
+    const {
+      announce = true,
+      revealPane = false,
+      showRenderedTab = false,
+      documentId = activeTab
+    } = options;
+
+    if (!documentId) {
       return;
     }
-    const st = editors[activeTab];
+    const st = editors[documentId];
     if (!st || st.busyPreview) {
       return;
     }
@@ -504,15 +600,25 @@ Hello {{ name }}.
     st.busyPreview = true;
     setErrorMessage(null);
     try {
-      previewPaneOpen = true;
-      if (activeTab === MANIFEST_DOC_ID) {
+      if (revealPane) {
+        setPreviewPaneOpen(true);
+      }
+      if (showRenderedTab) {
+        rightMode = 'preview';
+      }
+
+      if (documentId === MANIFEST_DOC_ID) {
         st.previewText =
           'Manifest editor\n\n在这里直接编辑 workspace 的 profiles / artifacts / targets / env_sets / scripts / mcp_servers。\n保存后刷新左侧资源树，即可看到新增或变更的对象。';
-        setStatusLine('已刷新 manifest 说明面板。');
+        if (announce) {
+          setStatusLine('已刷新 manifest 说明面板。');
+        }
       } else if (selectedProfile) {
-        const resp = await renderArtifact(activeTab, selectedProfile);
+        const resp = await renderArtifact(documentId, selectedProfile);
         st.previewText = resp.text;
-        setStatusLine('已刷新渲染预览。');
+        if (announce) {
+          setStatusLine('已刷新渲染预览。');
+        }
       } else {
         st.previewText = '请选择 profile 后再渲染预览。';
       }
@@ -648,7 +754,7 @@ Hello {{ name }}.
       gitCompare = compare;
       selectedGitRevision = revision;
       rightMode = 'diff';
-      previewPaneOpen = true;
+      setPreviewPaneOpen(true);
       setStatusLine(`已加载 ${compare.base_label} -> ${compare.head_label} 的 Git 对比。`);
     } catch (error) {
       if (token !== gitCompareToken || activeTab !== documentId) {
@@ -700,9 +806,8 @@ Hello {{ name }}.
       gitCompareError = null;
       await loadGitHistory(documentId);
       selectedGitRevision = updated.commit.revision;
-      if (activeTab === documentId) {
-        await refreshPreview();
-      }
+      rightMode = 'preview';
+      await refreshPreview({ announce: false, documentId });
       await onSourceSaved?.();
       setStatusLine(`已将 ${documentId} 回退到 ${updated.commit.short_revision} · ${updated.commit.summary}。`);
     } catch (error) {
@@ -771,15 +876,19 @@ Hello {{ name }}.
   });
 
   $effect(() => {
-    if (autoOpened) {
+    if (autoOpened || !summary) {
       return;
     }
     if (fileArtifacts.length) {
-      openDocument(fileArtifacts[0].id);
+      untrack(() => {
+        openDocument(fileArtifacts[0].id);
+      });
       autoOpened = true;
       return;
     }
-    openDocument(MANIFEST_DOC_ID);
+    untrack(() => {
+      openDocument(MANIFEST_DOC_ID);
+    });
     autoOpened = true;
   });
 
@@ -787,7 +896,10 @@ Hello {{ name }}.
     if (!activeTab) {
       return;
     }
-    void loadEditorSource(activeTab);
+    const documentId = activeTab;
+    untrack(() => {
+      void loadEditorSource(documentId);
+    });
   });
 
   $effect(() => {
@@ -805,42 +917,47 @@ Hello {{ name }}.
       activeTab = nextTabs[0] ?? MANIFEST_DOC_ID;
     }
 
-    let needsReload = false;
+    let reloadDocumentId: string | null = null;
     for (const documentId of nextTabs) {
       const st = editors[documentId];
-      if (!st || st.dirty) {
+      if (!st || st.dirty || st.busySource) {
         continue;
       }
 
       const expectedPath = summarySourcePathOf(documentId);
       const currentPath = sourcePathOf(st.source);
       if (expectedPath && currentPath && expectedPath !== currentPath) {
-        st.source = null;
-        st.editorText = '';
-        st.previewText = '';
-        st.dirty = false;
+        invalidateEditorSource(documentId);
         if (activeTab === documentId) {
-          needsReload = true;
+          reloadDocumentId = documentId;
         }
       }
     }
 
-    if (needsReload && activeTab) {
-      void loadEditorSource(activeTab);
+    if (reloadDocumentId) {
+      untrack(() => {
+        void loadEditorSource(reloadDocumentId, { force: true });
+      });
     }
   });
 
   $effect(() => {
-    void loadProfileDetail(selectedProfile ?? null);
+    const profileId = selectedProfile ?? null;
+    untrack(() => {
+      void loadProfileDetail(profileId);
+    });
   });
 
   $effect(() => {
-    void loadGitHistory(activeTab);
+    const documentId = activeTab;
+    untrack(() => {
+      void loadGitHistory(documentId);
+    });
   });
 
   $effect(() => {
     const req = requestedArtifactId ?? null;
-    if (!req) {
+    if (!req || !summary) {
       return;
     }
     if (activeTab === req) {
@@ -881,7 +998,9 @@ Hello {{ name }}.
     }
 
     lastAutoPreviewKey = nextKey;
-    void refreshPreview();
+    untrack(() => {
+      void refreshPreview({ announce: false });
+    });
   });
 
   $effect(() => {
@@ -890,7 +1009,9 @@ Hello {{ name }}.
       return;
     }
 
-    void insertManifestSnippet(kind);
+    untrack(() => {
+      void insertManifestSnippet(kind);
+    });
     onManifestInsertHandled?.(kind);
   });
 
@@ -1139,7 +1260,7 @@ Hello {{ name }}.
             class="ui-button ui-button--primary"
             disabled={!activeTab || (!isManifestTab(activeTab) && !selectedProfile) || activeEditor?.busyPreview}
             type="button"
-            onclick={() => void refreshPreview()}
+            onclick={() => void refreshPreview({ revealPane: true, showRenderedTab: true })}
           >
             {activeEditor?.busyPreview ? '处理中…' : activeTab === MANIFEST_DOC_ID ? '说明 / 校验' : '渲染预览'}
           </button>
@@ -1147,7 +1268,7 @@ Hello {{ name }}.
             class="ui-button ui-button--subtle"
             disabled={!activeTab}
             type="button"
-            onclick={() => (previewPaneOpen = !previewPaneOpen)}
+            onclick={() => setPreviewPaneOpen(!previewPaneOpen)}
           >
             {previewPaneOpen ? '隐藏 Preview' : '显示 Preview'}
           </button>
@@ -1180,18 +1301,19 @@ Hello {{ name }}.
                 />
               </div>
             </div>
-            <div class="pane__body">
+            <div class="pane__body pane__body--editor">
               {#if !activeTab}
                 <p class="muted">（请选择一个 artifact）</p>
-              {:else if activeEditor?.busySource}
+              {:else if activeBusySource}
                 <p class="muted">读取中…</p>
               {:else}
-                {#key `${activeTab}:${activeSourcePath ?? 'unresolved'}`}
+                {#key `${activeTab}:${activeSourcePath ?? 'unresolved'}:${revealTokens[activeTab] ?? 0}`}
                   <CodeEditor
                     testId="artifact-source-editor"
-                    value={activeEditor?.editorText ?? ''}
+                    value={activeEditorText}
                     documentLanguage={activeTab === MANIFEST_DOC_ID ? 'toml' : 'auto'}
                     documentPath={activeSourcePath}
+                    revealToken={revealTokens[activeTab] ?? 0}
                     onChange={(next) => {
                       if (!activeTab) {
                         return;
@@ -1221,12 +1343,12 @@ Hello {{ name }}.
                     返回编辑差异
                   </button>
                 {/if}
-                <button class="chip" type="button" onclick={() => (previewPaneOpen = false)}>
+                <button class="chip" type="button" onclick={() => setPreviewPaneOpen(false)}>
                   收起 Preview
                 </button>
               </div>
             </div>
-            <div class="pane__body">
+            <div class="pane__body pane__body--preview">
               <Tabs.Root value={rightMode} onValueChange={(next) => (rightMode = next as typeof rightMode)}>
                 <Tabs.List class="tabs" aria-label="Preview mode">
                   <Tabs.Trigger class="tab" value="preview">Rendered</Tabs.Trigger>
@@ -1261,7 +1383,7 @@ Hello {{ name }}.
           minRightPx={280}
         >
           {#snippet left()}
-            <div class="split surface">
+            <div class="split surface artifacts-shell">
               {#if previewPaneOpen}
                 <SplitView
                   autoSaveId="workbench:artifacts:shell"
@@ -1278,7 +1400,7 @@ Hello {{ name }}.
                   {/snippet}
                 </SplitView>
               {:else}
-                <div class="workspace-stack">
+                <div class="workspace-stack artifacts-shell artifacts-shell--single">
                   {@render sourcePane()}
                 </div>
               {/if}

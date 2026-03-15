@@ -1150,6 +1150,24 @@ summary.tree__row::-webkit-details-marker {
   overflow: hidden;
 }
 
+.pane__body--editor,
+.pane__body--preview,
+.artifacts-shell {
+  height: 100%;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
+  min-height: 0;
+  min-width: 0;
+}
+
+.pane__body--editor > *,
+.pane__body--preview > *,
+.artifacts-shell > * {
+  min-height: 0;
+  min-width: 0;
+  height: 100%;
+}
+
 .pane__body--stack,
 .region__body--stack {
   display: grid;
@@ -1561,6 +1579,7 @@ summary.tree__row::-webkit-details-marker {
 }
 
 .workspace-stack {
+  height: 100%;
   min-height: 0;
   min-width: 0;
   display: grid;
