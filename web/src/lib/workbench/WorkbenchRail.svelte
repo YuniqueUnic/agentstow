@@ -3,10 +3,12 @@
 
   type Props = {
     view: ViewKey;
+    expanded: boolean;
     onChange: (next: ViewKey) => void;
+    onToggleExpanded: () => void;
   };
 
-  let { view, onChange }: Props = $props();
+  let { view, expanded, onChange, onToggleExpanded }: Props = $props();
 
   const items = [
     {
@@ -50,7 +52,30 @@
   }>;
 </script>
 
-<nav class="rail" aria-label="主导航">
+<nav class={['rail', expanded ? 'rail--expanded' : ''].join(' ')} aria-label="主导航">
+  <button
+    class="rail__toggle"
+    type="button"
+    onclick={onToggleExpanded}
+    aria-label={expanded ? '收起侧边栏' : '展开侧边栏'}
+    aria-pressed={expanded}
+    title={expanded ? '收起侧边栏' : '展开侧边栏'}
+  >
+    <span class="rail__glyph" aria-hidden="true">
+      <svg
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="1.65"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+      >
+        <path d={expanded ? 'M15 6l-6 6 6 6' : 'M9 6l6 6-6 6'}></path>
+      </svg>
+    </span>
+    <span class="rail__label">{expanded ? '收起' : '展开'}</span>
+  </button>
+
   {#each items as item (item.key)}
     <button
       class={['rail__item', view === item.key ? 'rail__item--active' : ''].join(' ')}
@@ -59,8 +84,8 @@
       title={item.label}
       aria-label={item.label}
       aria-current={view === item.key ? 'page' : undefined}
-    >
-      <span class="rail__glyph" aria-hidden="true">
+      >
+        <span class="rail__glyph" aria-hidden="true">
         <svg
           viewBox="0 0 24 24"
           fill="none"
@@ -74,6 +99,7 @@
           {/each}
         </svg>
       </span>
+      <span class="rail__label">{item.label}</span>
     </button>
   {/each}
 </nav>

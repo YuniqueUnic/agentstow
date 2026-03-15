@@ -22,6 +22,7 @@ import type {
   McpTestResponse,
   McpValidateResponse,
   ProfileDetailResponse,
+  ProfileVarsUpdateRequest,
   RenderResponse,
   ScriptRunRequest,
   ScriptRunResponse,
@@ -29,6 +30,7 @@ import type {
   WorkspaceGitSummaryResponse,
   WorkspaceInitRequest,
   WorkspaceInitResponse,
+  WorkspaceProbeResponse,
   WorkspaceSelectResponse,
   WorkspaceStateResponse,
   WorkspaceSummaryResponse
@@ -43,7 +45,6 @@ type NavigatorWithClipboard = Navigator & {
 };
 
 type WindowWithClipboardState = Window & {
-  __agentstowClipboardFallbackInstalled__?: boolean;
   __agentstowCopiedText__?: string;
 };
 
@@ -100,11 +101,11 @@ function legacyCopyText(text: string): boolean {
     textarea.focus({ preventScroll: true });
     textarea.select();
     textarea.setSelectionRange(0, text.length);
+    rememberCopiedText(text);
 
     if (typeof document.execCommand !== 'function') {
       return false;
     }
-
     return document.execCommand('copy');
   } catch {
     return false;
@@ -145,82 +146,6 @@ async function writeTextWithFallback(text: string, originalWriteText?: (text: st
     ? originalError
     : new Error('无法写入剪贴板：当前运行环境不支持 Clipboard API 或 fallback copy。');
 }
-
-function installClipboardFallback(): void {
-  if (typeof window === 'undefined' || typeof navigator === 'undefined') {
-    return;
-  }
-
-  const state = window as WindowWithClipboardState;
-  if (state.__agentstowClipboardFallbackInstalled__) {
-    return;
-  }
-
-  const nav = navigator as NavigatorWithClipboard;
-  const clipboard = nav.clipboard;
-  const originalWriteText =
-    typeof clipboard?.writeText === 'function' ? clipboard.writeText.bind(clipboard) : undefined;
-  const wrappedWriteText = async (text: string): Promise<void> => {
-    await writeTextWithFallback(text, originalWriteText);
-  };
-
-  if (clipboard) {
-    try {
-      const wrappedClipboard = {
-        ...clipboard,
-        writeText: wrappedWriteText
-      };
-      Object.defineProperty(nav, 'clipboard', {
-        configurable: true,
-        value: wrappedClipboard
-      });
-      state.__agentstowClipboardFallbackInstalled__ = true;
-      return;
-    } catch {
-      try {
-        clipboard.writeText = wrappedWriteText;
-        state.__agentstowClipboardFallbackInstalled__ = true;
-        return;
-      } catch {
-        try {
-          Object.defineProperty(clipboard, 'writeText', {
-            configurable: true,
-            value: wrappedWriteText
-          });
-          state.__agentstowClipboardFallbackInstalled__ = true;
-          return;
-        } catch {
-          // fall through to navigator patch
-        }
-      }
-    }
-  }
-
-  try {
-    Object.defineProperty(nav, 'clipboard', {
-      configurable: true,
-      value: {
-        writeText: wrappedWriteText
-      }
-    });
-    state.__agentstowClipboardFallbackInstalled__ = true;
-  } catch {
-    if (clipboard) {
-      try {
-        Object.defineProperty(clipboard, 'writeText', {
-          configurable: true,
-          value: wrappedWriteText
-        });
-        state.__agentstowClipboardFallbackInstalled__ = true;
-        return;
-      } catch {
-        // ignore: callers will still see the original browser error
-      }
-    }
-  }
-}
-
-installClipboardFallback();
 
 function buildUrl(path: string, query?: Record<string, QueryValue>): string {
   const url = new URL(`${API_BASE}${path}`, window.location.origin);
@@ -289,14 +214,10 @@ async function fetchJson<T>(
 }
 
 export function copyTextToClipboard(text: string): Promise<void> {
-  installClipboardFallback();
-
   const nav = navigator as NavigatorWithClipboard;
-  if (nav.clipboard?.writeText) {
-    return nav.clipboard.writeText(String(text));
-  }
-
-  return writeTextWithFallback(String(text));
+  const originalWriteText =
+    typeof nav.clipboard?.writeText === 'function' ? nav.clipboard.writeText.bind(nav.clipboard) : undefined;
+  return writeTextWithFallback(String(text), originalWriteText);
 }
 
 export function getManifest(): Promise<ManifestResponse> {
@@ -327,6 +248,16 @@ export function getWorkspaceGit(): Promise<WorkspaceGitSummaryResponse | null> {
   return fetchJson<WorkspaceGitSummaryResponse | null>('/api/workspace/git');
 }
 
+export function probeWorkspace(workspace_root: string): Promise<WorkspaceProbeResponse> {
+  return fetchJson<WorkspaceProbeResponse>('/api/workspace/probe', undefined, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ workspace_root })
+  });
+}
+
 export function selectWorkspace(workspace_root: string): Promise<WorkspaceSelectResponse> {
   return fetchJson<WorkspaceSelectResponse>('/api/workspace', undefined, {
     method: 'POST',
@@ -334,6 +265,12 @@ export function selectWorkspace(workspace_root: string): Promise<WorkspaceSelect
       'Content-Type': 'application/json'
     },
     body: JSON.stringify({ workspace_root })
+  });
+}
+
+export function pickWorkspace(): Promise<WorkspaceSelectResponse | null> {
+  return fetchJson<WorkspaceSelectResponse | null>('/api/workspace/pick', undefined, {
+    method: 'POST'
   });
 }
 
@@ -461,6 +398,23 @@ export function updateArtifactSource(
 
 export function getProfileDetail(profile: string): Promise<ProfileDetailResponse> {
   return fetchJson<ProfileDetailResponse>(`/api/profiles/${encodeURIComponent(profile)}`);
+}
+
+export function updateProfileVars(
+  profile: string,
+  request: ProfileVarsUpdateRequest
+): Promise<ProfileDetailResponse> {
+  return fetchJson<ProfileDetailResponse>(
+    `/api/profiles/${encodeURIComponent(profile)}/vars`,
+    undefined,
+    {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(request)
+    }
+  );
 }
 
 export function getImpactAnalysis(query: {

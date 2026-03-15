@@ -29,8 +29,6 @@
     selectedArtifact,
     selectedProfile,
     busyImpact,
-    errorMessage,
-    statusLine,
     onSetImpactMode,
     onRefreshImpact,
     onOpenTarget,
@@ -125,12 +123,6 @@
           </button>
         </div>
       </div>
-
-      {#if errorMessage}
-        <p class="notice notice--error">{errorMessage}</p>
-      {/if}
-      <p class="status-line" aria-live="polite">{statusLine}</p>
-
       <div class="canvas__body">
         <SplitView
           autoSaveId="workbench:impact:stack"

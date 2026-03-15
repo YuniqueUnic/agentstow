@@ -30,8 +30,6 @@
     scriptStdin,
     scriptRun,
     busyScriptRun,
-    errorMessage,
-    statusLine,
     onSelectScript,
     onScriptStdin,
     onScriptRun,
@@ -123,12 +121,6 @@
       </button>
     </div>
   </div>
-
-  {#if errorMessage}
-    <p class="notice notice--error">{errorMessage}</p>
-  {/if}
-  <p class="status-line" aria-live="polite">{statusLine}</p>
-
   <div class="split surface">
     <SplitView autoSaveId="workbench:scripts:shell" initialLeftPct={66} minLeftPx={460} minRightPx={300}>
       {#snippet left()}

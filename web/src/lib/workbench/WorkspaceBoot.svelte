@@ -1,160 +1,65 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
-
-  import type { WorkspacePickerCapability } from '$lib/types';
+  import type { WorkspaceProbeResponse } from '$lib/types';
 
   type Props = {
     workspaceInput: string;
+    workspaceProbe: WorkspaceProbeResponse | null;
     initGit: boolean;
     busy: boolean;
+    pickerBusy: boolean;
     errorMessage: string | null;
     statusLine: string;
     onWorkspaceInput: (next: string) => void;
     onInitGit: (next: boolean) => void;
+    onProbeWorkspace: () => void | Promise<void>;
+    onPickWorkspace: () => void | Promise<void>;
     onOpenWorkspace: () => void | Promise<void>;
     onInitWorkspace: () => void | Promise<void>;
   };
 
-  type DirectoryHandleLike = {
-    name?: string;
-    path?: string;
-    fullPath?: string;
-    nativePath?: string;
-    __nativePath?: string;
-  };
-
-  type WindowWithDirectoryPicker = Window & {
-    showDirectoryPicker?: (options?: {
-      id?: string;
-      mode?: 'read' | 'readwrite';
-      startIn?: 'desktop' | 'documents' | 'downloads' | 'music' | 'pictures' | 'videos';
-    }) => Promise<DirectoryHandleLike>;
-  };
-
-  const DEFAULT_PICKER_CAPABILITY: WorkspacePickerCapability = {
-    supported: false,
-    secureContext: false,
-    supportsPathExtraction: false,
-    reason: '当前运行环境未暴露 folder picker。'
-  };
-
   let {
     workspaceInput,
+    workspaceProbe,
     initGit,
     busy,
+    pickerBusy,
     errorMessage,
     statusLine,
     onWorkspaceInput,
     onInitGit,
+    onProbeWorkspace,
+    onPickWorkspace,
     onOpenWorkspace,
     onInitWorkspace
   }: Props = $props();
 
-  let pickerCapability = $state<WorkspacePickerCapability>(DEFAULT_PICKER_CAPABILITY);
-  let pickerBusy = $state(false);
-  let pickerMessage = $state<string | null>(null);
-  let pickedDirectoryName = $state<string | null>(null);
-
-  function describePickerCapability(): WorkspacePickerCapability {
-    if (typeof window === 'undefined') {
-      return DEFAULT_PICKER_CAPABILITY;
+  const hasInput = $derived(workspaceInput.trim().length > 0);
+  const probeTone = $derived.by(() => {
+    if (!workspaceProbe) {
+      return 'neutral';
     }
-
-    const secureContext = window.isSecureContext;
-    const pickerWindow = window as WindowWithDirectoryPicker;
-    const supported = typeof pickerWindow.showDirectoryPicker === 'function';
-
-    if (!supported) {
-      return {
-        supported: false,
-        secureContext,
-        supportsPathExtraction: false,
-        reason: '当前浏览器不支持 File System Access directory picker。'
-      };
+    if (workspaceProbe.selectable) {
+      return 'ok';
     }
-
-    if (!secureContext) {
-      return {
-        supported: true,
-        secureContext,
-        supportsPathExtraction: false,
-        reason: 'folder picker 需要 secure context，当前环境通常只能做能力探测。'
-      };
+    if (workspaceProbe.initializable) {
+      return 'warn';
     }
-
-    return {
-      supported: true,
-      secureContext,
-      supportsPathExtraction: false,
-      reason: '可选择目录句柄；若运行时未桥接原生路径，仍需手动粘贴绝对路径。'
-    };
-  }
-
-  function extractDirectoryPath(handle: DirectoryHandleLike | null | undefined): string | null {
-    if (!handle) {
-      return null;
+    return 'warn';
+  });
+  const probeHeadline = $derived.by(() => {
+    if (!workspaceProbe) {
+      return '尚未检查路径';
     }
-
-    for (const key of ['path', 'fullPath', 'nativePath', '__nativePath'] as const) {
-      const value = handle[key];
-      if (typeof value === 'string' && value.trim()) {
-        return value.trim();
-      }
+    if (workspaceProbe.selectable && workspaceProbe.manifest_present) {
+      return 'workspace 已可直接打开';
     }
-
-    return null;
-  }
-
-  function describePickerError(error: unknown): string {
-    if (error instanceof DOMException && error.name === 'AbortError') {
-      return '已取消目录选择。';
+    if (workspaceProbe.initializable && !workspaceProbe.exists) {
+      return '路径不存在，可直接创建并初始化';
     }
-    if (error instanceof Error && error.message) {
-      return error.message;
+    if (workspaceProbe.initializable) {
+      return '目录存在但尚未初始化';
     }
-    return '目录选择失败。';
-  }
-
-  async function handlePickWorkspace(): Promise<void> {
-    const pickerWindow = window as WindowWithDirectoryPicker;
-    if (typeof pickerWindow.showDirectoryPicker !== 'function') {
-      pickerMessage = '当前运行环境未提供 folder picker。';
-      return;
-    }
-
-    pickerBusy = true;
-    pickerMessage = null;
-
-    try {
-      const handle = await pickerWindow.showDirectoryPicker({
-        id: 'agentstow-workspace',
-        mode: 'readwrite',
-        startIn: 'documents'
-      });
-      pickedDirectoryName = handle.name ?? '未命名目录';
-
-      const nativePath = extractDirectoryPath(handle);
-      pickerCapability = {
-        ...pickerCapability,
-        supportsPathExtraction: Boolean(nativePath)
-      };
-
-      if (nativePath) {
-        onWorkspaceInput(nativePath);
-        pickerMessage = `已选择目录“${pickedDirectoryName}”，并回填到路径输入框。`;
-        return;
-      }
-
-      pickerMessage = `已选择目录“${pickedDirectoryName}”。当前浏览器只返回 FileSystemDirectoryHandle，不暴露原生绝对路径；请手动粘贴路径，或等待原生 bridge/协议接入。`;
-    } catch (error) {
-      pickerMessage = describePickerError(error);
-    } finally {
-      pickerBusy = false;
-    }
-  }
-
-  onMount(() => {
-    pickerCapability = describePickerCapability();
+    return '当前路径不可用';
   });
 </script>
 
@@ -168,20 +73,9 @@
     <p class="boot__eyebrow">AgentStow Workbench</p>
     <h1>把 workspace 接进编辑器</h1>
     <p class="boot__lead">
-      你可以打开一个已经包含 <code>agentstow.toml</code> 的目录，也可以在任意目录里
-      初始化一个新的 workspace。工作台会直接把 artifacts、targets、env sets、scripts 和 MCP
-      当成一等对象展示。
+      使用本地目录选择器或直接输入绝对路径。工作台会先 probe 路径，再决定是打开现有
+      workspace，还是在该目录创建并初始化新的 workspace。
     </p>
-
-    <div class="boot__capability" data-testid="workspace-folder-picker-capability">
-      <span class={['pill', pickerCapability.supported ? 'pill--ok' : 'pill--warn'].join(' ')}>
-        {pickerCapability.supported ? 'folder picker ready' : 'manual path only'}
-      </span>
-      <div class="boot__capability-copy">
-        <strong>{pickerCapability.supported ? 'Folder Picker' : 'Manual Path'}</strong>
-        <span>{pickerCapability.reason ?? '可直接输入本机路径。'}</span>
-      </div>
-    </div>
 
     <div class="boot__form">
       <label class="field">
@@ -197,13 +91,44 @@
           }}
         />
         <span class="field__hint">
-          {#if pickerCapability.supported}
-            可先点“选择文件夹（实验）”探测目录句柄；如果运行时不暴露绝对路径，仍需手动粘贴本机路径。
-          {:else}
-            服务端不会自动弹出文件选择框，直接输入本机路径即可。
-          {/if}
+          支持直接粘贴本机绝对路径；若路径不存在，会提示你是否创建并初始化该 workspace。
         </span>
       </label>
+
+      <div class="compound-action compound-action--boot">
+        <button
+          class="ui-button"
+          disabled={busy || pickerBusy}
+          type="button"
+          onclick={() => void onPickWorkspace()}
+        >
+          {pickerBusy ? '选择中…' : '选择文件夹'}
+        </button>
+        <button
+          class="ui-button ui-button--ghost"
+          disabled={busy || pickerBusy || !hasInput}
+          type="button"
+          onclick={() => void onProbeWorkspace()}
+        >
+          检查路径
+        </button>
+        <button
+          class="ui-button ui-button--ghost"
+          disabled={busy || pickerBusy || !hasInput}
+          type="button"
+          onclick={() => void onOpenWorkspace()}
+        >
+          打开 workspace
+        </button>
+        <button
+          class="ui-button ui-button--primary"
+          disabled={busy || pickerBusy || !hasInput}
+          type="button"
+          onclick={() => void onInitWorkspace()}
+        >
+          {busy ? '处理中…' : '创建并初始化'}
+        </button>
+      </div>
 
       <label class="toggle boot__toggle" aria-label="初始化选项">
         <input
@@ -217,36 +142,64 @@
         />
         <span>初始化时执行 <code>git init</code></span>
       </label>
-
-      <div class="boot__actions">
-        <button
-          class="ui-button"
-          disabled={busy || pickerBusy || !pickerCapability.supported}
-          type="button"
-          onclick={() => void handlePickWorkspace()}
-        >
-          {pickerBusy ? '选择中…' : '选择文件夹（实验）'}
-        </button>
-        <button class="ui-button ui-button--ghost" disabled={busy} type="button" onclick={() => void onOpenWorkspace()}>
-          打开 workspace
-        </button>
-        <button
-          class="ui-button ui-button--primary"
-          disabled={busy}
-          type="button"
-          onclick={() => void onInitWorkspace()}
-        >
-          {busy ? '处理中…' : '初始化 workspace'}
-        </button>
-      </div>
     </div>
 
-    {#if pickerMessage}
-      <p class="notice" data-testid="workspace-folder-picker-message">{pickerMessage}</p>
-    {/if}
-    {#if pickedDirectoryName}
-      <p class="boot__status mono" data-testid="workspace-folder-picker-name">last picked: {pickedDirectoryName}</p>
-    {/if}
+    <div class="boot__probe" data-testid="workspace-probe-summary">
+      <div class="boot__probe-head">
+        <span class={['pill', `pill--${probeTone}`].join(' ')}>{probeHeadline}</span>
+        {#if workspaceProbe}
+          <span class="mono">{workspaceProbe.resolved_workspace_root}</span>
+        {/if}
+      </div>
+
+      {#if workspaceProbe}
+        <div class="inspector-table">
+          <div class="inspector-row">
+            <span class="inspector-row__label">Exists</span>
+            <span class="inspector-row__value inspector-row__value--mono">
+              {workspaceProbe.exists ? 'yes' : 'no'}
+            </span>
+          </div>
+          <div class="inspector-row">
+            <span class="inspector-row__label">Manifest</span>
+            <span class="inspector-row__value inspector-row__value--mono">
+              {workspaceProbe.manifest_present ? 'ready' : 'missing'}
+            </span>
+          </div>
+          <div class="inspector-row">
+            <span class="inspector-row__label">Selectable</span>
+            <span class="inspector-row__value inspector-row__value--mono">
+              {workspaceProbe.selectable ? 'yes' : 'no'}
+            </span>
+          </div>
+          <div class="inspector-row">
+            <span class="inspector-row__label">Initializable</span>
+            <span class="inspector-row__value inspector-row__value--mono">
+              {workspaceProbe.initializable ? 'yes' : 'no'}
+            </span>
+          </div>
+          <div class="inspector-row">
+            <span class="inspector-row__label">Git</span>
+            <span class="inspector-row__value inspector-row__value--mono">
+              {workspaceProbe.git_present ? 'present' : 'absent'}
+            </span>
+          </div>
+          <div class="inspector-row">
+            <span class="inspector-row__label">Manifest Path</span>
+            <span class="inspector-row__value inspector-row__value--mono">
+              {workspaceProbe.manifest_path}
+            </span>
+          </div>
+        </div>
+
+        {#if workspaceProbe.reason}
+          <p class="notice">{workspaceProbe.reason}</p>
+        {/if}
+      {:else}
+        <p class="empty empty--flush">先选择文件夹或输入路径，再用“检查路径”确认状态。</p>
+      {/if}
+    </div>
+
     {#if errorMessage}
       <p class="notice notice--error">{errorMessage}</p>
     {/if}
@@ -255,29 +208,29 @@
 </div>
 
 <style>
-  .boot__capability {
-    display: flex;
-    gap: 12px;
-    align-items: flex-start;
-    padding: 12px 14px;
-    margin: 0 0 18px;
-    border: 1px solid color-mix(in oklch, var(--line) 82%, transparent);
-    background: color-mix(in oklch, var(--canvas-elevated) 72%, transparent);
-  }
-
-  .boot__capability-copy {
+  .boot__probe {
     display: grid;
-    gap: 4px;
+    gap: 12px;
   }
 
-  .boot__capability-copy strong {
-    font-size: 12px;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
+  .boot__probe-head {
+    display: grid;
+    gap: 8px;
   }
 
-  .boot__capability-copy span {
-    color: var(--ink-soft);
-    line-height: 1.45;
+  .compound-action--boot {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  @media (max-width: 900px) {
+    .compound-action--boot {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+
+  @media (max-width: 640px) {
+    .compound-action--boot {
+      grid-template-columns: 1fr;
+    }
   }
 </style>

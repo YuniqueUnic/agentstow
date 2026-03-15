@@ -58,8 +58,6 @@
     selectedProfile,
     busyLinks,
     busyLinkOp,
-    errorMessage,
-    statusLine,
     onLinkSearch,
     onLinkUnhealthyOnly,
     onLinkForce,
@@ -264,12 +262,6 @@
       </button>
     </div>
   </div>
-
-  {#if errorMessage}
-    <p class="notice notice--error">{errorMessage}</p>
-  {/if}
-  <p class="status-line" aria-live="polite">{statusLine}</p>
-
   <div class="workspace-split surface">
     <SplitView autoSaveId="workbench:links:shell" initialLeftPct={68} minLeftPx={480} minRightPx={300}>
       {#snippet left()}

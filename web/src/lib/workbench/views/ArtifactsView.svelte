@@ -8,6 +8,7 @@
   import SplitView from '$lib/components/SplitView.svelte';
   import {
     ApiClientError,
+    copyTextToClipboard,
     getArtifactGitCompare,
     getArtifactGitHistory,
     getArtifactSource,
@@ -16,7 +17,8 @@
     renderArtifact,
     rollbackArtifactToRevision,
     updateArtifactSource,
-    updateManifestSource
+    updateManifestSource,
+    updateProfileVars
   } from '$lib/api/client';
   import type {
     ArtifactGitCompareResponse,
@@ -24,9 +26,11 @@
     ArtifactSourceResponse,
     ManifestSourceResponse,
     ProfileDetailResponse,
+    ProfileVarUpdateItemRequest,
     ValidateAsResponse,
     WorkspaceSummaryResponse
   } from '$lib/types';
+  import ProfileVarsPanel from '$lib/workbench/artifacts/ProfileVarsPanel.svelte';
   import { basenameFromPath, truncateMiddle } from '$lib/utils/format';
   import { buildArtifactTree, relativeSourcePath } from '$lib/workbench/artifacts/artifact_tree';
   import ArtifactTreeNode from '$lib/workbench/artifacts/ArtifactTreeNode.svelte';
@@ -51,8 +55,6 @@
     requestedManifestInsert?: ManifestInsertKind | null;
     onManifestInsertHandled?: (kind: ManifestInsertKind) => void;
     shortcutsEnabled?: boolean;
-    statusLine: string;
-    errorMessage: string | null;
     setStatusLine: (next: string) => void;
     setErrorMessage: (next: string | null) => void;
   };
@@ -70,8 +72,6 @@
     requestedManifestInsert,
     onManifestInsertHandled,
     shortcutsEnabled,
-    statusLine,
-    errorMessage,
     setStatusLine,
     setErrorMessage
   }: Props = $props();
@@ -111,6 +111,8 @@
   let gitHistoryToken = 0;
   let gitCompareToken = 0;
   let rollbackBusy = $state(false);
+  let profileVarsSaving = $state(false);
+  let manifestInsertKind = $state<ManifestInsertKind>('profile');
 
   const fileArtifacts = $derived((summary?.artifacts ?? []).filter((a) => a.kind === 'file'));
   const dirArtifacts = $derived((summary?.artifacts ?? []).filter((a) => a.kind === 'dir'));
@@ -262,10 +264,13 @@
 
   async function copyToClipboard(text: string, label: string): Promise<void> {
     try {
-      await navigator.clipboard.writeText(text);
+      await copyTextToClipboard(text);
+      if (typeof window !== 'undefined') {
+        (window as Window & { __agentstowCopiedText__?: string }).__agentstowCopiedText__ = text;
+      }
       setStatusLine(`已复制${label}到剪贴板。`);
-    } catch {
-      setStatusLine(`复制${label}失败（浏览器未授权）。`);
+    } catch (error) {
+      setStatusLine(describeError(error, `复制${label}失败。当前环境未提供可用剪贴板。`));
     }
   }
 
@@ -305,6 +310,18 @@
     activeTab = MANIFEST_DOC_ID;
     setErrorMessage(null);
     setStatusLine(`已插入 ${manifestInsertLabel(kind)} 模板，保存后生效。`);
+  }
+
+  function invalidateEditorSource(documentId: string): void {
+    const st = editors[documentId];
+    if (!st) {
+      return;
+    }
+
+    st.source = null;
+    st.editorText = '';
+    st.previewText = '';
+    st.dirty = false;
   }
 
   async function loadEditorSource(documentId: string): Promise<void> {
@@ -439,6 +456,38 @@
       if (token === profileRequestToken) {
         profileDetailBusy = false;
       }
+    }
+  }
+
+  async function saveProfileVars(vars: ProfileVarUpdateItemRequest[]): Promise<void> {
+    if (!selectedProfile || profileVarsSaving) {
+      return;
+    }
+
+    if (editors[MANIFEST_DOC_ID]?.dirty) {
+      setErrorMessage('manifest 编辑器存在未保存改动，请先保存或关闭后再通过 Vars 面板写回。');
+      return;
+    }
+
+    profileVarsSaving = true;
+    setErrorMessage(null);
+
+    try {
+      const detail = await updateProfileVars(selectedProfile, { vars });
+      profileDetail = detail;
+      invalidateEditorSource(MANIFEST_DOC_ID);
+      if (activeTab === MANIFEST_DOC_ID) {
+        await loadEditorSource(MANIFEST_DOC_ID);
+      }
+      await onRefreshWorkspace?.();
+      await onSourceSaved?.();
+      setStatusLine(
+        `已保存 profile vars：${selectedProfile}。写回时统一收束到 vars 命名空间，避免与 profile 元字段冲突。`
+      );
+    } catch (error) {
+      setErrorMessage(describeError(error, '保存 profile vars 失败。'));
+    } finally {
+      profileVarsSaving = false;
     }
   }
 
@@ -796,24 +845,27 @@
           <span>Workspace Config</span>
           <strong>1</strong>
         </div>
-        <div class="chips chips--tight" aria-label="Manifest quick create">
-          <button class="chip" onclick={() => void insertManifestSnippet('profile')} type="button">
-            新建 profile
-          </button>
-          <button class="chip" onclick={() => void insertManifestSnippet('artifact')} type="button">
-            新建 artifact
-          </button>
-          <button class="chip" onclick={() => void insertManifestSnippet('target')} type="button">
-            新建 target
-          </button>
-          <button class="chip" onclick={() => void insertManifestSnippet('env_set')} type="button">
-            新建 env
-          </button>
-          <button class="chip" onclick={() => void insertManifestSnippet('script')} type="button">
-            新建 script
-          </button>
-          <button class="chip" onclick={() => void insertManifestSnippet('mcp_server')} type="button">
-            新建 MCP
+        <div class="compound-action" aria-label="Manifest quick create">
+          <label class="field field--compact">
+            <span class="field__label">新建对象</span>
+            <select
+              class="field__input mono"
+              value={manifestInsertKind}
+              onchange={(event) => {
+                const target = event.currentTarget as HTMLSelectElement | null;
+                manifestInsertKind = (target?.value as ManifestInsertKind) ?? 'profile';
+              }}
+            >
+              <option value="profile">Profile</option>
+              <option value="artifact">Artifact</option>
+              <option value="target">Target</option>
+              <option value="env_set">Env Set</option>
+              <option value="script">Script</option>
+              <option value="mcp_server">MCP Server</option>
+            </select>
+          </label>
+          <button class="ui-button ui-button--ghost" type="button" onclick={() => void insertManifestSnippet(manifestInsertKind)}>
+            插入模板
           </button>
         </div>
         <button
@@ -1004,11 +1056,6 @@
         </div>
       </div>
 
-      {#if errorMessage}
-        <p class="notice notice--error">{errorMessage}</p>
-      {/if}
-      <p class="status-line" aria-live="polite">{statusLine}</p>
-
       <div class="canvas__body">
         <SplitView
           autoSaveId="workbench:artifacts:inspector"
@@ -1051,6 +1098,8 @@
                           <CodeEditor
                             testId="artifact-source-editor"
                             value={activeEditor?.editorText ?? ''}
+                            documentLanguage={activeTab === MANIFEST_DOC_ID ? 'toml' : 'auto'}
+                            documentPath={activeSourcePath}
                             onChange={(next) => {
                               if (!activeTab) {
                                 return;
@@ -1189,31 +1238,15 @@
                     </div>
                   </div>
 
-                  <div class="inspector-section">
-                    <div class="section__title">
-                      <span>Profile Context</span>
-                      <strong>{selectedProfile ?? '未选择'}</strong>
-                    </div>
-
-                    {#if profileDetailBusy}
-                      <p class="empty empty--flush">读取 profile 变量中…</p>
-                    {:else if profileDetailError}
-                      <p class="empty empty--flush">{profileDetailError}</p>
-                    {:else if !selectedProfile}
-                      <p class="empty empty--flush">（选择 profile 后显示渲染变量）</p>
-                    {:else if !profileDetail || profileDetail.merged_vars.length === 0}
-                      <p class="empty empty--flush">（当前 profile 没有 merged vars）</p>
-                    {:else}
-                      <div class="inspector-table">
-                        {#each profileDetail.merged_vars as item (item.key)}
-                          <div class="inspector-row">
-                            <span class="inspector-row__label">{item.key}</span>
-                            <span class="inspector-row__value inspector-row__value--mono">{item.value_json}</span>
-                          </div>
-                        {/each}
-                      </div>
-                    {/if}
-                  </div>
+                  <ProfileVarsPanel
+                    selectedProfile={selectedProfile}
+                    detail={profileDetail}
+                    busy={profileDetailBusy}
+                    error={profileDetailError}
+                    saving={profileVarsSaving}
+                    onSave={saveProfileVars}
+                    onCopyPlaceholder={copyToClipboard}
+                  />
 
                   <div class="inspector-section">
                     <div class="section__title">

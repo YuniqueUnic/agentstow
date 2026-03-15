@@ -27,7 +27,8 @@ impl WorkspaceQueryService {
 
         let mut temp =
             tempfile::NamedTempFile::new_in(&self.workspace_root).map_err(AgentStowError::from)?;
-        temp.write_all(next.as_bytes()).map_err(AgentStowError::from)?;
+        temp.write_all(next.as_bytes())
+            .map_err(AgentStowError::from)?;
         temp.flush().map_err(AgentStowError::from)?;
         agentstow_manifest::Manifest::load_from_path(temp.path())?;
         temp.persist(&manifest_path)
@@ -71,23 +72,25 @@ fn locate_profile_table<'a>(
         .ok_or_else(|| AgentStowError::Manifest {
             message: "manifest 缺少 profiles 节点".into(),
         })?;
-    let profiles = profiles_value.as_table_mut().ok_or_else(|| AgentStowError::Manifest {
-        message: "manifest 中的 profiles 必须是 table".into(),
-    })?;
+    let profiles = profiles_value
+        .as_table_mut()
+        .ok_or_else(|| AgentStowError::Manifest {
+            message: "manifest 中的 profiles 必须是 table".into(),
+        })?;
     let profile_value =
         profiles
             .get_mut(profile_name.as_str())
             .ok_or_else(|| AgentStowError::Manifest {
                 message: format!("profile 不存在：{}", profile_name.as_str()).into(),
             })?;
-    profile_value.as_table_mut().ok_or_else(|| AgentStowError::Manifest {
-        message: format!("profile `{}` 必须是 table", profile_name.as_str()).into(),
-    })
+    profile_value
+        .as_table_mut()
+        .ok_or_else(|| AgentStowError::Manifest {
+            message: format!("profile `{}` 必须是 table", profile_name.as_str()).into(),
+        })
 }
 
-fn parse_profile_var_items(
-    vars: &[ProfileVarUpdateItemRequest],
-) -> Result<toml::Table> {
+fn parse_profile_var_items(vars: &[ProfileVarUpdateItemRequest]) -> Result<toml::Table> {
     let mut dedup = BTreeMap::<String, toml::Value>::new();
 
     for item in vars {

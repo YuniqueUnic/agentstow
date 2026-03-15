@@ -36,8 +36,6 @@
     shellChoices,
     envScript,
     busyEnvEmit,
-    errorMessage,
-    statusLine,
     onSelectEnvSet,
     onSelectShell,
     onEnvEmit,
@@ -150,12 +148,6 @@
       </button>
     </div>
   </div>
-
-  {#if errorMessage}
-    <p class="notice notice--error">{errorMessage}</p>
-  {/if}
-  <p class="status-line" aria-live="polite">{statusLine}</p>
-
   <div class="split surface">
     <SplitView autoSaveId="workbench:env:shell" initialLeftPct={68} minLeftPx={420} minRightPx={280}>
       {#snippet left()}

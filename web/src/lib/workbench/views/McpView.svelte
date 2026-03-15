@@ -17,6 +17,7 @@
     activeMcpServer: McpServerSummaryResponse | null;
     errorMessage: string | null;
     statusLine: string;
+    setErrorMessage: (next: string | null) => void;
     onSelectMcpServer: (id: string) => void;
     onCopyToClipboard: (text: string, label: string) => Promise<void>;
     onOpenManifestEditor: () => void;
@@ -31,8 +32,7 @@
     mcpServers,
     selectedMcpServerId,
     activeMcpServer,
-    errorMessage,
-    statusLine,
+    setErrorMessage,
     onSelectMcpServer,
     onCopyToClipboard,
     onOpenManifestEditor,
@@ -178,6 +178,10 @@
   }
 
   $effect(() => {
+    setErrorMessage(localError);
+  });
+
+  $effect(() => {
     void loadRenderState(activeMcpServer?.id ?? null, { resetChecks: true });
   });
 
@@ -192,7 +196,6 @@
   const testAttentionCount = $derived(
     testState?.checks.reduce((count, check) => count + (check.status === 'ok' ? 0 : 1), 0) ?? 0
   );
-  const viewError = $derived(localError ?? errorMessage);
 </script>
 
 <SplitView autoSaveId="workbench:view:mcp" initialLeftPct={22} minLeftPx={256} minRightPx={760}>
@@ -297,12 +300,6 @@
           </button>
         </div>
       </div>
-
-      {#if viewError}
-        <p class="notice notice--error">{viewError}</p>
-      {/if}
-      <p class="status-line" aria-live="polite">{statusLine}</p>
-
       <div class="workspace-split surface">
         <SplitView autoSaveId="workbench:mcp:document" initialLeftPct={70} minLeftPx={440} minRightPx={280}>
           {#snippet left()}

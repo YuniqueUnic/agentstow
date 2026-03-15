@@ -13,7 +13,18 @@ export default defineConfig({
     }
   },
   optimizeDeps: {
-    include: ['@codemirror/lang-jinja', '@codemirror/state', 'codemirror']
+    include: [
+      '@codemirror/autocomplete',
+      '@codemirror/commands',
+      '@codemirror/lang-css',
+      '@codemirror/lang-html',
+      '@codemirror/lang-javascript',
+      '@codemirror/lang-jinja',
+      '@codemirror/language',
+      '@codemirror/state',
+      '@codemirror/view',
+      'codemirror'
+    ]
   },
   test: {
     include: ['src/**/*.browser.test.ts'],

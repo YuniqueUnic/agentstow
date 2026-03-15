@@ -7,8 +7,8 @@ use agentstow_web_types::{
     HealthResponse, LinkApplyRequest, LinkPlanRequest, LinkRepairRequest,
     ManifestSourceUpdateRequest, ProfileVarsUpdateRequest, ScriptRunRequest,
     WorkspaceGitSummaryResponse, WorkspaceInitRequest, WorkspaceInitResponse,
-    WorkspaceProbeRequest, WorkspaceProbeResponse, WorkspaceSelectRequest,
-    WorkspaceSelectResponse, WorkspaceStateResponse,
+    WorkspaceProbeRequest, WorkspaceProbeResponse, WorkspaceSelectRequest, WorkspaceSelectResponse,
+    WorkspaceStateResponse,
 };
 use axum::Router;
 use axum::extract::{Path as AxumPath, Query, State};
@@ -162,6 +162,40 @@ async fn api_workspace_git(State(st): State<Arc<ServerState>>) -> Response {
     handle_result(queries.workspace_git().await)
 }
 
+async fn api_workspace_pick(State(st): State<Arc<ServerState>>) -> Response {
+    let picked = match tokio::task::spawn_blocking(pick_workspace_folder).await {
+        Ok(Ok(path)) => path,
+        Ok(Err(error)) => return api_error(StatusCode::BAD_REQUEST, error),
+        Err(error) => {
+            return api_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("workspace picker 执行失败：{error}"),
+            );
+        }
+    };
+
+    let Some(workspace_root) = picked else {
+        return Json::<Option<WorkspaceSelectResponse>>(None).into_response();
+    };
+
+    let requested_workspace_root = normalize_for_display(&workspace_root);
+    let probe = match probe_workspace(&requested_workspace_root) {
+        Ok(probe) => probe,
+        Err(error) => return api_error(StatusCode::BAD_REQUEST, error),
+    };
+    if !probe.selectable {
+        return api_error(
+            StatusCode::BAD_REQUEST,
+            probe.reason.as_deref().unwrap_or("workspace 路径不可选择"),
+        );
+    }
+
+    let response = workspace_select_response(&requested_workspace_root, probe.clone());
+    select_workspace(&st, probe.resolved_workspace_root).await;
+
+    Json(Some(response)).into_response()
+}
+
 async fn api_workspace_select(
     State(st): State<Arc<ServerState>>,
     Json(req): Json<WorkspaceSelectRequest>,
@@ -181,15 +215,10 @@ async fn api_workspace_select(
             probe.reason.as_deref().unwrap_or("workspace 路径不可选择"),
         );
     }
-    let response = workspace_probe_response(requested_workspace_root, probe.clone());
+    let response = workspace_select_response(requested_workspace_root, probe.clone());
     select_workspace(&st, probe.resolved_workspace_root).await;
 
-    Json(WorkspaceSelectResponse {
-        workspace_root: response.resolved_workspace_root.clone(),
-        manifest_present: response.manifest_present,
-        workspace: response,
-    })
-    .into_response()
+    Json(response).into_response()
 }
 
 async fn api_workspace_init(
@@ -648,6 +677,41 @@ async fn api_profile_detail(
     handle_result(queries.profile_detail(&profile_name))
 }
 
+async fn api_profile_vars_update(
+    State(st): State<Arc<ServerState>>,
+    AxumPath(profile): AxumPath<String>,
+    Json(req): Json<ProfileVarsUpdateRequest>,
+) -> Response {
+    let profile_name = match ProfileName::parse(profile) {
+        Ok(profile_name) => profile_name,
+        Err(error) => return api_error(StatusCode::BAD_REQUEST, error),
+    };
+
+    let queries = match queries_from_state(&st).await {
+        Ok(queries) => queries,
+        Err(error) => return api_error(StatusCode::BAD_REQUEST, error),
+    };
+
+    match queries.update_profile_vars(&profile_name, &req.vars) {
+        Ok(response) => {
+            if let Ok(workspace_root) = selected_workspace_root(&st).await {
+                let manifest_path = workspace_root.join(agentstow_manifest::DEFAULT_MANIFEST_FILE);
+                record_watch_change(
+                    &st,
+                    watch_change_summary(
+                        &workspace_root,
+                        &normalize_for_display(&manifest_path),
+                        "save",
+                    ),
+                )
+                .await;
+            }
+            Json(response).into_response()
+        }
+        Err(error) => api_error(StatusCode::BAD_REQUEST, error),
+    }
+}
+
 async fn api_impact(
     State(st): State<Arc<ServerState>>,
     Query(query): Query<ImpactQuery>,
@@ -755,6 +819,24 @@ fn workspace_probe_response(
         initializable: probe.initializable,
         reason: probe.reason,
     }
+}
+
+fn workspace_select_response(
+    requested_workspace_root: &str,
+    probe: agentstow_manifest::WorkspaceProbe,
+) -> WorkspaceSelectResponse {
+    let workspace = workspace_probe_response(requested_workspace_root, probe);
+    WorkspaceSelectResponse {
+        workspace_root: workspace.resolved_workspace_root.clone(),
+        manifest_present: workspace.manifest_present,
+        workspace,
+    }
+}
+
+fn pick_workspace_folder() -> Result<Option<std::path::PathBuf>, AgentStowError> {
+    Ok(rfd::FileDialog::new()
+        .set_title("Select AgentStow workspace")
+        .pick_folder())
 }
 
 async fn select_workspace(st: &Arc<ServerState>, workspace_root: std::path::PathBuf) {

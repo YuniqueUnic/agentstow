@@ -5,6 +5,7 @@ use crate::{WatchMode, WatchStatusSnapshot, WatchTraceEvent, WatchTraceLevel};
 
 use super::fixtures::{
     test_server, test_server_unconfigured, test_server_with_watch, write_minimal_workspace,
+    write_prd_workspace,
 };
 
 #[tokio::test]
@@ -327,4 +328,54 @@ async fn api_workspace_init_should_create_missing_workspace_and_return_structure
     );
     assert_eq!(body["workspace"]["selectable"], serde_json::json!(true));
     assert_eq!(body["workspace"]["initializable"], serde_json::json!(false));
+}
+
+#[tokio::test]
+async fn api_profile_vars_update_should_rewrite_profile_into_vars_namespace() {
+    let temp = assert_fs::TempDir::new().unwrap();
+    write_prd_workspace(&temp);
+
+    let server = test_server(&temp, temp.child("missing-dist").path().to_path_buf());
+
+    let resp = server
+        .put("/api/profiles/base/vars")
+        .json(&serde_json::json!({
+            "vars": [
+                { "key": "name", "value_json": "\"Workbench\"" },
+                { "key": "region", "value_json": "\"lab\"" },
+                { "key": "features", "value_json": "[\"diff\", \"vars\"]" }
+            ]
+        }))
+        .await;
+
+    resp.assert_status_ok();
+    let body: serde_json::Value = resp.json();
+    assert_eq!(body["syntax_mode"], serde_json::json!("vars_object"));
+    assert_eq!(
+        body["declared_vars"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|item| item["key"].as_str().unwrap())
+            .collect::<Vec<_>>(),
+        vec!["features", "name", "region"]
+    );
+
+    let manifest = std::fs::read_to_string(temp.child("agentstow.toml").path()).unwrap();
+    assert!(!manifest.contains("\n[profiles.base]\nname ="));
+    assert!(manifest.contains("[profiles.base.vars]"));
+    assert!(manifest.contains("name = \"Workbench\""));
+    assert!(manifest.contains("region = \"lab\""));
+    assert!(manifest.contains("features = ["));
+    assert!(manifest.contains("\"diff\""));
+    assert!(manifest.contains("\"vars\""));
+
+    let watch_resp = server.get("/api/watch-status").await;
+    watch_resp.assert_status_ok();
+    let watch_body: serde_json::Value = watch_resp.json();
+    assert_eq!(watch_body["revision"], serde_json::json!(1));
+    assert_eq!(
+        watch_body["recent_events"][0]["summary"],
+        serde_json::json!("save agentstow.toml")
+    );
 }

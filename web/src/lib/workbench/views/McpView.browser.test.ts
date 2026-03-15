@@ -43,6 +43,7 @@ describe('McpView', () => {
       activeMcpServer: mcpServerFixture,
       errorMessage: null,
       statusLine: 'ready',
+      setErrorMessage: vi.fn(),
       onSelectMcpServer: vi.fn(),
       onCopyToClipboard: vi.fn(async () => {}),
       onOpenManifestEditor: vi.fn(),

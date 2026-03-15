@@ -2,6 +2,9 @@
   import { onDestroy, onMount } from 'svelte';
 
   import CommandPalette, { type PaletteCommand } from '$lib/workbench/CommandPalette.svelte';
+  import WorkbenchBottomPanel, {
+    type BottomPanelTab
+  } from '$lib/workbench/WorkbenchBottomPanel.svelte';
   import WorkspaceBoot from '$lib/workbench/WorkspaceBoot.svelte';
   import EditorTabs from '$lib/workbench/EditorTabs.svelte';
   import WorkbenchRail from '$lib/workbench/WorkbenchRail.svelte';
@@ -15,6 +18,7 @@
   import {
     ApiClientError,
     applyLinks,
+    copyTextToClipboard,
     emitEnv,
     getImpactAnalysis,
     getLinkStatus,
@@ -23,7 +27,9 @@
     getWorkspaceState,
     getWorkspaceSummary,
     initWorkspace,
+    pickWorkspace,
     planLinks,
+    probeWorkspace,
     repairLinks,
     runScript,
     selectWorkspace
@@ -32,16 +38,13 @@
     EnvEmitResponse,
     EnvUsageRefResponse,
     ImpactAnalysisResponse,
-    LinkApplyRequest,
     LinkOperationResponse,
-    LinkPlanRequest,
-    LinkRepairRequest,
     LinkStatusResponseItem,
-    McpServerSummaryResponse,
     ScriptRunResponse,
     ShellKindResponse,
-    WatchTraceEventResponse,
     WorkspaceGitSummaryResponse,
+    WorkspaceProbeResponse,
+    WorkspaceSelectResponse,
     WorkspaceStateResponse,
     WorkspaceSummaryResponse,
     WatchStatusResponse
@@ -83,11 +86,15 @@
   let activeDocId = $state<string | null>(null);
   let themePreference = $state<ThemePreference>('system');
   let resolvedTheme = $state<ResolvedTheme>('dark');
-  let watchTraceOpen = $state(false);
+  let railExpanded = $state(false);
+  let bottomPanelOpen = $state(false);
+  let bottomPanelTab = $state<BottomPanelTab>('problems');
 
   let workspaceState = $state<WorkspaceStateResponse | null>(null);
   let workspaceInput = $state('');
+  let workspaceProbe = $state<WorkspaceProbeResponse | null>(null);
   let initGit = $state(false);
+  let pickerBusy = $state(false);
 
   let summary = $state<WorkspaceSummaryResponse | null>(null);
   let gitInfo = $state<WorkspaceGitSummaryResponse | null>(null);
@@ -191,10 +198,7 @@
 
   const watchTraceEvents = $derived(watchStatus?.recent_events ?? []);
   const watchTraceCount = $derived(watchTraceEvents.length);
-
-  function watchTraceTone(level: WatchTraceEventResponse['level']): 'ok' | 'warn' | 'neutral' {
-    return level === 'change' ? 'ok' : 'warn';
-  }
+  const problemCount = $derived((errorMessage ? 1 : 0) + (summary?.issues.length ?? 0));
 
   function describeWatchRefreshed(): void {
     statusLine =
@@ -497,11 +501,13 @@
   }
 
   function returnToWorkspaceBoot(): void {
+    workspaceProbe = workspaceState?.workspace ?? workspaceProbe;
     workspaceState = {
       workspace_root: workspaceRoot,
-      manifest_present: false
+      manifest_present: false,
+      workspace: workspaceProbe
     };
-    watchTraceOpen = false;
+    bottomPanelOpen = false;
     gitInfo = null;
     editorDocs = [];
     activeDocId = null;
@@ -519,6 +525,7 @@
     try {
       const nextState = await getWorkspaceState();
       workspaceState = nextState;
+      workspaceProbe = nextState.workspace ?? null;
       if (workspaceInput.trim().length === 0 && nextState.workspace_root) {
         workspaceInput = nextState.workspace_root;
       }
@@ -633,6 +640,12 @@
     }
   }
 
+  async function refreshTracePanel(): Promise<void> {
+    if (await refreshWatchStatus()) {
+      describeWatchRefreshed();
+    }
+  }
+
   async function bootstrapConfigured(): Promise<void> {
     await Promise.all([refreshSummary(), refreshWatchStatus(), refreshWorkspaceGit()]);
     linkStatus = null;
@@ -742,24 +755,105 @@
     }
   }
 
+  async function handleProbeWorkspace(
+    announceReady = true,
+    manageBusy = true
+  ): Promise<WorkspaceProbeResponse | null> {
+    const requested = workspaceInput.trim();
+    if (!requested) {
+      errorMessage = '请输入 workspace 路径。';
+      return null;
+    }
+
+    if (manageBusy) {
+      busy.boot = true;
+    }
+    errorMessage = null;
+    try {
+      const probe = await probeWorkspace(requested);
+      workspaceProbe = probe;
+      workspaceInput = probe.resolved_workspace_root;
+      if (announceReady) {
+        if (probe.selectable && probe.manifest_present) {
+          statusLine = '已确认路径可直接打开。';
+        } else if (probe.initializable && !probe.exists) {
+          statusLine = '目标路径不存在，可直接创建并初始化 workspace。';
+        } else if (probe.initializable) {
+          statusLine = '目标目录存在，但还没有 agentstow.toml，可继续初始化。';
+        } else {
+          statusLine = probe.reason ?? '当前路径不可用。';
+        }
+      }
+      return probe;
+    } catch (error) {
+      errorMessage = describeError(error, '检查 workspace 路径失败。');
+      return null;
+    } finally {
+      if (manageBusy) {
+        busy.boot = false;
+      }
+    }
+  }
+
+  async function applySelectedWorkspaceResponse(resp: WorkspaceSelectResponse): Promise<void> {
+    workspaceProbe = resp.workspace;
+    workspaceInput = resp.workspace_root;
+    workspaceState = {
+      workspace_root: resp.workspace_root,
+      manifest_present: resp.manifest_present,
+      workspace: resp.workspace
+    };
+
+    if (!resp.manifest_present) {
+      statusLine = '已选择目录，但还没有 agentstow.toml。你可以继续初始化 workspace。';
+      return;
+    }
+
+    await bootstrapConfigured();
+  }
+
   async function handleSelectWorkspace(): Promise<void> {
     busy.boot = true;
     errorMessage = null;
     try {
-      const resp = await selectWorkspace(workspaceInput.trim());
-      workspaceState = {
-        workspace_root: resp.workspace_root,
-        manifest_present: resp.manifest_present
-      };
-      if (!resp.manifest_present) {
-        statusLine = '已选择目录，但还没有 agentstow.toml。你可以点击“初始化 workspace”。';
+      const probe = await handleProbeWorkspace(false, false);
+      if (!probe) {
         return;
       }
-      await bootstrapConfigured();
+      if (!probe.selectable) {
+        if (probe.initializable) {
+          statusLine = probe.exists
+            ? '目录存在但尚未初始化。你可以直接创建 workspace。'
+            : '路径不存在。你可以直接创建并初始化 workspace。';
+          errorMessage = null;
+          return;
+        }
+        errorMessage = probe.reason ?? '选择的路径不可作为 workspace。';
+        return;
+      }
+      const resp = await selectWorkspace(workspaceInput.trim());
+      await applySelectedWorkspaceResponse(resp);
     } catch (error) {
       errorMessage = describeError(error, '选择 workspace 失败。');
     } finally {
       busy.boot = false;
+    }
+  }
+
+  async function handlePickWorkspace(): Promise<void> {
+    pickerBusy = true;
+    errorMessage = null;
+    try {
+      const resp = await pickWorkspace();
+      if (!resp) {
+        statusLine = '已取消目录选择。';
+        return;
+      }
+      await applySelectedWorkspaceResponse(resp);
+    } catch (error) {
+      errorMessage = describeError(error, '打开本地目录选择器失败。');
+    } finally {
+      pickerBusy = false;
     }
   }
 
@@ -771,9 +865,12 @@
         workspace_root: workspaceInput.trim(),
         git_init: initGit
       });
+      workspaceProbe = resp.workspace;
+      workspaceInput = resp.workspace_root;
       workspaceState = {
         workspace_root: resp.workspace_root,
-        manifest_present: true
+        manifest_present: true,
+        workspace: resp.workspace
       };
       statusLine = resp.created ? '已初始化 workspace。' : 'workspace 已存在 manifest，已直接打开。';
       await bootstrapConfigured();
@@ -786,10 +883,13 @@
 
   async function copyToClipboard(text: string, label: string): Promise<void> {
     try {
-      await navigator.clipboard.writeText(text);
+      await copyTextToClipboard(text);
+      if (typeof window !== 'undefined') {
+        (window as Window & { __agentstowCopiedText__?: string }).__agentstowCopiedText__ = text;
+      }
       statusLine = `已复制${label}到剪贴板。`;
-    } catch {
-      statusLine = `复制${label}失败（浏览器未授权）。`;
+    } catch (error) {
+      statusLine = describeError(error, `复制${label}失败。当前环境未提供可用剪贴板。`);
     }
   }
 
@@ -944,13 +1044,23 @@
     statusLine = `已切换主题：${next}（当前生效：${resolvedTheme}）。`;
   }
 
-  async function toggleWatchTrace(force?: boolean): Promise<void> {
-    const next = force ?? !watchTraceOpen;
-    watchTraceOpen = next;
-    if (next && manifestPresent) {
-      if (await refreshWatchStatus()) {
-        describeWatchRefreshed();
-      }
+  async function toggleBottomPanel(tab?: BottomPanelTab): Promise<void> {
+    if (!manifestPresent) {
+      return;
+    }
+
+    if (!bottomPanelOpen) {
+      bottomPanelOpen = true;
+      bottomPanelTab = tab ?? bottomPanelTab;
+    } else if (tab && bottomPanelTab !== tab) {
+      bottomPanelTab = tab;
+    } else {
+      bottomPanelOpen = false;
+      return;
+    }
+
+    if (bottomPanelTab === 'trace') {
+      await refreshTracePanel();
     }
   }
 
@@ -1007,11 +1117,26 @@
     cmds.push({
       id: 'watch:trace',
       group: 'Watch',
-      title: watchTraceOpen ? 'Hide watch trace' : 'Open watch trace',
+      title:
+        bottomPanelOpen && bottomPanelTab === 'trace' ? 'Hide watch trace' : 'Open watch trace',
       keywords: 'watch trace events statusbar',
       disabled: !manifestPresent,
       run: async () => {
-        await toggleWatchTrace();
+        await toggleBottomPanel('trace');
+      }
+    });
+
+    cmds.push({
+      id: 'problems:toggle',
+      group: 'Watch',
+      title:
+        bottomPanelOpen && bottomPanelTab === 'problems'
+          ? 'Hide problems panel'
+          : 'Open problems panel',
+      keywords: 'problems issues errors panel statusbar',
+      disabled: !manifestPresent,
+      run: async () => {
+        await toggleBottomPanel('problems');
       }
     });
 
@@ -1308,9 +1433,7 @@
 
   $effect(() => {
     if (!manifestPresent) {
-      if (watchTraceOpen) {
-        watchTraceOpen = false;
-      }
+      bottomPanelOpen = false;
       if (linkStatus !== null) {
         linkStatus = null;
       }
@@ -1329,23 +1452,38 @@
       void refreshImpactAnalysis();
     }
   });
+
+  $effect(() => {
+    if (!manifestPresent) {
+      return;
+    }
+    if (!errorMessage && (summary?.issues.length ?? 0) === 0) {
+      return;
+    }
+    bottomPanelOpen = true;
+    bottomPanelTab = 'problems';
+  });
 </script>
 
 <div class="frame">
   {#if !manifestPresent}
     <WorkspaceBoot
       workspaceInput={workspaceInput}
+      workspaceProbe={workspaceProbe}
       initGit={initGit}
       busy={busy.boot}
+      pickerBusy={pickerBusy}
       errorMessage={errorMessage}
       statusLine={statusLine}
       onWorkspaceInput={(next) => (workspaceInput = next)}
       onInitGit={(next) => (initGit = next)}
+      onProbeWorkspace={() => void handleProbeWorkspace()}
+      onPickWorkspace={() => void handlePickWorkspace()}
       onOpenWorkspace={() => void handleSelectWorkspace()}
       onInitWorkspace={() => void handleInitWorkspace()}
     />
   {:else}
-    <div class="workbench">
+    <div class="workbench" style={`--rail-width:${railExpanded ? '172px' : '56px'}`}>
       <WorkbenchTopbar
         workspaceRoot={workspaceRoot}
         workspaceLabel={workspaceLabel}
@@ -1353,7 +1491,12 @@
         onSwitchWorkspace={returnToWorkspaceBoot}
       />
 
-      <WorkbenchRail view={view} onChange={openDefaultDocument} />
+      <WorkbenchRail
+        view={view}
+        expanded={railExpanded}
+        onChange={openDefaultDocument}
+        onToggleExpanded={() => (railExpanded = !railExpanded)}
+      />
 
       <div class="workbench-tabs">
         <EditorTabs
@@ -1392,8 +1535,6 @@
               }
             }}
             shortcutsEnabled={!paletteOpen}
-            statusLine={statusLine}
-            errorMessage={errorMessage}
             setStatusLine={(next) => (statusLine = next)}
             setErrorMessage={(next) => (errorMessage = next)}
           />
@@ -1485,6 +1626,7 @@
             activeMcpServer={activeMcpServer}
             errorMessage={errorMessage}
             statusLine={statusLine}
+            setErrorMessage={(next) => (errorMessage = next)}
             onSelectMcpServer={openMcpDocument}
             onCopyToClipboard={copyToClipboard}
             onOpenManifestEditor={openManifestEditor}
@@ -1499,108 +1641,22 @@
         onClose={() => (paletteOpen = false)}
       />
 
-      {#if watchTraceOpen}
-        <section class="workbench-trace" aria-label="Watcher trace panel" data-testid="watch-trace-panel">
-          <div class="workbench-trace__head">
-            <div class="workbench-trace__title">
-              <strong>Watcher Trace</strong>
-              <span class="muted">
-                {watchStatus
-                  ? `${watchStatus.mode} · ${watchTraceCount} events`
-                  : 'trace unavailable'}
-              </span>
-            </div>
-            <div class="workbench-trace__actions">
-              <button
-                class="ui-button ui-button--subtle"
-                disabled={busy.watch}
-                type="button"
-                onclick={() => void toggleWatchTrace(true)}
-              >
-                {busy.watch ? '刷新中…' : '刷新 trace'}
-              </button>
-              <button
-                class="ui-button ui-button--subtle"
-                type="button"
-                onclick={() => void toggleWatchTrace(false)}
-              >
-                隐藏
-              </button>
-            </div>
-          </div>
-
-          <div class="workbench-trace__body">
-            <section class="workbench-trace__meta" aria-label="Watcher roots">
-              <div class="section__title">
-                <span>Watch Roots</span>
-                <strong>{watchStatus?.watch_roots.length ?? 0}</strong>
-              </div>
-              {#if !watchStatus}
-                <p class="empty">（watcher 状态尚未加载）</p>
-              {:else}
-                <div class="subject-summary">
-                  <div class="summary-row">
-                    <span class="summary-row__label">Mode</span>
-                    <span class="summary-row__value mono">{watchStatus.mode}</span>
-                  </div>
-                  <div class="summary-row">
-                    <span class="summary-row__label">Revision</span>
-                    <span class="summary-row__value mono">{watchStatus.revision}</span>
-                  </div>
-                  <div class="summary-row">
-                    <span class="summary-row__label">Health</span>
-                    <span class="summary-row__value mono">{watchStatus.healthy ? 'healthy' : 'attention'}</span>
-                  </div>
-                  {#if watchStatus.poll_interval_ms}
-                    <div class="summary-row">
-                      <span class="summary-row__label">Poll</span>
-                      <span class="summary-row__value mono">{watchStatus.poll_interval_ms} ms</span>
-                    </div>
-                  {/if}
-                </div>
-
-                {#if watchStatus.last_error}
-                  <p class="notice notice--error">{watchStatus.last_error}</p>
-                {/if}
-
-                <ul class="trace-roots" aria-label="Watcher roots list">
-                  {#each watchStatus.watch_roots as root (root)}
-                    <li class="trace-roots__item mono" title={root}>{truncateMiddle(root, 72)}</li>
-                  {/each}
-                </ul>
-              {/if}
-            </section>
-
-            <section class="workbench-trace__events" aria-label="Recent watcher events">
-              <div class="section__title">
-                <span>Recent Events</span>
-                <strong>{watchTraceCount}</strong>
-              </div>
-
-              {#if !watchStatus}
-                <p class="empty">（watcher 状态尚未加载）</p>
-              {:else if watchTraceEvents.length === 0}
-                <p class="empty">（暂无 watcher events，可在保存 source 后再展开查看）</p>
-              {:else}
-                <ul class="trace-list">
-                  {#each watchTraceEvents as event (`${event.at}:${event.summary}`)}
-                    <li class="trace-list__item">
-                      <span class={['pill', `pill--${watchTraceTone(event.level)}`].join(' ')}>
-                        {event.level}
-                      </span>
-                      <div class="trace-list__main">
-                        <span class="trace-list__summary">{event.summary}</span>
-                        <span class="trace-list__meta mono">
-                          rev:{event.revision} · {formatRelativeTime(event.at)}
-                        </span>
-                      </div>
-                    </li>
-                  {/each}
-                </ul>
-              {/if}
-            </section>
-          </div>
-        </section>
+      {#if bottomPanelOpen}
+        <WorkbenchBottomPanel
+          activeTab={bottomPanelTab}
+          errorMessage={errorMessage}
+          issues={summary?.issues ?? []}
+          watchStatus={watchStatus}
+          busyWatch={busy.watch}
+          onSelectTab={(tab) => {
+            bottomPanelTab = tab;
+            if (tab === 'trace') {
+              void refreshTracePanel();
+            }
+          }}
+          onRefreshTrace={refreshTracePanel}
+          onClose={() => (bottomPanelOpen = false)}
+        />
       {/if}
 
       <footer class="statusbar" aria-live="polite">
@@ -1608,10 +1664,10 @@
           <span
             class={[
               'statusbar__badge',
-              errorMessage ? 'statusbar__badge--error' : 'statusbar__badge--view'
+              problemCount > 0 ? 'statusbar__badge--error' : 'statusbar__badge--view'
             ].join(' ')}
           >
-            {errorMessage ? '问题' : viewLabels[view]}
+            {problemCount > 0 ? '问题' : viewLabels[view]}
           </span>
           <span class="statusbar__text" title={errorMessage ?? statusLine}>
             {truncateMiddle(errorMessage ?? statusLine, 120)}
@@ -1621,12 +1677,24 @@
         <div class="statusbar__group statusbar__group--actions">
           <button
             class="statusbar__button"
+            disabled={!manifestPresent}
+            type="button"
+            onclick={() => void toggleBottomPanel('problems')}
+          >
+            {bottomPanelOpen && bottomPanelTab === 'problems'
+              ? `problems 打开 (${problemCount})`
+              : `problems ${problemCount}`}
+          </button>
+          <button
+            class="statusbar__button"
             data-testid="watch-trace-toggle"
             disabled={!manifestPresent}
             type="button"
-            onclick={() => void toggleWatchTrace()}
+            onclick={() => void toggleBottomPanel('trace')}
           >
-            {watchTraceOpen ? 'trace 打开' : `trace ${watchTraceCount}`}
+            {bottomPanelOpen && bottomPanelTab === 'trace'
+              ? `trace 打开 (${watchTraceCount})`
+              : `trace ${watchTraceCount}`}
           </button>
           <button
             class="statusbar__button"

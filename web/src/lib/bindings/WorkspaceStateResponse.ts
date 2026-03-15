@@ -4,5 +4,5 @@ import type { WorkspaceProbeResponse } from "./WorkspaceProbeResponse";
 export type WorkspaceStateResponse = {
   workspace_root: string | null;
   manifest_present: boolean;
-  workspace?: WorkspaceProbeResponse | null;
+  workspace: WorkspaceProbeResponse | null;
 };
