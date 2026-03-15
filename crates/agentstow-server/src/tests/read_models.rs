@@ -199,8 +199,16 @@ fn api_profile_detail_should_include_merged_vars_and_artifacts() {
             resp.assert_status_ok();
             let body: serde_json::Value = resp.json();
             assert_eq!(body["profile"]["id"], serde_json::json!("derived"));
+            assert_eq!(body["syntax_mode"], serde_json::json!("inline"));
             assert_eq!(body["targets"].as_array().unwrap().len(), 1);
             assert_eq!(body["artifacts"][0]["id"], serde_json::json!("hello"));
+            let declared_keys: Vec<_> = body["declared_vars"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|item| item["key"].as_str().unwrap())
+                .collect();
+            assert_eq!(declared_keys, vec!["region"]);
             let merged_keys: Vec<_> = body["merged_vars"]
                 .as_array()
                 .unwrap()

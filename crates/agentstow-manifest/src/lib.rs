@@ -1,10 +1,12 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
+use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 
 use agentstow_core::{
     AgentStowError, ArtifactId, ArtifactKind, CwdPolicy, InstallMethod, OutputMode, ProfileName,
     Result, SecretBinding, StdinMode, TargetName, ValidateAs, absolutize, normalize_for_display,
 };
+use serde::de::{self, Deserializer};
 use serde::{Deserialize, Serialize};
 
 pub const DEFAULT_MANIFEST_FILE: &str = "agentstow.toml";
@@ -14,6 +16,19 @@ pub struct WorkspaceInitOutcome {
     pub workspace_root: PathBuf,
     pub manifest_path: PathBuf,
     pub created: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct WorkspaceProbe {
+    pub resolved_workspace_root: PathBuf,
+    pub manifest_path: PathBuf,
+    pub exists: bool,
+    pub is_directory: bool,
+    pub manifest_present: bool,
+    pub git_present: bool,
+    pub selectable: bool,
+    pub initializable: bool,
+    pub reason: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -27,12 +42,76 @@ pub struct Manifest {
     pub mcp_servers: BTreeMap<String, McpServerDef>,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum ProfileVarSyntaxMode {
+    #[default]
+    Inline,
+    VarsObject,
+    Mixed,
+}
+
+#[derive(Debug, Clone, Default)]
 pub struct Profile {
-    #[serde(default)]
     pub extends: Vec<ProfileName>,
-    #[serde(default)]
     pub vars: serde_json::Map<String, serde_json::Value>,
+    pub var_syntax: ProfileVarSyntaxMode,
+}
+
+#[derive(Debug, Deserialize)]
+struct RawProfile {
+    #[serde(default)]
+    extends: Vec<ProfileName>,
+    #[serde(default)]
+    vars: toml::Table,
+    #[serde(flatten)]
+    inline_vars: toml::Table,
+}
+
+impl<'de> Deserialize<'de> for Profile {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let raw = RawProfile::deserialize(deserializer)?;
+        let mut vars = json_map_from_toml_table::<D::Error>(raw.vars)?;
+        let inline_vars = json_map_from_toml_table::<D::Error>(raw.inline_vars)?;
+
+        if let Some(duplicate) = vars
+            .keys()
+            .find(|key| inline_vars.contains_key(*key))
+            .cloned()
+        {
+            return Err(de::Error::custom(format!(
+                "profile 变量 `{duplicate}` 同时出现在 `vars` 和 profile 顶层，请只保留一种写法"
+            )));
+        }
+
+        let var_syntax = match (vars.is_empty(), inline_vars.is_empty()) {
+            (true, true) | (true, false) => ProfileVarSyntaxMode::Inline,
+            (false, true) => ProfileVarSyntaxMode::VarsObject,
+            (false, false) => ProfileVarSyntaxMode::Mixed,
+        };
+
+        vars.extend(inline_vars);
+
+        Ok(Self {
+            extends: raw.extends,
+            vars,
+            var_syntax,
+        })
+    }
+}
+
+fn json_map_from_toml_table<E>(
+    table: toml::Table,
+) -> std::result::Result<serde_json::Map<String, serde_json::Value>, E>
+where
+    E: de::Error,
+{
+    match serde_json::to_value(table).map_err(E::custom)? {
+        serde_json::Value::Object(map) => Ok(map),
+        _ => Err(E::custom("profile vars 必须是对象")),
+    }
 }
 
 impl Profile {
@@ -42,6 +121,14 @@ impl Profile {
     ) -> Result<serde_json::Map<String, serde_json::Value>> {
         let mut visited = HashSet::<ProfileName>::new();
         merge_profile_vars(self, all, &mut visited)
+    }
+
+    pub fn declared_vars(&self) -> &serde_json::Map<String, serde_json::Value> {
+        &self.vars
+    }
+
+    pub fn var_syntax_mode(&self) -> ProfileVarSyntaxMode {
+        self.var_syntax
     }
 }
 
@@ -265,7 +352,7 @@ pub fn init_workspace_skeleton(workspace_root: &Path) -> Result<WorkspaceInitOut
         fs_err::write(
             &manifest_path,
             r#"[profiles.base]
-vars = { name = "AgentStow" }
+name = "AgentStow"
 
 [artifacts.hello]
 kind = "file"
@@ -283,6 +370,111 @@ validate_as = "none"
         manifest_path,
         created,
     })
+}
+
+pub fn probe_workspace_path(requested_path: &Path) -> Result<WorkspaceProbe> {
+    let requested_path = absolutize_requested_path(requested_path)?;
+    let manifest_file_request = is_manifest_file_path(&requested_path);
+    let resolved_workspace_root = if manifest_file_request {
+        requested_path
+            .parent()
+            .ok_or_else(|| AgentStowError::Manifest {
+                message: "workspace probe 路径没有 parent".into(),
+            })?
+            .to_path_buf()
+    } else {
+        requested_path.clone()
+    };
+
+    if requested_path.exists() {
+        let metadata = fs_err::metadata(&requested_path).map_err(AgentStowError::from)?;
+        if metadata.is_dir() {
+            return build_existing_workspace_probe(requested_path);
+        }
+        if manifest_file_request && metadata.is_file() {
+            let resolved_workspace_root =
+                fs_err::canonicalize(&resolved_workspace_root).map_err(AgentStowError::from)?;
+            return Ok(WorkspaceProbe {
+                manifest_path: resolved_workspace_root.join(DEFAULT_MANIFEST_FILE),
+                git_present: resolved_workspace_root.join(".git").exists(),
+                resolved_workspace_root,
+                exists: true,
+                is_directory: false,
+                manifest_present: true,
+                selectable: true,
+                initializable: false,
+                reason: None,
+            });
+        }
+
+        return Ok(WorkspaceProbe {
+            resolved_workspace_root,
+            manifest_path: requested_path,
+            exists: true,
+            is_directory: false,
+            manifest_present: false,
+            git_present: false,
+            selectable: false,
+            initializable: false,
+            reason: Some("路径是普通文件，不是 workspace 目录，也不是 agentstow.toml".to_string()),
+        });
+    }
+
+    let reason = if manifest_file_request {
+        "manifest 尚不存在，可初始化其所在目录为 workspace"
+    } else {
+        "路径不存在，可直接初始化 workspace"
+    };
+
+    Ok(WorkspaceProbe {
+        manifest_path: if manifest_file_request {
+            requested_path
+        } else {
+            resolved_workspace_root.join(DEFAULT_MANIFEST_FILE)
+        },
+        resolved_workspace_root,
+        exists: false,
+        is_directory: false,
+        manifest_present: false,
+        git_present: false,
+        selectable: false,
+        initializable: true,
+        reason: Some(reason.to_string()),
+    })
+}
+
+fn build_existing_workspace_probe(path: PathBuf) -> Result<WorkspaceProbe> {
+    let resolved_workspace_root = fs_err::canonicalize(&path).map_err(AgentStowError::from)?;
+    let manifest_path = resolved_workspace_root.join(DEFAULT_MANIFEST_FILE);
+    let manifest_present = manifest_path.is_file();
+
+    Ok(WorkspaceProbe {
+        git_present: resolved_workspace_root.join(".git").exists(),
+        resolved_workspace_root,
+        manifest_path,
+        exists: true,
+        is_directory: true,
+        manifest_present,
+        selectable: true,
+        initializable: !manifest_present,
+        reason: (!manifest_present)
+            .then_some("目录存在，但还没有 agentstow.toml，可直接初始化".to_string()),
+    })
+}
+
+fn absolutize_requested_path(requested_path: &Path) -> Result<PathBuf> {
+    if requested_path.is_absolute() {
+        return Ok(requested_path.to_path_buf());
+    }
+
+    Ok(std::env::current_dir()
+        .map_err(AgentStowError::from)?
+        .join(requested_path))
+}
+
+fn is_manifest_file_path(path: &Path) -> bool {
+    path.file_name()
+        .is_some_and(|name| name == OsStr::new(DEFAULT_MANIFEST_FILE))
 }
 
 fn validate_manifest(m: &ManifestToml, workspace_root: &Path) -> Result<()> {

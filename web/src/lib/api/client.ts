@@ -34,6 +34,19 @@ import type {
   WorkspaceSummaryResponse
 } from '$lib/types';
 
+type ClipboardLike = {
+  writeText?: (text: string) => Promise<void>;
+};
+
+type NavigatorWithClipboard = Navigator & {
+  clipboard?: ClipboardLike;
+};
+
+type WindowWithClipboardState = Window & {
+  __agentstowClipboardFallbackInstalled__?: boolean;
+  __agentstowCopiedText__?: string;
+};
+
 export class ApiClientError extends Error {
   readonly status: number;
   readonly details?: ApiError;
@@ -49,6 +62,165 @@ export class ApiClientError extends Error {
 type QueryValue = string | number | boolean | null | undefined;
 
 const API_BASE = (import.meta.env.VITE_AGENTSTOW_API_BASE ?? '').replace(/\/$/, '');
+
+function rememberCopiedText(text: string): void {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  (window as WindowWithClipboardState).__agentstowCopiedText__ = text;
+}
+
+function legacyCopyText(text: string): boolean {
+  if (typeof document === 'undefined' || !document.body) {
+    return false;
+  }
+
+  const textarea = document.createElement('textarea');
+  textarea.value = text;
+  textarea.setAttribute('readonly', 'true');
+  textarea.style.position = 'fixed';
+  textarea.style.top = '0';
+  textarea.style.left = '0';
+  textarea.style.width = '1px';
+  textarea.style.height = '1px';
+  textarea.style.opacity = '0';
+  textarea.style.pointerEvents = 'none';
+  textarea.style.whiteSpace = 'pre';
+
+  const activeElement = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  const selection = document.getSelection();
+  const ranges = selection
+    ? Array.from({ length: selection.rangeCount }, (_, index) => selection.getRangeAt(index).cloneRange())
+    : [];
+
+  document.body.append(textarea);
+
+  try {
+    textarea.focus({ preventScroll: true });
+    textarea.select();
+    textarea.setSelectionRange(0, text.length);
+
+    if (typeof document.execCommand !== 'function') {
+      return false;
+    }
+
+    return document.execCommand('copy');
+  } catch {
+    return false;
+  } finally {
+    textarea.remove();
+
+    if (selection) {
+      selection.removeAllRanges();
+      for (const range of ranges) {
+        selection.addRange(range);
+      }
+    }
+
+    activeElement?.focus({ preventScroll: true });
+  }
+}
+
+async function writeTextWithFallback(text: string, originalWriteText?: (text: string) => Promise<void>): Promise<void> {
+  const normalized = String(text);
+  let originalError: unknown;
+
+  if (originalWriteText) {
+    try {
+      await originalWriteText(normalized);
+      rememberCopiedText(normalized);
+      return;
+    } catch (error) {
+      originalError = error;
+    }
+  }
+
+  if (legacyCopyText(normalized)) {
+    rememberCopiedText(normalized);
+    return;
+  }
+
+  throw originalError instanceof Error
+    ? originalError
+    : new Error('无法写入剪贴板：当前运行环境不支持 Clipboard API 或 fallback copy。');
+}
+
+function installClipboardFallback(): void {
+  if (typeof window === 'undefined' || typeof navigator === 'undefined') {
+    return;
+  }
+
+  const state = window as WindowWithClipboardState;
+  if (state.__agentstowClipboardFallbackInstalled__) {
+    return;
+  }
+
+  const nav = navigator as NavigatorWithClipboard;
+  const clipboard = nav.clipboard;
+  const originalWriteText =
+    typeof clipboard?.writeText === 'function' ? clipboard.writeText.bind(clipboard) : undefined;
+  const wrappedWriteText = async (text: string): Promise<void> => {
+    await writeTextWithFallback(text, originalWriteText);
+  };
+
+  if (clipboard) {
+    try {
+      const wrappedClipboard = {
+        ...clipboard,
+        writeText: wrappedWriteText
+      };
+      Object.defineProperty(nav, 'clipboard', {
+        configurable: true,
+        value: wrappedClipboard
+      });
+      state.__agentstowClipboardFallbackInstalled__ = true;
+      return;
+    } catch {
+      try {
+        clipboard.writeText = wrappedWriteText;
+        state.__agentstowClipboardFallbackInstalled__ = true;
+        return;
+      } catch {
+        try {
+          Object.defineProperty(clipboard, 'writeText', {
+            configurable: true,
+            value: wrappedWriteText
+          });
+          state.__agentstowClipboardFallbackInstalled__ = true;
+          return;
+        } catch {
+          // fall through to navigator patch
+        }
+      }
+    }
+  }
+
+  try {
+    Object.defineProperty(nav, 'clipboard', {
+      configurable: true,
+      value: {
+        writeText: wrappedWriteText
+      }
+    });
+    state.__agentstowClipboardFallbackInstalled__ = true;
+  } catch {
+    if (clipboard) {
+      try {
+        Object.defineProperty(clipboard, 'writeText', {
+          configurable: true,
+          value: wrappedWriteText
+        });
+        state.__agentstowClipboardFallbackInstalled__ = true;
+        return;
+      } catch {
+        // ignore: callers will still see the original browser error
+      }
+    }
+  }
+}
+
+installClipboardFallback();
 
 function buildUrl(path: string, query?: Record<string, QueryValue>): string {
   const url = new URL(`${API_BASE}${path}`, window.location.origin);
@@ -114,6 +286,17 @@ async function fetchJson<T>(
   }
 
   return payload as T;
+}
+
+export function copyTextToClipboard(text: string): Promise<void> {
+  installClipboardFallback();
+
+  const nav = navigator as NavigatorWithClipboard;
+  if (nav.clipboard?.writeText) {
+    return nav.clipboard.writeText(String(text));
+  }
+
+  return writeTextWithFallback(String(text));
 }
 
 export function getManifest(): Promise<ManifestResponse> {

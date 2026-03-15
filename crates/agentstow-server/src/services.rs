@@ -5,6 +5,7 @@ mod git;
 mod issues;
 mod links;
 mod mcp;
+mod profile;
 mod scripts;
 mod summary;
 mod workspace;

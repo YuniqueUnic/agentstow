@@ -5,15 +5,16 @@ use agentstow_core::{AgentStowError, ArtifactId, ProfileName, normalize_for_disp
 use agentstow_web_types::{
     ApiError, ArtifactGitRollbackRequest, ArtifactSourceUpdateRequest, EnvEmitRequest,
     HealthResponse, LinkApplyRequest, LinkPlanRequest, LinkRepairRequest,
-    ManifestSourceUpdateRequest, ScriptRunRequest, WorkspaceGitSummaryResponse,
-    WorkspaceInitRequest, WorkspaceInitResponse, WorkspaceSelectRequest, WorkspaceSelectResponse,
-    WorkspaceStateResponse,
+    ManifestSourceUpdateRequest, ProfileVarsUpdateRequest, ScriptRunRequest,
+    WorkspaceGitSummaryResponse, WorkspaceInitRequest, WorkspaceInitResponse,
+    WorkspaceProbeRequest, WorkspaceProbeResponse, WorkspaceSelectRequest,
+    WorkspaceSelectResponse, WorkspaceStateResponse,
 };
 use axum::Router;
 use axum::extract::{Path as AxumPath, Query, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Json, Response};
-use axum::routing::{any, get, post};
+use axum::routing::{any, get, post, put};
 use serde::Deserialize;
 
 use crate::ServerState;
@@ -26,6 +27,8 @@ pub(crate) fn routes() -> Router<Arc<ServerState>> {
             "/api/workspace",
             get(api_workspace_state).post(api_workspace_select),
         )
+        .route("/api/workspace/probe", post(api_workspace_probe))
+        .route("/api/workspace/pick", post(api_workspace_pick))
         .route("/api/workspace/init", post(api_workspace_init))
         .route("/api/workspace/git", get(api_workspace_git))
         .route("/api/manifest", get(api_manifest))
@@ -64,6 +67,7 @@ pub(crate) fn routes() -> Router<Arc<ServerState>> {
         .route("/api/env/emit", post(api_env_emit))
         .route("/api/scripts/{script}/run", post(api_script_run))
         .route("/api/profiles/{profile}", get(api_profile_detail))
+        .route("/api/profiles/{profile}/vars", put(api_profile_vars_update))
         .route("/api/impact", get(api_impact))
         .route("/api/{*path}", any(api_not_found))
 }
@@ -111,18 +115,41 @@ async fn api_health() -> Json<HealthResponse> {
 
 async fn api_workspace_state(State(st): State<Arc<ServerState>>) -> Response {
     let workspace_root = st.workspace_root.read().await.clone();
-    let manifest_present = workspace_root.as_ref().is_some_and(|root| {
-        root.join(agentstow_manifest::DEFAULT_MANIFEST_FILE)
-            .is_file()
-    });
+    let workspace = match workspace_root {
+        Some(workspace_root) => {
+            let requested_workspace_root = normalize_for_display(&workspace_root);
+            match probe_workspace(&requested_workspace_root) {
+                Ok(probe) => Some(workspace_probe_response(&requested_workspace_root, probe)),
+                Err(error) => return api_error(StatusCode::INTERNAL_SERVER_ERROR, error),
+            }
+        }
+        None => None,
+    };
 
     Json(WorkspaceStateResponse {
-        workspace_root: workspace_root
-            .as_deref()
-            .map(agentstow_core::normalize_for_display),
-        manifest_present,
+        workspace_root: workspace
+            .as_ref()
+            .map(|workspace| workspace.resolved_workspace_root.clone()),
+        manifest_present: workspace
+            .as_ref()
+            .is_some_and(|workspace| workspace.manifest_present),
+        workspace,
     })
     .into_response()
+}
+
+async fn api_workspace_probe(Json(req): Json<WorkspaceProbeRequest>) -> Response {
+    let requested_workspace_root = req.workspace_root.trim();
+    if requested_workspace_root.is_empty() {
+        return api_error(StatusCode::BAD_REQUEST, "workspace_root 不能为空");
+    }
+
+    match probe_workspace(requested_workspace_root) {
+        Ok(probe) => {
+            Json(workspace_probe_response(requested_workspace_root, probe)).into_response()
+        }
+        Err(error) => api_error(StatusCode::BAD_REQUEST, error),
+    }
 }
 
 async fn api_workspace_git(State(st): State<Arc<ServerState>>) -> Response {
@@ -139,32 +166,28 @@ async fn api_workspace_select(
     State(st): State<Arc<ServerState>>,
     Json(req): Json<WorkspaceSelectRequest>,
 ) -> Response {
-    if req.workspace_root.trim().is_empty() {
+    let requested_workspace_root = req.workspace_root.trim();
+    if requested_workspace_root.is_empty() {
         return api_error(StatusCode::BAD_REQUEST, "workspace_root 不能为空");
     }
 
-    let raw_path = std::path::PathBuf::from(req.workspace_root);
-    let canonical = match fs_err::canonicalize(&raw_path) {
-        Ok(path) => path,
+    let probe = match probe_workspace(requested_workspace_root) {
+        Ok(probe) => probe,
         Err(error) => return api_error(StatusCode::BAD_REQUEST, error),
     };
-
-    {
-        let mut guard = st.workspace_root.write().await;
-        *guard = Some(canonical.clone());
+    if !probe.selectable {
+        return api_error(
+            StatusCode::BAD_REQUEST,
+            probe.reason.as_deref().unwrap_or("workspace 路径不可选择"),
+        );
     }
-    {
-        let mut guard = st.watch.write().await;
-        *guard = crate::watch::WatchStatusHandle::start(canonical.clone());
-    }
-
-    let manifest_present = canonical
-        .join(agentstow_manifest::DEFAULT_MANIFEST_FILE)
-        .is_file();
+    let response = workspace_probe_response(requested_workspace_root, probe.clone());
+    select_workspace(&st, probe.resolved_workspace_root).await;
 
     Json(WorkspaceSelectResponse {
-        workspace_root: agentstow_core::normalize_for_display(&canonical),
-        manifest_present,
+        workspace_root: response.resolved_workspace_root.clone(),
+        manifest_present: response.manifest_present,
+        workspace: response,
     })
     .into_response()
 }
@@ -173,11 +196,26 @@ async fn api_workspace_init(
     State(st): State<Arc<ServerState>>,
     Json(req): Json<WorkspaceInitRequest>,
 ) -> Response {
-    if req.workspace_root.trim().is_empty() {
+    let requested_workspace_root = req.workspace_root.trim();
+    if requested_workspace_root.is_empty() {
         return api_error(StatusCode::BAD_REQUEST, "workspace_root 不能为空");
     }
 
-    let workspace_root = std::path::PathBuf::from(req.workspace_root);
+    let probe = match probe_workspace(requested_workspace_root) {
+        Ok(probe) => probe,
+        Err(error) => return api_error(StatusCode::BAD_REQUEST, error),
+    };
+    if probe.exists && !probe.is_directory && !probe.manifest_present {
+        return api_error(
+            StatusCode::BAD_REQUEST,
+            probe
+                .reason
+                .as_deref()
+                .unwrap_or("workspace 路径不可初始化"),
+        );
+    }
+
+    let workspace_root = probe.resolved_workspace_root.clone();
     let created = match agentstow_manifest::init_workspace_skeleton(&workspace_root) {
         Ok(outcome) => outcome.created,
         Err(error) => return api_error(StatusCode::BAD_REQUEST, error),
@@ -201,25 +239,18 @@ async fn api_workspace_init(
         }
     }
 
-    // Init implies "select" so the UI can proceed without restart.
-    let canonical = match fs_err::canonicalize(&workspace_root) {
-        Ok(path) => path,
+    let selected_probe = match probe_workspace(requested_workspace_root) {
+        Ok(probe) => probe,
         Err(error) => return api_error(StatusCode::BAD_REQUEST, error),
     };
-    let manifest_path = canonical.join(agentstow_manifest::DEFAULT_MANIFEST_FILE);
-    {
-        let mut guard = st.workspace_root.write().await;
-        *guard = Some(canonical.clone());
-    }
-    {
-        let mut guard = st.watch.write().await;
-        *guard = crate::watch::WatchStatusHandle::start(canonical.clone());
-    }
+    let response = workspace_probe_response(requested_workspace_root, selected_probe.clone());
+    select_workspace(&st, selected_probe.resolved_workspace_root).await;
 
     Json(WorkspaceInitResponse {
-        workspace_root: agentstow_core::normalize_for_display(&canonical),
-        manifest_path: agentstow_core::normalize_for_display(&manifest_path),
+        workspace_root: response.resolved_workspace_root.clone(),
+        manifest_path: response.manifest_path.clone(),
         created,
+        workspace: response,
     })
     .into_response()
 }
@@ -699,5 +730,40 @@ fn workspace_relative_display(workspace_root: &Path, source_path: &str) -> Strin
     match source_path.strip_prefix(workspace_root) {
         Ok(relative) => normalize_for_display(relative),
         Err(_) => source_path.display().to_string(),
+    }
+}
+
+fn probe_workspace(
+    requested_workspace_root: &str,
+) -> Result<agentstow_manifest::WorkspaceProbe, AgentStowError> {
+    agentstow_manifest::probe_workspace_path(Path::new(requested_workspace_root))
+}
+
+fn workspace_probe_response(
+    requested_workspace_root: &str,
+    probe: agentstow_manifest::WorkspaceProbe,
+) -> WorkspaceProbeResponse {
+    WorkspaceProbeResponse {
+        requested_workspace_root: requested_workspace_root.to_string(),
+        resolved_workspace_root: normalize_for_display(&probe.resolved_workspace_root),
+        exists: probe.exists,
+        is_directory: probe.is_directory,
+        manifest_present: probe.manifest_present,
+        manifest_path: normalize_for_display(&probe.manifest_path),
+        git_present: probe.git_present,
+        selectable: probe.selectable,
+        initializable: probe.initializable,
+        reason: probe.reason,
+    }
+}
+
+async fn select_workspace(st: &Arc<ServerState>, workspace_root: std::path::PathBuf) {
+    {
+        let mut guard = st.workspace_root.write().await;
+        *guard = Some(workspace_root.clone());
+    }
+    {
+        let mut guard = st.watch.write().await;
+        *guard = crate::watch::WatchStatusHandle::start(workspace_root);
     }
 }

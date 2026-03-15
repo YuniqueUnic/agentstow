@@ -214,6 +214,7 @@ async fn api_workspace_should_start_unconfigured_then_select_workspace() {
     let body: serde_json::Value = resp.json();
     assert!(body["workspace_root"].is_null());
     assert_eq!(body["manifest_present"], serde_json::json!(false));
+    assert!(body["workspace"].is_null());
 
     let resp = server
         .post("/api/workspace")
@@ -223,10 +224,107 @@ async fn api_workspace_should_start_unconfigured_then_select_workspace() {
         .await;
     resp.assert_status_ok();
     let body: serde_json::Value = resp.json();
+    let expected_root = fs_err::canonicalize(workspace.path()).unwrap();
     assert_eq!(body["manifest_present"], serde_json::json!(true));
+    assert_eq!(
+        body["workspace"]["resolved_workspace_root"],
+        serde_json::json!(expected_root.display().to_string())
+    );
+    assert_eq!(body["workspace"]["selectable"], serde_json::json!(true));
 
     let resp = server.get("/api/manifest").await;
     resp.assert_status_ok();
     let body: serde_json::Value = resp.json();
     assert_eq!(body["artifacts"], serde_json::json!(["hello"]));
+}
+
+#[tokio::test]
+async fn api_workspace_probe_should_report_missing_path_before_init() {
+    let temp = assert_fs::TempDir::new().unwrap();
+    let server = test_server_unconfigured(temp.child("missing-dist").path().to_path_buf());
+    let missing_root = temp.child("future-workspace");
+
+    let resp = server
+        .post("/api/workspace/probe")
+        .json(&serde_json::json!({
+            "workspace_root": missing_root.path().display().to_string()
+        }))
+        .await;
+
+    resp.assert_status_ok();
+    let body: serde_json::Value = resp.json();
+    assert_eq!(body["exists"], serde_json::json!(false));
+    assert_eq!(body["selectable"], serde_json::json!(false));
+    assert_eq!(body["initializable"], serde_json::json!(true));
+    assert_eq!(
+        body["manifest_path"],
+        serde_json::json!(
+            missing_root
+                .child("agentstow.toml")
+                .path()
+                .display()
+                .to_string()
+        )
+    );
+}
+
+#[tokio::test]
+async fn api_workspace_select_should_accept_manifest_file_path() {
+    let workspace = assert_fs::TempDir::new().unwrap();
+    write_minimal_workspace(&workspace);
+
+    let temp = assert_fs::TempDir::new().unwrap();
+    let server = test_server_unconfigured(temp.child("missing-dist").path().to_path_buf());
+
+    let resp = server
+        .post("/api/workspace")
+        .json(&serde_json::json!({
+            "workspace_root": workspace.child("agentstow.toml").path().display().to_string()
+        }))
+        .await;
+
+    resp.assert_status_ok();
+    let body: serde_json::Value = resp.json();
+    let expected_root = fs_err::canonicalize(workspace.path()).unwrap();
+    assert_eq!(
+        body["workspace_root"],
+        serde_json::json!(expected_root.display().to_string())
+    );
+    assert_eq!(
+        body["workspace"]["manifest_present"],
+        serde_json::json!(true)
+    );
+    assert_eq!(body["workspace"]["is_directory"], serde_json::json!(false));
+    assert_eq!(body["workspace"]["selectable"], serde_json::json!(true));
+}
+
+#[tokio::test]
+async fn api_workspace_init_should_create_missing_workspace_and_return_structured_probe() {
+    let temp = assert_fs::TempDir::new().unwrap();
+    let server = test_server_unconfigured(temp.child("missing-dist").path().to_path_buf());
+    let workspace = temp.child("new-workspace");
+
+    let resp = server
+        .post("/api/workspace/init")
+        .json(&serde_json::json!({
+            "workspace_root": workspace.path().display().to_string(),
+            "git_init": false,
+        }))
+        .await;
+
+    resp.assert_status_ok();
+    let body: serde_json::Value = resp.json();
+    let expected_root = fs_err::canonicalize(workspace.path()).unwrap();
+    assert_eq!(body["created"], serde_json::json!(true));
+    assert_eq!(
+        body["workspace_root"],
+        serde_json::json!(expected_root.display().to_string())
+    );
+    assert_eq!(body["workspace"]["exists"], serde_json::json!(true));
+    assert_eq!(
+        body["workspace"]["manifest_present"],
+        serde_json::json!(true)
+    );
+    assert_eq!(body["workspace"]["selectable"], serde_json::json!(true));
+    assert_eq!(body["workspace"]["initializable"], serde_json::json!(false));
 }

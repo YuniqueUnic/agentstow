@@ -65,3 +65,21 @@ export type {
   WorkspaceStateResponse,
   WorkspaceSummaryResponse
 } from '$lib/bindings';
+
+export type EditorDocumentLanguage =
+  | 'auto'
+  | 'plaintext'
+  | 'jinja'
+  | 'toml'
+  | 'json'
+  | 'html'
+  | 'javascript'
+  | 'css'
+  | 'shell';
+
+export type WorkspacePickerCapability = {
+  supported: boolean;
+  secureContext: boolean;
+  supportsPathExtraction: boolean;
+  reason: string | null;
+};

@@ -13,8 +13,9 @@ use super::WorkspaceQueryService;
 use super::env::build_env_usage_index;
 use super::issues::{collect_subject_ids, collect_workspace_issues, filter_issues};
 use super::summary::{
-    build_artifact_summaries, build_env_set_summaries, build_mcp_server_summaries,
-    build_profile_summaries, build_profile_vars, build_script_summaries, build_target_summaries,
+    build_artifact_summaries, build_declared_profile_vars, build_env_set_summaries,
+    build_mcp_server_summaries, build_profile_summaries, build_profile_vars,
+    build_script_summaries, build_target_summaries, profile_var_syntax_mode_response,
 };
 
 struct WorkspaceProjection {
@@ -161,6 +162,14 @@ impl WorkspaceQueryService {
             .ok_or_else(|| AgentStowError::Manifest {
                 message: format!("profile 不存在：{}", profile_name.as_str()).into(),
             })?;
+        let profile_def = projection
+            .manifest
+            .profiles
+            .get(profile_name)
+            .ok_or_else(|| AgentStowError::Manifest {
+                message: format!("profile 不存在：{}", profile_name.as_str()).into(),
+            })?;
+        let declared_vars = build_declared_profile_vars(profile_def);
         let merged_vars = build_profile_vars(&projection.manifest, profile_name)?;
         let profile_targets: Vec<_> = projection
             .targets
@@ -187,6 +196,8 @@ impl WorkspaceQueryService {
 
         Ok(ProfileDetailResponse {
             profile,
+            syntax_mode: profile_var_syntax_mode_response(profile_def.var_syntax_mode()),
+            declared_vars,
             merged_vars,
             targets: profile_targets,
             artifacts: related_artifacts,

@@ -11,6 +11,7 @@ fn profile_merge_order_later_extends_wins_and_self_wins() {
             .as_object()
             .unwrap()
             .clone(),
+        var_syntax: ProfileVarSyntaxMode::Inline,
     };
     let work = Profile {
         extends: vec![],
@@ -18,6 +19,7 @@ fn profile_merge_order_later_extends_wins_and_self_wins() {
             .as_object()
             .unwrap()
             .clone(),
+        var_syntax: ProfileVarSyntaxMode::Inline,
     };
     let child = Profile {
         extends: vec![
@@ -28,6 +30,7 @@ fn profile_merge_order_later_extends_wins_and_self_wins() {
             .as_object()
             .unwrap()
             .clone(),
+        var_syntax: ProfileVarSyntaxMode::Inline,
     };
 
     let mut profiles = BTreeMap::new();
@@ -52,10 +55,12 @@ fn profile_cycle_should_error() {
     let a = Profile {
         extends: vec![ProfileName::new_unchecked("b")],
         vars: serde_json::Map::new(),
+        var_syntax: ProfileVarSyntaxMode::Inline,
     };
     let b = Profile {
         extends: vec![ProfileName::new_unchecked("a")],
         vars: serde_json::Map::new(),
+        var_syntax: ProfileVarSyntaxMode::Inline,
     };
     let mut profiles = BTreeMap::new();
     profiles.insert(ProfileName::new_unchecked("a"), a);
@@ -119,6 +124,116 @@ vars = {}
     let err = Manifest::load_from_path(temp.child("agentstow.toml").path()).unwrap_err();
     assert_eq!(err.exit_code(), agentstow_core::ExitCode::InvalidConfig);
     assert!(err.to_string().contains("profile extends 不存在"));
+}
+
+#[test]
+fn load_should_support_inline_profile_vars() {
+    let temp = assert_fs::TempDir::new().unwrap();
+    temp.child("agentstow.toml")
+        .write_str(
+            r#"
+[profiles.base]
+name = "AgentStow"
+region = "cn"
+"#,
+        )
+        .unwrap();
+
+    let manifest = Manifest::load_from_path(temp.child("agentstow.toml").path()).unwrap();
+    let profile = manifest
+        .profiles
+        .get(&ProfileName::new_unchecked("base"))
+        .unwrap();
+
+    assert_eq!(profile.var_syntax_mode(), ProfileVarSyntaxMode::Inline);
+    assert_eq!(
+        profile.declared_vars().get("name").unwrap(),
+        &serde_json::json!("AgentStow")
+    );
+    assert_eq!(
+        profile.declared_vars().get("region").unwrap(),
+        &serde_json::json!("cn")
+    );
+}
+
+#[test]
+fn load_should_support_vars_object_profile_vars() {
+    let temp = assert_fs::TempDir::new().unwrap();
+    temp.child("agentstow.toml")
+        .write_str(
+            r#"
+[profiles.base]
+vars = { name = "AgentStow", region = "global" }
+"#,
+        )
+        .unwrap();
+
+    let manifest = Manifest::load_from_path(temp.child("agentstow.toml").path()).unwrap();
+    let profile = manifest
+        .profiles
+        .get(&ProfileName::new_unchecked("base"))
+        .unwrap();
+
+    assert_eq!(profile.var_syntax_mode(), ProfileVarSyntaxMode::VarsObject);
+    assert_eq!(
+        profile.declared_vars().get("name").unwrap(),
+        &serde_json::json!("AgentStow")
+    );
+    assert_eq!(
+        profile.declared_vars().get("region").unwrap(),
+        &serde_json::json!("global")
+    );
+}
+
+#[test]
+fn load_should_support_mixed_profile_vars_when_keys_do_not_overlap() {
+    let temp = assert_fs::TempDir::new().unwrap();
+    temp.child("agentstow.toml")
+        .write_str(
+            r#"
+[profiles.base]
+vars = { name = "AgentStow" }
+region = "cn"
+"#,
+        )
+        .unwrap();
+
+    let manifest = Manifest::load_from_path(temp.child("agentstow.toml").path()).unwrap();
+    let profile = manifest
+        .profiles
+        .get(&ProfileName::new_unchecked("base"))
+        .unwrap();
+
+    assert_eq!(profile.var_syntax_mode(), ProfileVarSyntaxMode::Mixed);
+    assert_eq!(
+        profile.declared_vars().get("name").unwrap(),
+        &serde_json::json!("AgentStow")
+    );
+    assert_eq!(
+        profile.declared_vars().get("region").unwrap(),
+        &serde_json::json!("cn")
+    );
+}
+
+#[test]
+fn load_should_error_when_profile_vars_are_declared_twice() {
+    let temp = assert_fs::TempDir::new().unwrap();
+    temp.child("agentstow.toml")
+        .write_str(
+            r#"
+[profiles.base]
+vars = { name = "AgentStow" }
+name = "Shadow"
+"#,
+        )
+        .unwrap();
+
+    let err = Manifest::load_from_path(temp.child("agentstow.toml").path()).unwrap_err();
+    assert_eq!(err.exit_code(), agentstow_core::ExitCode::InvalidConfig);
+    assert!(
+        err.to_string()
+            .contains("同时出现在 `vars` 和 profile 顶层")
+    );
 }
 
 #[test]
@@ -248,5 +363,52 @@ fn init_workspace_skeleton_should_create_manifest_and_sample_artifact() {
         manifest
             .profiles
             .contains_key(&ProfileName::new_unchecked("base"))
+    );
+    let source = std::fs::read_to_string(&out.manifest_path).unwrap();
+    assert!(source.contains("name = \"AgentStow\""));
+    assert!(!source.contains("vars ="));
+}
+
+#[test]
+fn probe_workspace_path_should_accept_manifest_file_path() {
+    let temp = assert_fs::TempDir::new().unwrap();
+    temp.child("agentstow.toml")
+        .write_str(
+            r#"
+[profiles.base]
+name = "AgentStow"
+"#,
+        )
+        .unwrap();
+
+    let probe = probe_workspace_path(temp.child("agentstow.toml").path()).unwrap();
+    assert!(probe.exists);
+    assert!(!probe.is_directory);
+    assert!(probe.manifest_present);
+    assert!(probe.selectable);
+    assert!(!probe.initializable);
+    let expected_root = fs_err::canonicalize(temp.path()).unwrap();
+    assert_eq!(probe.manifest_path, expected_root.join("agentstow.toml"));
+    assert_eq!(probe.resolved_workspace_root, expected_root);
+}
+
+#[test]
+fn probe_workspace_path_should_report_missing_workspace_candidate() {
+    let temp = assert_fs::TempDir::new().unwrap();
+    let probe = probe_workspace_path(temp.child("missing-workspace").path()).unwrap();
+
+    assert!(!probe.exists);
+    assert!(!probe.selectable);
+    assert!(probe.initializable);
+    assert_eq!(
+        probe.manifest_path,
+        temp.child("missing-workspace/agentstow.toml").path()
+    );
+    assert!(
+        probe
+            .reason
+            .as_deref()
+            .unwrap()
+            .contains("可直接初始化 workspace")
     );
 }

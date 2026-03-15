@@ -27,6 +27,7 @@ pub struct ManifestResponse {
 pub struct WorkspaceStateResponse {
     pub workspace_root: Option<String>,
     pub manifest_present: bool,
+    pub workspace: Option<WorkspaceProbeResponse>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -93,6 +94,27 @@ pub struct ArtifactGitRollbackResponse {
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
+pub struct WorkspaceProbeRequest {
+    pub workspace_root: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct WorkspaceProbeResponse {
+    pub requested_workspace_root: String,
+    pub resolved_workspace_root: String,
+    pub exists: bool,
+    pub is_directory: bool,
+    pub manifest_present: bool,
+    pub manifest_path: String,
+    pub git_present: bool,
+    pub selectable: bool,
+    pub initializable: bool,
+    pub reason: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct WorkspaceSelectRequest {
     pub workspace_root: String,
 }
@@ -102,6 +124,7 @@ pub struct WorkspaceSelectRequest {
 pub struct WorkspaceSelectResponse {
     pub workspace_root: String,
     pub manifest_present: bool,
+    pub workspace: WorkspaceProbeResponse,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -117,6 +140,7 @@ pub struct WorkspaceInitResponse {
     pub workspace_root: String,
     pub manifest_path: String,
     pub created: bool,
+    pub workspace: WorkspaceProbeResponse,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -450,6 +474,28 @@ pub struct ProfileVarResponse {
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
+pub struct ProfileVarUpdateItemRequest {
+    pub key: String,
+    pub value_json: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct ProfileVarsUpdateRequest {
+    pub vars: Vec<ProfileVarUpdateItemRequest>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
+pub enum ProfileVarSyntaxModeResponse {
+    Inline,
+    VarsObject,
+    Mixed,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct EnvVarSummaryResponse {
     pub key: String,
     pub binding: String,
@@ -594,6 +640,8 @@ pub struct ArtifactDetailResponse {
 #[ts(export)]
 pub struct ProfileDetailResponse {
     pub profile: ProfileSummaryResponse,
+    pub syntax_mode: ProfileVarSyntaxModeResponse,
+    pub declared_vars: Vec<ProfileVarResponse>,
     pub merged_vars: Vec<ProfileVarResponse>,
     pub targets: Vec<TargetSummaryResponse>,
     pub artifacts: Vec<ArtifactSummaryResponse>,
@@ -618,6 +666,8 @@ pub fn export_bindings() -> Result<(), ts_rs::ExportError> {
     HealthResponse::export_all(&config)?;
     ManifestResponse::export_all(&config)?;
     WorkspaceStateResponse::export_all(&config)?;
+    WorkspaceProbeRequest::export_all(&config)?;
+    WorkspaceProbeResponse::export_all(&config)?;
     WorkspaceGitSummaryResponse::export_all(&config)?;
     GitCommitSummaryResponse::export_all(&config)?;
     ArtifactGitHistoryResponse::export_all(&config)?;
@@ -664,6 +714,9 @@ pub fn export_bindings() -> Result<(), ts_rs::ExportError> {
     ArtifactSummaryResponse::export_all(&config)?;
     ProfileSummaryResponse::export_all(&config)?;
     ProfileVarResponse::export_all(&config)?;
+    ProfileVarUpdateItemRequest::export_all(&config)?;
+    ProfileVarsUpdateRequest::export_all(&config)?;
+    ProfileVarSyntaxModeResponse::export_all(&config)?;
     EnvUsageRefResponse::export_all(&config)?;
     EnvVarSummaryResponse::export_all(&config)?;
     EnvSetSummaryResponse::export_all(&config)?;

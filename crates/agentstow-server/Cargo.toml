@@ -24,6 +24,7 @@ notify.workspace = true
 notify-debouncer-full.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+rfd.workspace = true
 thiserror.workspace = true
 tempfile.workspace = true
 time.workspace = true

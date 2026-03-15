@@ -14,7 +14,7 @@ pub(super) fn write_minimal_workspace(temp: &assert_fs::TempDir) {
         .write_str(
             r#"
 [profiles.base]
-vars = { name = "Server" }
+name = "Server"
 
 [artifacts.hello]
 kind = "file"
@@ -38,11 +38,12 @@ pub(super) fn write_prd_workspace(temp: &assert_fs::TempDir) {
         .write_str(
             r#"
 [profiles.base]
-vars = { name = "AgentStow", region = "global" }
+name = "AgentStow"
+region = "global"
 
 [profiles.derived]
 extends = ["base"]
-vars = { region = "cn" }
+region = "cn"
 
 [artifacts.hello]
 kind = "file"

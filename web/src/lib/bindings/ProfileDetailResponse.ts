@@ -2,11 +2,14 @@
 import type { ArtifactSummaryResponse } from "./ArtifactSummaryResponse";
 import type { ProfileSummaryResponse } from "./ProfileSummaryResponse";
 import type { ProfileVarResponse } from "./ProfileVarResponse";
+import type { ProfileVarSyntaxModeResponse } from "./ProfileVarSyntaxModeResponse";
 import type { TargetSummaryResponse } from "./TargetSummaryResponse";
 import type { ValidationIssueResponse } from "./ValidationIssueResponse";
 
 export type ProfileDetailResponse = {
   profile: ProfileSummaryResponse;
+  syntax_mode: ProfileVarSyntaxModeResponse;
+  declared_vars: Array<ProfileVarResponse>;
   merged_vars: Array<ProfileVarResponse>;
   targets: Array<TargetSummaryResponse>;
   artifacts: Array<ArtifactSummaryResponse>;

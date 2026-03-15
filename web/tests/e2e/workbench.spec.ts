@@ -20,6 +20,52 @@ test('source editor content syncs when switching artifact files', async ({ page 
   await expect(sourceContent).toContainText('Bye from AgentStow.');
 });
 
+test('clipboard fallback still copies MCP launcher when Clipboard API write fails', async ({ page }) => {
+  await page.addInitScript(() => {
+    const win = window as Window & {
+      __agentstowCopiedText__?: string;
+    };
+
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: {
+        writeText: async () => {
+          throw new Error('Clipboard API denied');
+        }
+      }
+    });
+
+    const execCommand = (commandId: string) => {
+      if (commandId !== 'copy') {
+        return false;
+      }
+
+      const activeElement = document.activeElement;
+      if (activeElement instanceof HTMLTextAreaElement || activeElement instanceof HTMLInputElement) {
+        win.__agentstowCopiedText__ = activeElement.value;
+        return true;
+      }
+
+      return false;
+    };
+
+    Object.defineProperty(Document.prototype, 'execCommand', {
+      configurable: true,
+      value: execCommand
+    });
+  });
+
+  await openWorkspace(page);
+
+  const nav = page.getByRole('navigation', { name: '主导航' });
+  await nav.getByRole('button', { name: 'MCP', exact: true }).click();
+
+  await page.getByRole('button', { name: '复制 launcher' }).click();
+  await expect.poll(() => page.evaluate(() => (window as Window & { __agentstowCopiedText__?: string }).__agentstowCopiedText__)).toBe(
+    'npx -y @modelcontextprotocol/server-filesystem .'
+  );
+});
+
 test('artifact history compare uses structured diff rendering', async ({ page }) => {
   await openWorkspace(page);
 

@@ -51,6 +51,7 @@ predicates = "3"
 pretty_assertions = "1"
 proptest = "1"
 rusqlite = { version = "0.38", features = ["bundled"] }
+rfd = "0.17"
 rstest = "0.26"
 schemars = "1"
 same-file = "1"

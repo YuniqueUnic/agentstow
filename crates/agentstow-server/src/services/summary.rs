@@ -1,11 +1,11 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use agentstow_core::{ProfileName, Result, normalize_for_display};
-use agentstow_manifest::{Manifest, McpTransport};
+use agentstow_manifest::{Manifest, McpTransport, Profile, ProfileVarSyntaxMode};
 use agentstow_web_types::{
     ArtifactSummaryResponse, EnvSetSummaryResponse, EnvUsageRefResponse, McpHeaderResponse,
     McpServerSummaryResponse, McpTransportKindResponse, ProfileSummaryResponse, ProfileVarResponse,
-    ScriptSummaryResponse, TargetSummaryResponse,
+    ProfileVarSyntaxModeResponse, ScriptSummaryResponse, TargetSummaryResponse,
 };
 
 use super::common::{artifact_kind_response, install_method_response, validate_as_response};
@@ -118,6 +118,29 @@ pub(crate) fn build_profile_vars(
         .collect();
     vars.sort_by(|left, right| left.key.cmp(&right.key));
     Ok(vars)
+}
+
+pub(crate) fn build_declared_profile_vars(profile: &Profile) -> Vec<ProfileVarResponse> {
+    let mut vars: Vec<_> = profile
+        .declared_vars()
+        .iter()
+        .map(|(key, value)| ProfileVarResponse {
+            key: key.clone(),
+            value_json: serde_json::to_string(value).unwrap_or_else(|_| "null".to_string()),
+        })
+        .collect();
+    vars.sort_by(|left, right| left.key.cmp(&right.key));
+    vars
+}
+
+pub(crate) fn profile_var_syntax_mode_response(
+    mode: ProfileVarSyntaxMode,
+) -> ProfileVarSyntaxModeResponse {
+    match mode {
+        ProfileVarSyntaxMode::Inline => ProfileVarSyntaxModeResponse::Inline,
+        ProfileVarSyntaxMode::VarsObject => ProfileVarSyntaxModeResponse::VarsObject,
+        ProfileVarSyntaxMode::Mixed => ProfileVarSyntaxModeResponse::Mixed,
+    }
 }
 
 pub(crate) fn build_env_set_summaries(
