@@ -53,8 +53,16 @@ describe('McpView', () => {
     await expect.element(screen.getByTestId('mcp-launcher-preview')).toHaveTextContent(
       '@modelcontextprotocol/server-filesystem'
     );
+    await expect.element(screen.getByTestId('mcp-launcher-preview')).toHaveAttribute(
+      'data-language',
+      'shell'
+    );
     await expect.element(screen.getByTestId('mcp-rendered-config')).toHaveTextContent(
       '"OPENAI_API_KEY": "${OPENAI_API_KEY}"'
+    );
+    await expect.element(screen.getByTestId('mcp-rendered-config')).toHaveAttribute(
+      'data-language',
+      'json'
     );
 
     await screen.getByTestId('mcp-validate-run').click();

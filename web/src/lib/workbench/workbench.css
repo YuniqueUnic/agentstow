@@ -153,7 +153,7 @@
   height: 100vh;
   display: grid;
   grid-template-columns: var(--rail-width, 56px) minmax(0, 1fr);
-  grid-template-rows: 46px 38px minmax(0, 1fr) auto 30px;
+  grid-template-rows: 46px 38px minmax(0, 1fr) 30px;
   overflow: hidden;
   background: color-mix(in oklch, var(--canvas-tint) 92%, var(--canvas));
 }
@@ -175,6 +175,14 @@
   grid-row: 3;
   min-width: 0;
   min-height: 0;
+  display: grid;
+  overflow: hidden;
+}
+
+.workbench-view__content {
+  min-height: 0;
+  min-width: 0;
+  height: 100%;
   overflow: hidden;
 }
 
@@ -1578,10 +1586,14 @@ summary.tree__row::-webkit-details-marker {
 }
 
 .bottom-panel {
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
   border-top: 1px solid color-mix(in oklch, var(--line) 78%, transparent);
   background: color-mix(in oklch, var(--panel-bg) 90%, var(--canvas-deep));
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
 }
 
 .bottom-panel__head {
@@ -1635,23 +1647,30 @@ summary.tree__row::-webkit-details-marker {
 
 .bottom-panel__body {
   min-height: 0;
+  min-width: 0;
   overflow: hidden;
 }
 
 .bottom-panel__body--problems {
+  display: grid;
   padding: 10px 14px 14px;
-  overflow: auto;
 }
 
 .bottom-panel__body--trace {
   min-height: 0;
+  min-width: 0;
   display: grid;
-  grid-template-columns: minmax(280px, 320px) minmax(0, 1fr);
+  grid-template-columns: minmax(300px, 360px) minmax(0, 1fr);
+}
+
+.bottom-panel__body--trace > * {
+  min-width: 0;
 }
 
 .bottom-panel__meta,
 .bottom-panel__events {
   min-height: 0;
+  min-width: 0;
   display: grid;
   grid-template-rows: auto 1fr;
   gap: 12px;
@@ -1747,6 +1766,19 @@ summary.tree__row::-webkit-details-marker {
   justify-items: start;
 }
 
+.inspector-row__value--actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.inspector-row__value-token {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .inspector-section {
   display: grid;
   gap: 10px;
@@ -1826,6 +1858,13 @@ summary.tree__row::-webkit-details-marker {
   min-width: 0;
   display: grid;
   gap: 3px;
+}
+
+.result-row__static {
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+  align-content: start;
 }
 
 .result-row__title {
@@ -2372,7 +2411,7 @@ summary.tree__row::-webkit-details-marker {
 
 .statusbar {
   grid-column: 1 / -1;
-  grid-row: 5;
+  grid-row: 4;
   min-height: 30px;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto minmax(0, auto);
@@ -2528,7 +2567,7 @@ summary.tree__row::-webkit-details-marker {
 @media (max-width: 960px) {
   .workbench {
     grid-template-columns: var(--rail-width, 56px) minmax(0, 1fr);
-    grid-template-rows: 46px 38px minmax(0, 1fr) auto 30px;
+    grid-template-rows: 46px 38px minmax(0, 1fr) 30px;
   }
 
   .vars-editor__row {
@@ -2539,7 +2578,7 @@ summary.tree__row::-webkit-details-marker {
 @media (max-width: 720px) {
   .workbench {
     grid-template-columns: 1fr;
-    grid-template-rows: 46px auto auto 1fr auto auto;
+    grid-template-rows: 46px auto auto 1fr 42px;
   }
 
   .topbar {
@@ -2571,11 +2610,6 @@ summary.tree__row::-webkit-details-marker {
     grid-row: 4;
   }
 
-  .bottom-panel {
-    grid-column: 1;
-    grid-row: 5;
-  }
-
   .bottom-panel__body--trace {
     grid-template-columns: 1fr;
   }
@@ -2586,7 +2620,7 @@ summary.tree__row::-webkit-details-marker {
   }
 
   .statusbar {
-    grid-row: 6;
+    grid-row: 5;
     grid-template-columns: 1fr;
     min-height: 42px;
     padding-block: 4px;

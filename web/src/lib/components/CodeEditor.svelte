@@ -8,7 +8,13 @@
 
   import type { EditorDocumentLanguage } from '$lib/types';
 
-  type ResolvedEditorLanguage = Exclude<EditorDocumentLanguage, 'auto'>;
+  type ResolvedEditorLanguage =
+    | Exclude<EditorDocumentLanguage, 'auto'>
+    | 'jinja-toml'
+    | 'jinja-json'
+    | 'jinja-shell';
+
+  type OverlayLanguage = 'toml' | 'json' | 'shell';
 
   type Props = {
     value: string;
@@ -142,6 +148,8 @@
     { label: '${OPENAI_API_KEY}', detail: 'env placeholder', type: 'variable' }
   ];
 
+  const TEMPLATE_SUFFIXES = ['.tera', '.j2', '.jinja', '.jinja2'] as const;
+
   let {
     value,
     readonly = false,
@@ -179,20 +187,20 @@
     return trimmed ? trimmed.toLowerCase() : null;
   }
 
-  function inferLanguageFromPath(path: string | null | undefined): ResolvedEditorLanguage | null {
-    const normalized = normalizePath(path);
-    if (!normalized) {
-      return null;
+  function stripTemplateSuffix(normalized: string): string | null {
+    for (const suffix of TEMPLATE_SUFFIXES) {
+      if (normalized.endsWith(suffix)) {
+        return normalized.slice(0, -suffix.length);
+      }
     }
 
-    if (
-      normalized.endsWith('.tera') ||
-      normalized.endsWith('.j2') ||
-      normalized.endsWith('.jinja') ||
-      normalized.endsWith('.jinja2')
-    ) {
-      return 'jinja';
-    }
+    return null;
+  }
+
+  function inferHostLanguageFromNormalizedPath(normalized: string): Exclude<
+    ResolvedEditorLanguage,
+    'jinja' | 'jinja-toml' | 'jinja-json' | 'jinja-shell'
+  > | null {
     if (normalized.endsWith('.toml')) {
       return 'toml';
     }
@@ -232,6 +240,30 @@
     }
 
     return null;
+  }
+
+  function inferLanguageFromPath(path: string | null | undefined): ResolvedEditorLanguage | null {
+    const normalized = normalizePath(path);
+    if (!normalized) {
+      return null;
+    }
+
+    const templateBase = stripTemplateSuffix(normalized);
+    if (templateBase) {
+      const hostLanguage = inferHostLanguageFromNormalizedPath(templateBase);
+      if (hostLanguage === 'toml') {
+        return 'jinja-toml';
+      }
+      if (hostLanguage === 'json') {
+        return 'jinja-json';
+      }
+      if (hostLanguage === 'shell') {
+        return 'jinja-shell';
+      }
+      return 'jinja';
+    }
+
+    return inferHostLanguageFromNormalizedPath(normalized);
   }
 
   function looksLikeJson(text: string): boolean {
@@ -294,7 +326,17 @@
       return fromPath;
     }
 
-    if (/\{\{|\{%|\{#/.test(value)) {
+    const hasTemplateSyntax = /\{\{|\{%|\{#/.test(value);
+    if (hasTemplateSyntax) {
+      if (looksLikeJson(value)) {
+        return 'jinja-json';
+      }
+      if (looksLikeToml(value)) {
+        return 'jinja-toml';
+      }
+      if (looksLikeShell(value)) {
+        return 'jinja-shell';
+      }
       return 'jinja';
     }
     if (looksLikeJson(value)) {
@@ -318,6 +360,38 @@
     return Boolean(normalized && (normalized.endsWith('.ts') || normalized.endsWith('.tsx')));
   }
 
+  function mergeCompletionEntries(...groups: CompletionEntry[][]): CompletionEntry[] {
+    const merged = new Map<string, CompletionEntry>();
+
+    for (const group of groups) {
+      for (const entry of group) {
+        if (!merged.has(entry.label)) {
+          merged.set(entry.label, entry);
+        }
+      }
+    }
+
+    return Array.from(merged.values());
+  }
+
+  function overlayPatternsFor(language: OverlayLanguage): DecorationPattern[] {
+    switch (language) {
+      case 'toml':
+        return TOML_PATTERNS;
+      case 'json':
+        return JSON_PATTERNS;
+      case 'shell':
+        return SHELL_PATTERNS;
+    }
+  }
+
+  function buildCompositeJinjaExtensions(
+    deps: LoadedCodeMirror,
+    overlayLanguage: OverlayLanguage
+  ): Extension[] {
+    return [deps.langJinja.jinja(), ...buildRegexHighlightExtension(deps, overlayPatternsFor(overlayLanguage))];
+  }
+
   function buildTheme(
     cm: typeof import('codemirror'),
     theme: 'light' | 'dark'
@@ -326,21 +400,32 @@
       {
         '&.cm-editor': {
           height: '100%',
+          minHeight: '0',
+          minWidth: '0',
+          display: 'flex',
+          flexDirection: 'column',
           background: 'transparent',
           color: 'var(--ink)',
           fontFamily: '"IBM Plex Mono", "SFMono-Regular", monospace',
           fontSize: '13px'
         },
         '.cm-scroller': {
-          overflow: 'auto'
+          overflow: 'auto',
+          minHeight: '0',
+          minWidth: '0',
+          flex: '1 1 auto'
         },
         '.cm-content': {
+          minHeight: '100%',
+          minWidth: '0',
+          boxSizing: 'border-box',
           padding: '16px 18px 36px'
         },
         '.cm-line': {
           padding: '0 8px'
         },
         '.cm-gutters': {
+          minHeight: '100%',
           background: 'transparent',
           border: 'none',
           color: 'color-mix(in oklch, var(--ink-muted) 88%, transparent)'
@@ -458,6 +543,12 @@
     switch (language) {
       case 'jinja':
         return JINJA_COMPLETIONS;
+      case 'jinja-toml':
+        return mergeCompletionEntries(JINJA_COMPLETIONS, TOML_COMPLETIONS);
+      case 'jinja-json':
+        return mergeCompletionEntries(JINJA_COMPLETIONS, JSON_COMPLETIONS);
+      case 'jinja-shell':
+        return mergeCompletionEntries(JINJA_COMPLETIONS, SHELL_COMPLETIONS);
       case 'toml':
         return TOML_COMPLETIONS;
       case 'json':
@@ -478,6 +569,15 @@
     switch (language) {
       case 'jinja':
         extensions.push(deps.langJinja.jinja());
+        break;
+      case 'jinja-toml':
+        extensions.push(...buildCompositeJinjaExtensions(deps, 'toml'));
+        break;
+      case 'jinja-json':
+        extensions.push(...buildCompositeJinjaExtensions(deps, 'json'));
+        break;
+      case 'jinja-shell':
+        extensions.push(...buildCompositeJinjaExtensions(deps, 'shell'));
         break;
       case 'html':
         extensions.push(deps.langHtml.html());
@@ -761,7 +861,11 @@
 <style>
   .editor {
     height: 100%;
+    min-height: 0;
+    min-width: 0;
     position: relative;
+    display: grid;
+    overflow: hidden;
     border-radius: 0;
     background: transparent;
     border: 0;
@@ -770,10 +874,23 @@
 
   .editor__host {
     height: 100%;
+    min-height: 0;
+    min-width: 0;
+    overflow: hidden;
   }
 
   .editor :global(.cm-editor) {
+    height: 100%;
+    min-height: 0;
+    min-width: 0;
     border-radius: 0;
+  }
+
+  .editor :global(.cm-scroller),
+  .editor :global(.cm-content),
+  .editor :global(.cm-gutters) {
+    min-height: 0;
+    min-width: 0;
   }
 
   .editor__loading {

@@ -7,6 +7,7 @@
   } from '$lib/workbench/WorkbenchBottomPanel.svelte';
   import WorkspaceBoot from '$lib/workbench/WorkspaceBoot.svelte';
   import EditorTabs from '$lib/workbench/EditorTabs.svelte';
+  import SplitView from '$lib/components/SplitView.svelte';
   import WorkbenchRail from '$lib/workbench/WorkbenchRail.svelte';
   import WorkbenchTopbar from '$lib/workbench/WorkbenchTopbar.svelte';
   import ArtifactsView from '$lib/workbench/views/ArtifactsView.svelte';
@@ -1511,127 +1512,167 @@
       </div>
 
       <div class="workbench-view">
-        {#if view === 'artifacts'}
-          <ArtifactsView
-            summary={summary}
-            selectedProfile={selectedProfile}
-            onSelectProfile={selectProfile}
-            onFocusArtifact={focusArtifact}
-            onOpenTarget={openTargetInLinks}
-            onRefreshWorkspace={bootstrapConfigured}
-            onSourceSaved={async () => {
-              await Promise.all([refreshWorkspaceGit(), refreshWatchStatus()]);
-            }}
-            requestedArtifactId={artifactRequestId}
-            onRequestHandled={(id) => {
-              if (artifactRequestId === id) {
-                artifactRequestId = null;
-              }
-            }}
-            requestedManifestInsert={manifestInsertRequest}
-            onManifestInsertHandled={(kind) => {
-              if (manifestInsertRequest === kind) {
-                manifestInsertRequest = null;
-              }
-            }}
-            shortcutsEnabled={!paletteOpen}
-            setStatusLine={(next) => (statusLine = next)}
-            setErrorMessage={(next) => (errorMessage = next)}
-          />
-        {:else if view === 'links'}
-          <LinksView
-            targets={targets}
-            linkStatus={linkStatus}
-            selectedTargetId={selectedTargetId}
-            selectedTargets={selectedTargets}
-            linkSearch={linkSearch}
-            linkUnhealthyOnly={linkUnhealthyOnly}
-            linkForce={linkForce}
-            linkScope={linkScope}
-            linkOp={linkOp}
-            linkOpTitle={linkOpTitle}
-            activeTarget={activeTarget}
-            activeLinkStatus={activeLinkStatus}
-            selectedProfile={selectedProfile}
-            busyLinks={busy.links}
-            busyLinkOp={busy.link_op}
-            errorMessage={errorMessage}
-            statusLine={statusLine}
-            onLinkSearch={(next) => (linkSearch = next)}
-            onLinkUnhealthyOnly={(next) => (linkUnhealthyOnly = next)}
-            onLinkForce={(next) => (linkForce = next)}
-            onLinkScope={(next) => (linkScope = next)}
-            onSelectTarget={openTargetDocument}
-            onToggleTarget={toggleTargetSelection}
-            onRefreshLinkStatus={refreshLinkStatus}
-            onCopyToClipboard={copyToClipboard}
-            onRunLinkOperation={runLinkOperation}
-          />
-        {:else if view === 'env'}
-          <EnvView
-            envSets={envSets}
-            selectedEnvSet={selectedEnvSet}
-            activeEnvSet={activeEnvSet}
-            selectedShell={selectedShell}
-            shellChoices={shellChoices}
-            envScript={envScript}
-            busyEnvEmit={busy.env_emit}
-            errorMessage={errorMessage}
-            statusLine={statusLine}
-            onSelectEnvSet={openEnvDocument}
-            onSelectShell={(shell) => (selectedShell = shell)}
-            onEnvEmit={handleEnvEmit}
-            onCopyToClipboard={copyToClipboard}
-            onOpenUsageRef={openEnvUsageRef}
-            onOpenManifestEditor={openManifestEditor}
-            onCreateManifestObject={requestManifestInsert}
-          />
-        {:else if view === 'scripts'}
-          <ScriptsView
-            scripts={scripts}
-            selectedScript={selectedScript}
-            activeScript={activeScript}
-            scriptStdin={scriptStdin}
-            scriptRun={scriptRun}
-            busyScriptRun={busy.script_run}
-            errorMessage={errorMessage}
-            statusLine={statusLine}
-            onSelectScript={openScriptDocument}
-            onScriptStdin={(next) => (scriptStdin = next)}
-            onScriptRun={handleScriptRun}
-            onCopyToClipboard={copyToClipboard}
-            onOpenManifestEditor={openManifestEditor}
-            onCreateManifestObject={requestManifestInsert}
-          />
-        {:else if view === 'impact'}
-          <ImpactView
-            impactMode={impactMode}
-            impact={impact}
-            selectedArtifact={selectedArtifact}
-            selectedProfile={selectedProfile}
-            busyImpact={busy.impact}
-            errorMessage={errorMessage}
-            statusLine={statusLine}
-            onSetImpactMode={setImpactMode}
-            onRefreshImpact={refreshImpactAnalysis}
-            onOpenTarget={openTargetInLinks}
-            onOpenArtifact={requestOpenArtifact}
-            onOpenProfile={openProfileInArtifacts}
-            onCopyToClipboard={copyToClipboard}
-          />
-        {:else if view === 'mcp'}
-          <McpView
-            mcpServers={mcpServers}
-            selectedMcpServerId={selectedMcpServerId}
-            activeMcpServer={activeMcpServer}
-            errorMessage={errorMessage}
-            statusLine={statusLine}
-            setErrorMessage={(next) => (errorMessage = next)}
-            onSelectMcpServer={openMcpDocument}
-            onCopyToClipboard={copyToClipboard}
-            onOpenManifestEditor={openManifestEditor}
-            onCreateManifestObject={requestManifestInsert}
-          />
+        {#snippet currentView()}
+          {#if view === 'artifacts'}
+            <ArtifactsView
+              summary={summary}
+              selectedProfile={selectedProfile}
+              onSelectProfile={selectProfile}
+              onFocusArtifact={focusArtifact}
+              onOpenTarget={openTargetInLinks}
+              onRefreshWorkspace={bootstrapConfigured}
+              onSourceSaved={async () => {
+                await Promise.all([refreshWorkspaceGit(), refreshWatchStatus()]);
+              }}
+              requestedArtifactId={artifactRequestId}
+              onRequestHandled={(id) => {
+                if (artifactRequestId === id) {
+                  artifactRequestId = null;
+                }
+              }}
+              requestedManifestInsert={manifestInsertRequest}
+              onManifestInsertHandled={(kind) => {
+                if (manifestInsertRequest === kind) {
+                  manifestInsertRequest = null;
+                }
+              }}
+              shortcutsEnabled={!paletteOpen}
+              setStatusLine={(next) => (statusLine = next)}
+              setErrorMessage={(next) => (errorMessage = next)}
+            />
+          {:else if view === 'links'}
+            <LinksView
+              targets={targets}
+              linkStatus={linkStatus}
+              selectedTargetId={selectedTargetId}
+              selectedTargets={selectedTargets}
+              linkSearch={linkSearch}
+              linkUnhealthyOnly={linkUnhealthyOnly}
+              linkForce={linkForce}
+              linkScope={linkScope}
+              linkOp={linkOp}
+              linkOpTitle={linkOpTitle}
+              activeTarget={activeTarget}
+              activeLinkStatus={activeLinkStatus}
+              selectedProfile={selectedProfile}
+              busyLinks={busy.links}
+              busyLinkOp={busy.link_op}
+              errorMessage={errorMessage}
+              statusLine={statusLine}
+              onLinkSearch={(next) => (linkSearch = next)}
+              onLinkUnhealthyOnly={(next) => (linkUnhealthyOnly = next)}
+              onLinkForce={(next) => (linkForce = next)}
+              onLinkScope={(next) => (linkScope = next)}
+              onSelectTarget={openTargetDocument}
+              onToggleTarget={toggleTargetSelection}
+              onRefreshLinkStatus={refreshLinkStatus}
+              onCopyToClipboard={copyToClipboard}
+              onRunLinkOperation={runLinkOperation}
+            />
+          {:else if view === 'env'}
+            <EnvView
+              envSets={envSets}
+              selectedEnvSet={selectedEnvSet}
+              activeEnvSet={activeEnvSet}
+              selectedShell={selectedShell}
+              shellChoices={shellChoices}
+              envScript={envScript}
+              busyEnvEmit={busy.env_emit}
+              errorMessage={errorMessage}
+              statusLine={statusLine}
+              onSelectEnvSet={openEnvDocument}
+              onSelectShell={(shell) => (selectedShell = shell)}
+              onEnvEmit={handleEnvEmit}
+              onCopyToClipboard={copyToClipboard}
+              onOpenUsageRef={openEnvUsageRef}
+              onOpenManifestEditor={openManifestEditor}
+              onCreateManifestObject={requestManifestInsert}
+            />
+          {:else if view === 'scripts'}
+            <ScriptsView
+              scripts={scripts}
+              selectedScript={selectedScript}
+              activeScript={activeScript}
+              scriptStdin={scriptStdin}
+              scriptRun={scriptRun}
+              busyScriptRun={busy.script_run}
+              errorMessage={errorMessage}
+              statusLine={statusLine}
+              onSelectScript={openScriptDocument}
+              onScriptStdin={(next) => (scriptStdin = next)}
+              onScriptRun={handleScriptRun}
+              onCopyToClipboard={copyToClipboard}
+              onOpenManifestEditor={openManifestEditor}
+              onCreateManifestObject={requestManifestInsert}
+            />
+          {:else if view === 'impact'}
+            <ImpactView
+              impactMode={impactMode}
+              impact={impact}
+              selectedArtifact={selectedArtifact}
+              selectedProfile={selectedProfile}
+              busyImpact={busy.impact}
+              errorMessage={errorMessage}
+              statusLine={statusLine}
+              onSetImpactMode={setImpactMode}
+              onRefreshImpact={refreshImpactAnalysis}
+              onOpenTarget={openTargetInLinks}
+              onOpenArtifact={requestOpenArtifact}
+              onOpenProfile={openProfileInArtifacts}
+              onCopyToClipboard={copyToClipboard}
+            />
+          {:else if view === 'mcp'}
+            <McpView
+              mcpServers={mcpServers}
+              selectedMcpServerId={selectedMcpServerId}
+              activeMcpServer={activeMcpServer}
+              errorMessage={errorMessage}
+              statusLine={statusLine}
+              setErrorMessage={(next) => (errorMessage = next)}
+              onSelectMcpServer={openMcpDocument}
+              onCopyToClipboard={copyToClipboard}
+              onOpenManifestEditor={openManifestEditor}
+              onCreateManifestObject={requestManifestInsert}
+            />
+          {/if}
+        {/snippet}
+
+        {#if bottomPanelOpen}
+          <SplitView
+            autoSaveId="workbench:main-bottom"
+            direction="vertical"
+            initialLeftPct={76}
+            minLeftPx={280}
+            minRightPx={180}
+          >
+            {#snippet left()}
+              <div class="workbench-view__content">
+                {@render currentView()}
+              </div>
+            {/snippet}
+
+            {#snippet right()}
+              <WorkbenchBottomPanel
+                activeTab={bottomPanelTab}
+                errorMessage={errorMessage}
+                issues={summary?.issues ?? []}
+                watchStatus={watchStatus}
+                busyWatch={busy.watch}
+                onSelectTab={(tab) => {
+                  bottomPanelTab = tab;
+                  if (tab === 'trace') {
+                    void refreshTracePanel();
+                  }
+                }}
+                onRefreshTrace={refreshTracePanel}
+                onClose={() => (bottomPanelOpen = false)}
+              />
+            {/snippet}
+          </SplitView>
+        {:else}
+          <div class="workbench-view__content">
+            {@render currentView()}
+          </div>
         {/if}
       </div>
 
@@ -1640,24 +1681,6 @@
         commands={paletteCommands}
         onClose={() => (paletteOpen = false)}
       />
-
-      {#if bottomPanelOpen}
-        <WorkbenchBottomPanel
-          activeTab={bottomPanelTab}
-          errorMessage={errorMessage}
-          issues={summary?.issues ?? []}
-          watchStatus={watchStatus}
-          busyWatch={busy.watch}
-          onSelectTab={(tab) => {
-            bottomPanelTab = tab;
-            if (tab === 'trace') {
-              void refreshTracePanel();
-            }
-          }}
-          onRefreshTrace={refreshTracePanel}
-          onClose={() => (bottomPanelOpen = false)}
-        />
-      {/if}
 
       <footer class="statusbar" aria-live="polite">
         <div class="statusbar__group statusbar__group--context">

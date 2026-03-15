@@ -36,6 +36,8 @@
     shellChoices,
     envScript,
     busyEnvEmit,
+    errorMessage,
+    statusLine,
     onSelectEnvSet,
     onSelectShell,
     onEnvEmit,
@@ -54,6 +56,17 @@
       2
     )
   );
+
+  const bindingGuideSnippet = $derived.by(() => {
+    const envSetId = activeEnvSet?.id ?? 'default';
+    const key = activeEnvSet?.vars[0]?.key ?? 'OPENAI_API_KEY';
+
+    return `[env_sets.${envSetId}]
+vars = [
+  { key = "${key}", binding = { kind = "env", var = "${key}" } },
+  { key = "INLINE_EXAMPLE", binding = { kind = "literal", value = "replace-me" } }
+]`;
+  });
 
   function refKindLabel(ref: EnvUsageRefResponse): string {
     if (ref.owner_kind === 'env_set') {
@@ -171,11 +184,18 @@
             <p class="stack-note">
               当前 env set 会按所选 shell 渲染激活脚本，便于直接复制或在终端中执行。
             </p>
+            {#if errorMessage}
+              <p class="notice notice--error">{errorMessage}</p>
+            {:else if statusLine}
+              <p class="stack-note">{statusLine}</p>
+            {/if}
             <div class="panel__body panel__body--flush">
               {#if !activeEnvSet}
                 <p class="empty empty--flush">（暂无 env set，可先在 manifest 中声明）</p>
               {:else}
-                <CodeEditor value={envScript?.text ?? ''} readonly={true} />
+                {#key envScript?.text ?? ''}
+                  <CodeEditor value={envScript?.text ?? ''} readonly={true} documentLanguage="shell" />
+                {/key}
               {/if}
             </div>
           </div>
@@ -220,6 +240,38 @@
 
               <div class="inspector-section">
                 <div class="section__title">
+                  <span>Binding Modes</span>
+                  <strong>env / literal</strong>
+                </div>
+                <p class="stack-note">
+                  `env` 会读取启动 `agentstow serve` 的宿主进程环境；如果你在服务启动后才修改环境变量，需要重启服务才能重新探测。
+                </p>
+                <p class="stack-note">
+                  `literal` 会把值直接写进 manifest，适合开发期快速验证；当前不会自动加载 workspace 下的 `.env` 文件。
+                </p>
+                <div class="panel__body panel__body--flush">
+                  {#key bindingGuideSnippet}
+                    <CodeEditor
+                      value={bindingGuideSnippet}
+                      readonly={true}
+                      documentLanguage="toml"
+                      testId="env-binding-guide"
+                    />
+                  {/key}
+                </div>
+                <div class="chips chips--tight">
+                  <button
+                    class="chip"
+                    type="button"
+                    onclick={() => void onCopyToClipboard(bindingGuideSnippet, 'env binding snippet')}
+                  >
+                    复制 binding 示例
+                  </button>
+                </div>
+              </div>
+
+              <div class="inspector-section">
+                <div class="section__title">
                   <span>Bindings</span>
                   <strong>{activeEnvSet.vars.length}</strong>
                 </div>
@@ -257,11 +309,19 @@
 
               <div class="inspector-section">
                 <div class="section__title">
-                  <span>Host Env Object</span>
-                  <strong>json</strong>
+                  <span>Placeholder Preview</span>
+                  <strong>masked</strong>
                 </div>
-                <div class="terminal">
-                  <pre class="terminal__screen" data-testid="env-object-preview">{envObjectPreview}</pre>
+                <p class="stack-note">这里只展示渲染占位，不回显真实 secret 值。</p>
+                <div class="panel__body panel__body--flush">
+                  {#key envObjectPreview}
+                    <CodeEditor
+                      value={envObjectPreview}
+                      readonly={true}
+                      documentLanguage="json"
+                      testId="env-object-preview"
+                    />
+                  {/key}
                 </div>
                 <div class="chips chips--tight">
                   <button
@@ -270,7 +330,7 @@
                     type="button"
                     onclick={() => void onCopyToClipboard(envObjectPreview, 'env object')}
                   >
-                    复制 env object
+                    复制 preview JSON
                   </button>
                 </div>
               </div>

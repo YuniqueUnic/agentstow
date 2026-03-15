@@ -199,8 +199,10 @@
           {#each detail.merged_vars as item (item.key)}
             <div class="inspector-row">
               <span class="inspector-row__label">{item.key}</span>
-              <div class="inspector-row__value inspector-row__value--stack">
-                <span class="inspector-row__value inspector-row__value--mono">{item.value_json}</span>
+              <div class="inspector-row__value inspector-row__value--actions">
+                <span class="inspector-row__value inspector-row__value--mono inspector-row__value-token">
+                  {item.value_json}
+                </span>
                 <button
                   class="chip"
                   type="button"

@@ -1,4 +1,7 @@
 <script lang="ts">
+  import { untrack } from 'svelte';
+
+  import CodeEditor from '$lib/components/CodeEditor.svelte';
   import SplitView from '$lib/components/SplitView.svelte';
 
   import { ApiClientError, renderMcpServer, testMcpServer, validateMcpServer } from '$lib/api/client';
@@ -92,7 +95,6 @@
 
     busyRender = true;
     localError = null;
-    renderState = null;
     if (options.resetChecks ?? false) {
       validateState = null;
       testState = null;
@@ -100,18 +102,18 @@
 
     try {
       const rendered = await renderMcpServer(serverId);
-      if (token !== renderToken || activeMcpServer?.id !== serverId) {
+      if (token !== renderToken) {
         return;
       }
       renderState = rendered;
     } catch (error) {
-      if (token !== renderToken || activeMcpServer?.id !== serverId) {
+      if (token !== renderToken) {
         return;
       }
       renderState = null;
       localError = describeError(error, '无法渲染 MCP 配置。');
     } finally {
-      if (token === renderToken && activeMcpServer?.id === serverId) {
+      if (token === renderToken) {
         busyRender = false;
       }
     }
@@ -132,18 +134,18 @@
     localError = null;
     try {
       const result = await validateMcpServer(serverId);
-      if (token !== validateToken || activeMcpServer?.id !== serverId) {
+      if (token !== validateToken) {
         return;
       }
       validateState = result;
     } catch (error) {
-      if (token !== validateToken || activeMcpServer?.id !== serverId) {
+      if (token !== validateToken) {
         return;
       }
       validateState = null;
       localError = describeError(error, 'MCP 校验失败。');
     } finally {
-      if (token === validateToken && activeMcpServer?.id === serverId) {
+      if (token === validateToken) {
         busyValidate = false;
       }
     }
@@ -160,18 +162,18 @@
     localError = null;
     try {
       const result = await testMcpServer(serverId);
-      if (token !== testToken || activeMcpServer?.id !== serverId) {
+      if (token !== testToken) {
         return;
       }
       testState = result;
     } catch (error) {
-      if (token !== testToken || activeMcpServer?.id !== serverId) {
+      if (token !== testToken) {
         return;
       }
       testState = null;
       localError = describeError(error, 'MCP dry-run 测试失败。');
     } finally {
-      if (token === testToken && activeMcpServer?.id === serverId) {
+      if (token === testToken) {
         busyTest = false;
       }
     }
@@ -182,7 +184,10 @@
   });
 
   $effect(() => {
-    void loadRenderState(activeMcpServer?.id ?? null, { resetChecks: true });
+    const serverId = activeMcpServer?.id ?? null;
+    untrack(() => {
+      void loadRenderState(serverId, { resetChecks: true });
+    });
   });
 
   const launcherPreview = $derived(renderState?.launcher_preview ?? '');
@@ -371,9 +376,14 @@
                     </div>
 
                     <div class="terminal">
-                      <pre class="terminal__screen" data-testid="mcp-launcher-preview">
-                        {busyRender && !launcherPreview ? '正在重新渲染 launcher preview…' : launcherPreview || '（暂无 launcher preview）'}
-                      </pre>
+                      {#key launcherPreview || `launcher:${busyRender ? 'busy' : 'idle'}`}
+                        <CodeEditor
+                          value={launcherPreview || (busyRender ? '正在重新渲染 launcher preview…' : '（暂无 launcher preview）')}
+                          readonly={true}
+                          documentLanguage="shell"
+                          testId="mcp-launcher-preview"
+                        />
+                      {/key}
                     </div>
                   </div>
 
@@ -384,11 +394,14 @@
                     </div>
 
                     <div class="terminal">
-                      <pre class="terminal__screen" data-testid="mcp-rendered-config">
-                        {busyRender && !renderedConfigPreview
-                          ? '正在重新渲染 MCP config…'
-                          : renderedConfigPreview || '（暂无 rendered config preview）'}
-                      </pre>
+                      {#key renderedConfigPreview || `config:${busyRender ? 'busy' : 'idle'}`}
+                        <CodeEditor
+                          value={renderedConfigPreview || (busyRender ? '正在重新渲染 MCP config…' : '（暂无 rendered config preview）')}
+                          readonly={true}
+                          documentLanguage="json"
+                          testId="mcp-rendered-config"
+                        />
+                      {/key}
                     </div>
                   </div>
                 {/if}

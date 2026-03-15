@@ -89,6 +89,8 @@ method = "copy"
       const id = nextId('default', envSetIds);
       return section(`
 [env_sets.${id}]
+# kind = "env" 会读取 agentstow serve 进程当前继承到的宿主环境；修改后需要重启服务重新探测。
+# 开发期如果想直接写值，可改成：{ key = "INLINE_EXAMPLE", binding = { kind = "literal", value = "replace-me" } }
 vars = [
   { key = "${firstEnvKey}", binding = { kind = "env", var = "${firstEnvKey}" } }
 ]

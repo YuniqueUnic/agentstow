@@ -86,12 +86,19 @@
     busyPreview: boolean;
   };
 
+  type PendingArtifactBootstrap = {
+    artifactId: string;
+    sourcePath: string;
+    content: string;
+  };
+
   const MANIFEST_DOC_ID = '$manifest';
 
   let openTabs = $state<string[]>([]);
   let activeTab = $state<string | null>(null);
   let editors = $state<Record<string, EditorState>>({});
   let rightMode = $state<'preview' | 'diff'>('preview');
+  let previewPaneOpen = $state(true);
   let autoOpened = $state(false);
   let artifactSearch = $state('');
   let tabMenu = $state<{ id: string; x: number; y: number } | null>(null);
@@ -113,6 +120,7 @@
   let rollbackBusy = $state(false);
   let profileVarsSaving = $state(false);
   let manifestInsertKind = $state<ManifestInsertKind>('profile');
+  let pendingArtifactBootstrap = $state<PendingArtifactBootstrap | null>(null);
 
   const fileArtifacts = $derived((summary?.artifacts ?? []).filter((a) => a.kind === 'file'));
   const dirArtifacts = $derived((summary?.artifacts ?? []).filter((a) => a.kind === 'dir'));
@@ -177,6 +185,85 @@
     }
 
     return fileArtifacts.find((artifact) => artifact.id === documentId)?.source_path ?? null;
+  }
+
+  function parseInsertedArtifactSnippet(
+    snippet: string
+  ): Pick<PendingArtifactBootstrap, 'artifactId' | 'sourcePath'> | null {
+    const artifactMatch = snippet.match(/\[artifacts\.([^\]\n]+)]/);
+    const sourceMatch = snippet.match(/^\s*source = "([^"]+)"/m);
+
+    if (!artifactMatch?.[1] || !sourceMatch?.[1]) {
+      return null;
+    }
+
+    return {
+      artifactId: artifactMatch[1],
+      sourcePath: sourceMatch[1]
+    };
+  }
+
+  function defaultArtifactSourceContent(sourcePath: string, artifactId: string): string {
+    const normalized = sourcePath.toLowerCase();
+
+    if (normalized.endsWith('.json') || normalized.endsWith('.json.tera')) {
+      return `{
+  "artifact": "${artifactId}",
+  "name": "{{ name }}"
+}
+`;
+    }
+
+    if (normalized.endsWith('.toml') || normalized.endsWith('.toml.tera')) {
+      return `[artifact]
+id = "${artifactId}"
+name = "{{ name }}"
+`;
+    }
+
+    if (normalized.endsWith('.sh') || normalized.endsWith('.sh.tera')) {
+      return `#!/usr/bin/env bash
+
+echo "Hello {{ name }}"
+`;
+    }
+
+    if (normalized.endsWith('.md') || normalized.endsWith('.md.tera')) {
+      return `# ${artifactId}
+
+Hello {{ name }}.
+`;
+    }
+
+    return 'Hello {{ name }}\n';
+  }
+
+  async function bootstrapPendingArtifactSource(): Promise<void> {
+    const pending = pendingArtifactBootstrap;
+    if (!pending) {
+      return;
+    }
+
+    pendingArtifactBootstrap = null;
+
+    try {
+      const created = await updateArtifactSource(pending.artifactId, pending.content);
+      editors[pending.artifactId] = {
+        source: created,
+        editorText: created.content,
+        previewText: '',
+        dirty: false,
+        busySource: false,
+        busySave: false,
+        busyPreview: false
+      };
+      openDocument(pending.artifactId);
+      previewPaneOpen = true;
+      await onSourceSaved?.();
+      setStatusLine(`已创建 ${pending.artifactId} source：${pending.sourcePath}`);
+    } catch (error) {
+      setErrorMessage(describeError(error, `已保存 manifest，但初始化 ${pending.artifactId} source 失败。`));
+    }
   }
 
   function validateAsOf(
@@ -304,10 +391,18 @@
     }
 
     const snippet = buildManifestSnippet(kind, summary);
+    const artifactBootstrap = kind === 'artifact' ? parseInsertedArtifactSnippet(snippet) : null;
     const base = st.editorText.trimEnd();
     st.editorText = `${base}${base ? '\n\n' : ''}${snippet}`;
     st.dirty = savedContentOf(st.source) !== st.editorText;
     activeTab = MANIFEST_DOC_ID;
+    pendingArtifactBootstrap = artifactBootstrap
+      ? {
+          artifactId: artifactBootstrap.artifactId,
+          sourcePath: artifactBootstrap.sourcePath,
+          content: defaultArtifactSourceContent(artifactBootstrap.sourcePath, artifactBootstrap.artifactId)
+        }
+      : null;
     setErrorMessage(null);
     setStatusLine(`已插入 ${manifestInsertLabel(kind)} 模板，保存后生效。`);
   }
@@ -386,6 +481,7 @@
       setStatusLine(activeTab === MANIFEST_DOC_ID ? '已保存 manifest。' : '已保存 source。');
       if (activeTab === MANIFEST_DOC_ID) {
         await onRefreshWorkspace?.();
+        await bootstrapPendingArtifactSource();
       } else {
         await onSourceSaved?.();
       }
@@ -408,6 +504,7 @@
     st.busyPreview = true;
     setErrorMessage(null);
     try {
+      previewPaneOpen = true;
       if (activeTab === MANIFEST_DOC_ID) {
         st.previewText =
           'Manifest editor\n\n在这里直接编辑 workspace 的 profiles / artifacts / targets / env_sets / scripts / mcp_servers。\n保存后刷新左侧资源树，即可看到新增或变更的对象。';
@@ -551,6 +648,7 @@
       gitCompare = compare;
       selectedGitRevision = revision;
       rightMode = 'diff';
+      previewPaneOpen = true;
       setStatusLine(`已加载 ${compare.base_label} -> ${compare.head_label} 的 Git 对比。`);
     } catch (error) {
       if (token !== gitCompareToken || activeTab !== documentId) {
@@ -1049,6 +1147,14 @@
             class="ui-button ui-button--subtle"
             disabled={!activeTab}
             type="button"
+            onclick={() => (previewPaneOpen = !previewPaneOpen)}
+          >
+            {previewPaneOpen ? '隐藏 Preview' : '显示 Preview'}
+          </button>
+          <button
+            class="ui-button ui-button--subtle"
+            disabled={!activeTab}
+            type="button"
             onclick={closeActiveArtifact}
           >
             关闭
@@ -1057,6 +1163,97 @@
       </div>
 
       <div class="canvas__body">
+        {#snippet sourcePane()}
+          <div class="pane">
+            <div class="pane__title">
+              <div class="pane__title-row">
+                <span>Source</span>
+                <EditorTabs
+                  tabs={tabsModel}
+                  active={activeTab}
+                  onChange={(next) => {
+                    activeTab = next;
+                  }}
+                  onClose={(id) => closeArtifactTab(id)}
+                  onReorder={(nextOrder) => reorderTabs(nextOrder)}
+                  onOpenContextMenu={(id, x, y) => openTabMenu(id, x, y)}
+                />
+              </div>
+            </div>
+            <div class="pane__body">
+              {#if !activeTab}
+                <p class="muted">（请选择一个 artifact）</p>
+              {:else if activeEditor?.busySource}
+                <p class="muted">读取中…</p>
+              {:else}
+                {#key `${activeTab}:${activeSourcePath ?? 'unresolved'}`}
+                  <CodeEditor
+                    testId="artifact-source-editor"
+                    value={activeEditor?.editorText ?? ''}
+                    documentLanguage={activeTab === MANIFEST_DOC_ID ? 'toml' : 'auto'}
+                    documentPath={activeSourcePath}
+                    onChange={(next) => {
+                      if (!activeTab) {
+                        return;
+                      }
+                      const st = editors[activeTab];
+                      if (!st) {
+                        return;
+                      }
+                      st.editorText = next;
+                      st.dirty = savedContentOf(st.source) !== next;
+                    }}
+                  />
+                {/key}
+              {/if}
+            </div>
+          </div>
+        {/snippet}
+
+        {#snippet previewPane()}
+          <div class="pane">
+            <div class="pane__title">
+              <span>Preview</span>
+              <div class="chips chips--tight" aria-label="Preview actions">
+                {#if gitCompare}
+                  <span class="pill pill--warn mono">{gitCompare.base_revision.slice(0, 7)}</span>
+                  <button class="chip" onclick={clearGitCompare} type="button">
+                    返回编辑差异
+                  </button>
+                {/if}
+                <button class="chip" type="button" onclick={() => (previewPaneOpen = false)}>
+                  收起 Preview
+                </button>
+              </div>
+            </div>
+            <div class="pane__body">
+              <Tabs.Root value={rightMode} onValueChange={(next) => (rightMode = next as typeof rightMode)}>
+                <Tabs.List class="tabs" aria-label="Preview mode">
+                  <Tabs.Trigger class="tab" value="preview">Rendered</Tabs.Trigger>
+                  <Tabs.Trigger class="tab" value="diff">Diff</Tabs.Trigger>
+                </Tabs.List>
+
+                <Tabs.Content class="tabs__panel" value="preview">
+                  <OutputViewer text={activeEditor?.previewText || '（暂无预览）'} mode={previewMode} />
+                </Tabs.Content>
+
+                <Tabs.Content class="tabs__panel" value="diff">
+                  {#if gitCompare && activeEditor?.dirty}
+                    <p class="stack-note">当前 Git 对比基于已保存 worktree，未保存编辑不会反映在右侧内容中。</p>
+                  {/if}
+                  <DiffViewer
+                    testId="artifact-diff-viewer"
+                    original={diffOriginalText}
+                    modified={diffModifiedText}
+                    fromLabel={diffFromLabel}
+                    toLabel={diffToLabel}
+                  />
+                </Tabs.Content>
+              </Tabs.Root>
+            </div>
+          </div>
+        {/snippet}
+
         <SplitView
           autoSaveId="workbench:artifacts:inspector"
           initialLeftPct={72}
@@ -1065,100 +1262,26 @@
         >
           {#snippet left()}
             <div class="split surface">
-              <SplitView
-                autoSaveId="workbench:artifacts:shell"
-                initialLeftPct={52}
-                minLeftPx={360}
-                minRightPx={360}
-              >
-                {#snippet left()}
-                  <div class="pane">
-                    <div class="pane__title">
-                      <div class="pane__title-row">
-                        <span>Source</span>
-                        <EditorTabs
-                          tabs={tabsModel}
-                          active={activeTab}
-                          onChange={(next) => {
-                            activeTab = next;
-                          }}
-                          onClose={(id) => closeArtifactTab(id)}
-                          onReorder={(nextOrder) => reorderTabs(nextOrder)}
-                          onOpenContextMenu={(id, x, y) => openTabMenu(id, x, y)}
-                        />
-                      </div>
-                    </div>
-                    <div class="pane__body">
-                      {#if !activeTab}
-                        <p class="muted">（请选择一个 artifact）</p>
-                      {:else if activeEditor?.busySource}
-                        <p class="muted">读取中…</p>
-                      {:else}
-                        {#key `${activeTab}:${activeSourcePath ?? 'unresolved'}`}
-                          <CodeEditor
-                            testId="artifact-source-editor"
-                            value={activeEditor?.editorText ?? ''}
-                            documentLanguage={activeTab === MANIFEST_DOC_ID ? 'toml' : 'auto'}
-                            documentPath={activeSourcePath}
-                            onChange={(next) => {
-                              if (!activeTab) {
-                                return;
-                              }
-                              const st = editors[activeTab];
-                              if (!st) {
-                                return;
-                              }
-                              st.editorText = next;
-                              st.dirty = savedContentOf(st.source) !== next;
-                            }}
-                          />
-                        {/key}
-                      {/if}
-                    </div>
-                  </div>
-                {/snippet}
+              {#if previewPaneOpen}
+                <SplitView
+                  autoSaveId="workbench:artifacts:shell"
+                  initialLeftPct={52}
+                  minLeftPx={360}
+                  minRightPx={360}
+                >
+                  {#snippet left()}
+                    {@render sourcePane()}
+                  {/snippet}
 
-                {#snippet right()}
-                  <div class="pane">
-                    <div class="pane__title">
-                      <span>Preview</span>
-                      {#if gitCompare}
-                        <div class="chips chips--tight" aria-label="Git compare actions">
-                          <span class="pill pill--warn mono">{gitCompare.base_revision.slice(0, 7)}</span>
-                          <button class="chip" onclick={clearGitCompare} type="button">
-                            返回编辑差异
-                          </button>
-                        </div>
-                      {/if}
-                    </div>
-                    <div class="pane__body">
-                      <Tabs.Root value={rightMode} onValueChange={(next) => (rightMode = next as typeof rightMode)}>
-                        <Tabs.List class="tabs" aria-label="Preview mode">
-                          <Tabs.Trigger class="tab" value="preview">Rendered</Tabs.Trigger>
-                          <Tabs.Trigger class="tab" value="diff">Diff</Tabs.Trigger>
-                        </Tabs.List>
-
-                        <Tabs.Content class="tabs__panel" value="preview">
-                          <OutputViewer text={activeEditor?.previewText || '（暂无预览）'} mode={previewMode} />
-                        </Tabs.Content>
-
-                        <Tabs.Content class="tabs__panel" value="diff">
-                          {#if gitCompare && activeEditor?.dirty}
-                            <p class="stack-note">当前 Git 对比基于已保存 worktree，未保存编辑不会反映在右侧内容中。</p>
-                          {/if}
-                          <DiffViewer
-                            testId="artifact-diff-viewer"
-                            original={diffOriginalText}
-                            modified={diffModifiedText}
-                            fromLabel={diffFromLabel}
-                            toLabel={diffToLabel}
-                          />
-                        </Tabs.Content>
-                      </Tabs.Root>
-                    </div>
-                  </div>
-                {/snippet}
-              </SplitView>
+                  {#snippet right()}
+                    {@render previewPane()}
+                  {/snippet}
+                </SplitView>
+              {:else}
+                <div class="workspace-stack">
+                  {@render sourcePane()}
+                </div>
+              {/if}
             </div>
           {/snippet}
 
