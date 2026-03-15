@@ -2,6 +2,7 @@
   import { onDestroy, onMount } from 'svelte';
 
   import type { Compartment as CompartmentType } from '@codemirror/state';
+  import type { ViewUpdate } from '@codemirror/view';
   import type { EditorView as EditorViewType } from 'codemirror';
 
   type Props = {
@@ -15,12 +16,111 @@
   let host: HTMLDivElement | null = null;
   let view: EditorViewType | null = null;
   let lastFromEditor = '';
+  let activeTheme: 'light' | 'dark' = 'dark';
 
   let editable: CompartmentType | null = null;
+  let themeConfig: CompartmentType | null = null;
   let cmModule: typeof import('codemirror') | null = null;
   let loading = $state(true);
   let loadError = $state<string | null>(null);
   let alive = true;
+  let themeObserver: MutationObserver | null = null;
+  let mediaQuery: MediaQueryList | null = null;
+
+  function readResolvedTheme(): 'light' | 'dark' {
+    if (typeof document === 'undefined') {
+      return 'dark';
+    }
+
+    const attr = document.documentElement.dataset.theme;
+    if (attr === 'light' || attr === 'dark') {
+      return attr;
+    }
+
+    if (
+      typeof window !== 'undefined' &&
+      typeof window.matchMedia === 'function' &&
+      window.matchMedia('(prefers-color-scheme: dark)').matches
+    ) {
+      return 'dark';
+    }
+
+    return 'light';
+  }
+
+  function buildTheme(
+    cm: typeof import('codemirror'),
+    theme: 'light' | 'dark'
+  ): ReturnType<typeof cm.EditorView.theme> {
+    return cm.EditorView.theme(
+      {
+        '&.cm-editor': {
+          height: '100%',
+          background: 'transparent',
+          color: 'var(--ink)',
+          fontFamily: '"IBM Plex Mono", "SFMono-Regular", monospace',
+          fontSize: '13px'
+        },
+        '.cm-scroller': {
+          overflow: 'auto'
+        },
+        '.cm-content': {
+          padding: '16px 18px 36px'
+        },
+        '.cm-line': {
+          padding: '0 8px'
+        },
+        '.cm-gutters': {
+          background: 'transparent',
+          border: 'none',
+          color: 'color-mix(in oklch, var(--ink-muted) 88%, transparent)'
+        },
+        '.cm-activeLine': {
+          background: 'color-mix(in oklch, var(--primary) 12%, transparent)'
+        },
+        '.cm-activeLineGutter': {
+          background: 'transparent',
+          color: 'var(--ink)'
+        },
+        '.cm-selectionBackground': {
+          background: 'color-mix(in oklch, var(--primary) 32%, var(--canvas-deep))'
+        },
+        '&.cm-focused .cm-selectionBackground': {
+          background: 'color-mix(in oklch, var(--primary) 36%, var(--canvas-deep))'
+        },
+        '&.cm-focused': {
+          outline: '1px solid color-mix(in oklch, var(--primary) 42%, transparent)',
+          borderRadius: '0',
+          boxShadow: '0 0 0 3px color-mix(in oklch, var(--primary) 16%, transparent)'
+        },
+        '.cm-cursor': {
+          borderLeftColor: 'color-mix(in oklch, var(--ink) 78%, transparent)'
+        },
+        '.cm-tooltip, .cm-panels': {
+          background: 'var(--panel-elevated)',
+          color: 'var(--ink)',
+          border: '1px solid color-mix(in oklch, var(--line) 90%, transparent)'
+        }
+      },
+      { dark: theme === 'dark' }
+    );
+  }
+
+  function syncTheme(): void {
+    if (!view || !themeConfig || !cmModule) {
+      return;
+    }
+
+    const nextTheme = readResolvedTheme();
+    if (nextTheme === activeTheme) {
+      return;
+    }
+
+    activeTheme = nextTheme;
+    view.dispatch({
+      effects: themeConfig.reconfigure(buildTheme(cmModule, nextTheme))
+    });
+  }
 
   async function attachEditor(): Promise<void> {
     if (!host) {
@@ -42,71 +142,20 @@
       }
 
       editable = new Compartment();
+      themeConfig = new Compartment();
       cmModule = cm;
-
-      const theme = cm.EditorView.theme(
-        {
-          '&.cm-editor': {
-            height: '100%',
-            background: 'transparent',
-            color: 'var(--ink)',
-            fontFamily: '"IBM Plex Mono", "SFMono-Regular", monospace',
-            fontSize: '13px'
-          },
-          '.cm-scroller': {
-            overflow: 'auto'
-          },
-          '.cm-content': {
-            padding: '16px 18px 36px'
-          },
-          '.cm-line': {
-            padding: '0 8px'
-          },
-          '.cm-gutters': {
-            background: 'transparent',
-            border: 'none',
-            color: 'color-mix(in oklch, var(--ink-muted) 88%, transparent)'
-          },
-          '.cm-activeLine': {
-            background: 'color-mix(in oklch, var(--primary) 12%, transparent)'
-          },
-          '.cm-activeLineGutter': {
-            background: 'transparent',
-            color: 'var(--ink)'
-          },
-          '.cm-selectionBackground': {
-            background: 'color-mix(in oklch, var(--primary) 32%, black)'
-          },
-          '&.cm-focused .cm-selectionBackground': {
-            background: 'color-mix(in oklch, var(--primary) 36%, black)'
-          },
-          '&.cm-focused': {
-            outline: '1px solid color-mix(in oklch, var(--primary) 42%, transparent)',
-            borderRadius: '0',
-            boxShadow: '0 0 0 3px color-mix(in oklch, var(--primary) 16%, transparent)'
-          },
-          '.cm-cursor': {
-            borderLeftColor: 'color-mix(in oklch, var(--ink) 78%, transparent)'
-          },
-          '.cm-tooltip, .cm-panels': {
-            background: 'var(--panel-elevated)',
-            color: 'var(--ink)',
-            border: '1px solid color-mix(in oklch, var(--line) 90%, transparent)'
-          }
-        },
-        { dark: true }
-      );
+      activeTheme = readResolvedTheme();
 
       view = new cm.EditorView({
         parent: host,
         doc: value,
         extensions: [
           cm.basicSetup,
-          theme,
+          themeConfig.of(buildTheme(cm, activeTheme)),
           lang.jinja(),
           cm.EditorView.lineWrapping,
           editable.of(cm.EditorView.editable.of(!readonly)),
-          cm.EditorView.updateListener.of((update) => {
+          cm.EditorView.updateListener.of((update: ViewUpdate) => {
             if (!update.docChanged) {
               return;
             }
@@ -131,11 +180,47 @@
   }
 
   onMount(() => {
+    const onMediaChange = () => {
+      syncTheme();
+    };
+
+    if (typeof document !== 'undefined' && typeof MutationObserver === 'function') {
+      themeObserver = new MutationObserver(() => {
+        syncTheme();
+      });
+      themeObserver.observe(document.documentElement, {
+        attributes: true,
+        attributeFilter: ['data-theme']
+      });
+    }
+
+    if (typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
+      mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+      if (typeof mediaQuery.addEventListener === 'function') {
+        mediaQuery.addEventListener('change', onMediaChange);
+      } else {
+        mediaQuery.addListener(onMediaChange);
+      }
+    }
+
     void attachEditor();
+
+    return () => {
+      if (!mediaQuery) {
+        return;
+      }
+      if (typeof mediaQuery.removeEventListener === 'function') {
+        mediaQuery.removeEventListener('change', onMediaChange);
+      } else {
+        mediaQuery.removeListener(onMediaChange);
+      }
+    };
   });
 
   onDestroy(() => {
     alive = false;
+    themeObserver?.disconnect();
+    themeObserver = null;
     detachEditor();
   });
 

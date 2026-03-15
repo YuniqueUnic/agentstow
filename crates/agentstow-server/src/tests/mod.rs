@@ -132,6 +132,37 @@ expected_exit_codes = [0]
         .unwrap();
 }
 
+fn write_http_mcp_workspace(temp: &assert_fs::TempDir) {
+    temp.child("agentstow.toml")
+        .write_str(
+            r#"
+[mcp_servers.remote]
+transport = { kind = "http", url = "https://example.com/mcp", headers = { Authorization = "Bearer demo-token", X-Workspace = "agentstow" } }
+env = [
+  { key = "OPENAI_API_KEY", binding = { kind = "env", var = "OPENAI_API_KEY" } }
+]
+"#,
+        )
+        .unwrap();
+}
+
+fn init_git_repo(temp: &assert_fs::TempDir) {
+    let run = |args: &[&str]| {
+        let status = std::process::Command::new("git")
+            .args(args)
+            .current_dir(temp.path())
+            .status()
+            .unwrap();
+        assert!(status.success(), "git {:?} should succeed", args);
+    };
+
+    run(&["init"]);
+    run(&["config", "user.name", "AgentStow Tests"]);
+    run(&["config", "user.email", "agentstow-tests@example.com"]);
+    run(&["add", "."]);
+    run(&["commit", "-m", "initial workspace"]);
+}
+
 fn with_test_home(temp: &assert_fs::TempDir, f: impl FnOnce()) {
     temp.child("home").create_dir_all().unwrap();
     temp_env::with_var("AGENTSTOW_HOME", Some(temp.child("home").path()), f);
@@ -473,6 +504,48 @@ async fn api_workspace_should_start_unconfigured_then_select_workspace() {
 }
 
 #[tokio::test]
+async fn api_workspace_git_should_return_null_for_non_git_workspace() {
+    let temp = assert_fs::TempDir::new().unwrap();
+    write_minimal_workspace(&temp);
+
+    let server = test_server(&temp, temp.child("missing-dist").path().to_path_buf());
+    let resp = server.get("/api/workspace/git").await;
+
+    resp.assert_status_ok();
+    let body: serde_json::Value = resp.json();
+    assert!(body.is_null());
+}
+
+#[test]
+#[serial]
+fn api_workspace_git_should_expose_branch_and_head_short() {
+    let temp = assert_fs::TempDir::new().unwrap();
+    write_minimal_workspace(&temp);
+    init_git_repo(&temp);
+
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+    runtime.block_on(async {
+        let server = test_server(&temp, temp.child("missing-dist").path().to_path_buf());
+        let resp = server.get("/api/workspace/git").await;
+
+        resp.assert_status_ok();
+        let body: serde_json::Value = resp.json();
+        let branch = body["branch"].as_str().unwrap();
+        let head = body["head"].as_str().unwrap();
+        let head_short = body["head_short"].as_str().unwrap();
+        let repo_root =
+            agentstow_core::normalize_for_display(&fs_err::canonicalize(temp.path()).unwrap());
+
+        assert_eq!(body["repo_root"], serde_json::json!(repo_root));
+        assert!(!branch.is_empty());
+        assert!(!head.is_empty());
+        assert!(!head_short.is_empty());
+        assert!(head.starts_with(head_short));
+        assert_eq!(body["dirty"], serde_json::json!(false));
+    });
+}
+
+#[tokio::test]
 async fn api_render_should_validate_rendered_output() {
     let temp = assert_fs::TempDir::new().unwrap();
     temp.child("artifacts").create_dir_all().unwrap();
@@ -792,9 +865,56 @@ fn api_workspace_summary_should_expose_prd_read_model() {
             assert_eq!(body["counts"]["env_set_count"], serde_json::json!(1));
             assert_eq!(body["counts"]["script_count"], serde_json::json!(1));
             assert_eq!(body["counts"]["mcp_server_count"], serde_json::json!(1));
+            assert_eq!(body["mcp_servers"][0]["command"], serde_json::json!("npx"));
+            assert_eq!(
+                body["mcp_servers"][0]["args"],
+                serde_json::json!(["-y", "@modelcontextprotocol/server-filesystem", "."])
+            );
+            assert_eq!(body["mcp_servers"][0]["url"], serde_json::Value::Null);
+            assert_eq!(body["mcp_servers"][0]["headers"], serde_json::json!([]));
+            assert_eq!(
+                body["mcp_servers"][0]["env_bindings"][0],
+                serde_json::json!({
+                    "key": "OPENAI_API_KEY",
+                    "binding": "env:OPENAI_API_KEY"
+                })
+            );
             assert_eq!(
                 body["issues"][0]["code"],
                 serde_json::json!("target_profile_missing")
+            );
+        });
+    });
+}
+
+#[test]
+#[serial]
+fn api_workspace_summary_should_expose_http_mcp_headers() {
+    let temp = assert_fs::TempDir::new().unwrap();
+    write_http_mcp_workspace(&temp);
+
+    with_test_home(&temp, || {
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        runtime.block_on(async {
+            let server = test_server(&temp, temp.child("missing-dist").path().to_path_buf());
+            let resp = server.get("/api/workspace-summary").await;
+
+            resp.assert_status_ok();
+            let body: serde_json::Value = resp.json();
+            assert_eq!(body["counts"]["mcp_server_count"], serde_json::json!(1));
+            assert_eq!(body["mcp_servers"][0]["id"], serde_json::json!("remote"));
+            assert_eq!(body["mcp_servers"][0]["command"], serde_json::Value::Null);
+            assert_eq!(body["mcp_servers"][0]["args"], serde_json::json!([]));
+            assert_eq!(
+                body["mcp_servers"][0]["url"],
+                serde_json::json!("https://example.com/mcp")
+            );
+            assert_eq!(
+                body["mcp_servers"][0]["headers"],
+                serde_json::json!([
+                    { "key": "Authorization", "value": "Bearer demo-token" },
+                    { "key": "X-Workspace", "value": "agentstow" }
+                ])
             );
         });
     });

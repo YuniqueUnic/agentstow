@@ -43,11 +43,13 @@
   let outputTab = $state<'stdout' | 'stderr' | 'meta'>('stdout');
 </script>
 
-<aside class="explorer surface" aria-label="资源面板">
-  <div class="explorer__head">
-    <p class="explorer__eyebrow">SCRIPTS</p>
-    <p class="explorer__hint">中心区编辑 stdin，底部 panel 看运行输出。</p>
-  </div>
+<SplitView autoSaveId="workbench:view:scripts" initialLeftPct={22} minLeftPx={256} minRightPx={760}>
+  {#snippet left()}
+    <aside class="explorer surface" aria-label="资源面板">
+      <div class="explorer__head">
+        <p class="explorer__eyebrow">SCRIPTS</p>
+        <p class="explorer__hint">中心区编辑 stdin，底部 panel 看运行输出。</p>
+      </div>
 
   <div class="explorer__section">
     <div class="section__title">
@@ -88,9 +90,11 @@
       {/if}
     </ul>
   </div>
-</aside>
+    </aside>
+  {/snippet}
 
-<main class="canvas" aria-label="工作区画布">
+  {#snippet right()}
+    <main class="canvas" aria-label="工作区画布">
   <div class="canvas__head">
     <div class="title">
       <strong>{activeScript?.id ?? '未选择 script'}</strong>
@@ -265,4 +269,6 @@
       {/snippet}
     </SplitView>
   </div>
-</main>
+    </main>
+  {/snippet}
+</SplitView>

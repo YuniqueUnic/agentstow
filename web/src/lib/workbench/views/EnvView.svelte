@@ -41,11 +41,13 @@
   }: Props = $props();
 </script>
 
-<aside class="explorer surface" aria-label="资源面板">
-  <div class="explorer__head">
-    <p class="explorer__eyebrow">ENV</p>
-    <p class="explorer__hint">环境变量是工作台对象，不是独立后台页。</p>
-  </div>
+<SplitView autoSaveId="workbench:view:env" initialLeftPct={22} minLeftPx={256} minRightPx={760}>
+  {#snippet left()}
+    <aside class="explorer surface" aria-label="资源面板">
+      <div class="explorer__head">
+        <p class="explorer__eyebrow">ENV</p>
+        <p class="explorer__hint">环境变量是工作台对象，不是独立后台页。</p>
+      </div>
 
   <div class="explorer__section">
     <div class="section__title">
@@ -86,9 +88,11 @@
       {/if}
     </ul>
   </div>
-</aside>
+    </aside>
+  {/snippet}
 
-<main class="canvas" aria-label="工作区画布">
+  {#snippet right()}
+    <main class="canvas" aria-label="工作区画布">
   <div class="canvas__head">
     <div class="title">
       <strong>{activeEnvSet?.id ?? '未选择 env set'}</strong>
@@ -184,4 +188,6 @@
       {/snippet}
     </SplitView>
   </div>
-</main>
+    </main>
+  {/snippet}
+</SplitView>

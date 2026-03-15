@@ -3,7 +3,6 @@
 
   import CommandPalette, { type PaletteCommand } from '$lib/workbench/CommandPalette.svelte';
   import WorkspaceBoot from '$lib/workbench/WorkspaceBoot.svelte';
-  import ShellGutter from '$lib/workbench/ShellGutter.svelte';
   import EditorTabs from '$lib/workbench/EditorTabs.svelte';
   import WorkbenchRail from '$lib/workbench/WorkbenchRail.svelte';
   import WorkbenchTopbar from '$lib/workbench/WorkbenchTopbar.svelte';
@@ -20,6 +19,7 @@
     getImpactAnalysis,
     getLinkStatus,
     getWatchStatus,
+    getWorkspaceGit,
     getWorkspaceState,
     getWorkspaceSummary,
     initWorkspace,
@@ -39,6 +39,7 @@
     McpServerSummaryResponse,
     ScriptRunResponse,
     ShellKindResponse,
+    WorkspaceGitSummaryResponse,
     WorkspaceStateResponse,
     WorkspaceSummaryResponse,
     WatchStatusResponse
@@ -49,6 +50,15 @@
     truncateMiddle
   } from '$lib/utils/format';
   import type { ManifestInsertKind } from '$lib/workbench/manifest_snippets';
+  import {
+    applyResolvedTheme,
+    createThemeMediaQuery,
+    readThemePreference,
+    resolveTheme,
+    writeThemePreference,
+    type ResolvedTheme,
+    type ThemePreference
+  } from '$lib/workbench/theme';
 
   type ViewKey = 'artifacts' | 'links' | 'env' | 'scripts' | 'mcp' | 'impact';
   type ImpactMode = 'artifact' | 'profile' | 'artifact_profile';
@@ -67,15 +77,17 @@
   let paletteOpen = $state(false);
   let artifactRequestId = $state<string | null>(null);
   let manifestInsertRequest = $state<ManifestInsertKind | null>(null);
-  let explorerWidth = $state(332);
   let editorDocs = $state<WorkbenchDocument[]>([]);
   let activeDocId = $state<string | null>(null);
+  let themePreference = $state<ThemePreference>('system');
+  let resolvedTheme = $state<ResolvedTheme>('dark');
 
   let workspaceState = $state<WorkspaceStateResponse | null>(null);
   let workspaceInput = $state('');
   let initGit = $state(false);
 
   let summary = $state<WorkspaceSummaryResponse | null>(null);
+  let gitInfo = $state<WorkspaceGitSummaryResponse | null>(null);
   let watchStatus = $state<WatchStatusResponse | null>(null);
 
   let selectedArtifact = $state<string | null>(null);
@@ -106,6 +118,7 @@
   let busy = $state({
     boot: false,
     summary: false,
+    git: false,
     watch: false,
     env_emit: false,
     script_run: false,
@@ -124,6 +137,13 @@
   const workspaceLabel = $derived(
     workspaceRoot ? basenameFromPath(workspaceRoot) : '未选择 workspace'
   );
+  const gitHeadline = $derived.by(() => {
+    if (!gitInfo) {
+      return 'Git 未接入';
+    }
+    const branch = gitInfo.branch ?? 'detached';
+    return `${branch} @ ${gitInfo.head_short}${gitInfo.dirty ? ' • dirty' : ''}`;
+  });
 
   const artifacts = $derived(summary?.artifacts ?? []);
   const profiles = $derived(summary?.profiles ?? []);
@@ -464,6 +484,7 @@
       workspace_root: workspaceRoot,
       manifest_present: false
     };
+    gitInfo = null;
     editorDocs = [];
     activeDocId = null;
     summary = null;
@@ -568,6 +589,18 @@
     }
   }
 
+  async function refreshWorkspaceGit(): Promise<void> {
+    busy.git = true;
+    try {
+      gitInfo = await getWorkspaceGit();
+    } catch (error) {
+      gitInfo = null;
+      errorMessage ??= describeError(error, '无法读取 Git 状态。');
+    } finally {
+      busy.git = false;
+    }
+  }
+
   async function refreshWatchStatus(): Promise<void> {
     busy.watch = true;
     try {
@@ -581,7 +614,7 @@
   }
 
   async function bootstrapConfigured(): Promise<void> {
-    await Promise.all([refreshSummary(), refreshWatchStatus()]);
+    await Promise.all([refreshSummary(), refreshWatchStatus(), refreshWorkspaceGit()]);
     linkStatus = null;
     impact = null;
     ensureFallbackDocument();
@@ -854,6 +887,11 @@
     openArtifactsWorkspace(id);
   }
 
+  function openProfileInArtifacts(id: string): void {
+    selectProfile(id);
+    openArtifactsWorkspace();
+  }
+
   function openManifestEditor(): void {
     openArtifactsWorkspace('$manifest');
     statusLine = '已切换到 manifest 编辑器。';
@@ -864,12 +902,14 @@
     manifestInsertRequest = kind;
   }
 
-  function resizeExplorer(deltaPx: number): void {
-    explorerWidth = Math.min(520, Math.max(248, explorerWidth + deltaPx));
-  }
+  function setThemePreference(next: ThemePreference): void {
+    themePreference = next;
+    writeThemePreference(next);
 
-  function resetExplorerWidth(): void {
-    explorerWidth = 332;
+    const media = createThemeMediaQuery();
+    resolvedTheme = resolveTheme(next, media?.matches ?? false);
+    applyResolvedTheme(resolvedTheme);
+    statusLine = `已切换主题：${next}（当前生效：${resolvedTheme}）。`;
   }
 
   const paletteCommands = $derived.by((): PaletteCommand[] => {
@@ -915,6 +955,47 @@
         returnToWorkspaceBoot();
       }
     });
+
+    if (gitInfo) {
+      const git = gitInfo;
+      cmds.push({
+        id: 'git:copy-head',
+        group: 'Git',
+        title: `Copy HEAD ${git.head_short}`,
+        subtitle: git.branch ?? 'detached HEAD',
+        keywords: `git head branch ${git.branch ?? ''} ${git.head_short}`,
+        run: async () => {
+          await copyToClipboard(git.head, 'Git HEAD');
+        }
+      });
+      cmds.push({
+        id: 'git:copy-root',
+        group: 'Git',
+        title: 'Copy repository root',
+        subtitle: truncateMiddle(git.repo_root, 56),
+        keywords: `git repo root ${git.repo_root}`,
+        run: async () => {
+          await copyToClipboard(git.repo_root, 'Git 仓库路径');
+        }
+      });
+    }
+
+    for (const theme of [
+      { id: 'system' as const, label: 'Theme: Follow system' },
+      { id: 'light' as const, label: 'Theme: Light' },
+      { id: 'dark' as const, label: 'Theme: Dark' }
+    ]) {
+      cmds.push({
+        id: `theme:${theme.id}`,
+        group: 'Appearance',
+        title: theme.label,
+        keywords: `theme appearance ${theme.id}`,
+        disabled: themePreference === theme.id,
+        run: () => {
+          setThemePreference(theme.id);
+        }
+      });
+    }
 
     cmds.push({
       id: 'manifest:open',
@@ -1118,6 +1199,27 @@
 
     window.addEventListener('keydown', onKeyDown);
 
+    const media = createThemeMediaQuery();
+    themePreference = readThemePreference();
+    resolvedTheme = resolveTheme(themePreference, media?.matches ?? false);
+    applyResolvedTheme(resolvedTheme);
+
+    const onThemeChange = (event: MediaQueryListEvent) => {
+      if (themePreference !== 'system') {
+        return;
+      }
+      resolvedTheme = resolveTheme('system', event.matches);
+      applyResolvedTheme(resolvedTheme);
+    };
+
+    if (media) {
+      if (typeof media.addEventListener === 'function') {
+        media.addEventListener('change', onThemeChange);
+      } else {
+        media.addListener(onThemeChange);
+      }
+    }
+
     void (async () => {
       const nextState = await refreshWorkspaceState();
       if (nextState?.manifest_present) {
@@ -1131,6 +1233,13 @@
 
     return () => {
       window.removeEventListener('keydown', onKeyDown);
+      if (media) {
+        if (typeof media.removeEventListener === 'function') {
+          media.removeEventListener('change', onThemeChange);
+        } else {
+          media.removeListener(onThemeChange);
+        }
+      }
     };
   });
 
@@ -1174,20 +1283,23 @@
       onInitWorkspace={() => void handleInitWorkspace()}
     />
   {:else}
-    <div class="workbench" style={`--explorer-width:${explorerWidth}px;`}>
+    <div class="workbench">
       <WorkbenchTopbar
         workspaceRoot={workspaceRoot}
         workspaceLabel={workspaceLabel}
+        gitInfo={gitInfo}
         watchPill={watchPill}
         watchActivity={watchActivity}
         busySummary={busy.summary}
+        themePreference={themePreference}
+        resolvedTheme={resolvedTheme}
         onOpenPalette={() => (paletteOpen = true)}
+        onSetTheme={setThemePreference}
         onSwitchWorkspace={returnToWorkspaceBoot}
         onRefresh={bootstrapConfigured}
       />
 
       <WorkbenchRail view={view} onChange={openDefaultDocument} />
-      <ShellGutter onResize={resizeExplorer} onReset={resetExplorerWidth} />
 
       <div class="workbench-tabs">
         <EditorTabs
@@ -1201,121 +1313,127 @@
         />
       </div>
 
-      {#if view === 'artifacts'}
-        <ArtifactsView
-          summary={summary}
-          selectedProfile={selectedProfile}
-          onSelectProfile={selectProfile}
-          onFocusArtifact={focusArtifact}
-          onOpenTarget={openTargetInLinks}
-          onRefreshWorkspace={bootstrapConfigured}
-          requestedArtifactId={artifactRequestId}
-          onRequestHandled={(id) => {
-            if (artifactRequestId === id) {
-              artifactRequestId = null;
-            }
-          }}
-          requestedManifestInsert={manifestInsertRequest}
-          onManifestInsertHandled={(kind) => {
-            if (manifestInsertRequest === kind) {
-              manifestInsertRequest = null;
-            }
-          }}
-          shortcutsEnabled={!paletteOpen}
-          statusLine={statusLine}
-          errorMessage={errorMessage}
-          setStatusLine={(next) => (statusLine = next)}
-          setErrorMessage={(next) => (errorMessage = next)}
-        />
-      {:else if view === 'links'}
-        <LinksView
-          targets={targets}
-          linkStatus={linkStatus}
-          selectedTargetId={selectedTargetId}
-          selectedTargets={selectedTargets}
-          linkSearch={linkSearch}
-          linkUnhealthyOnly={linkUnhealthyOnly}
-          linkForce={linkForce}
-          linkScope={linkScope}
-          linkOp={linkOp}
-          linkOpTitle={linkOpTitle}
-          activeTarget={activeTarget}
-          activeLinkStatus={activeLinkStatus}
-          selectedProfile={selectedProfile}
-          busyLinks={busy.links}
-          busyLinkOp={busy.link_op}
-          errorMessage={errorMessage}
-          statusLine={statusLine}
-          onLinkSearch={(next) => (linkSearch = next)}
-          onLinkUnhealthyOnly={(next) => (linkUnhealthyOnly = next)}
-          onLinkForce={(next) => (linkForce = next)}
-          onLinkScope={(next) => (linkScope = next)}
-          onSelectTarget={openTargetDocument}
-          onToggleTarget={toggleTargetSelection}
-          onRefreshLinkStatus={refreshLinkStatus}
-          onCopyToClipboard={copyToClipboard}
-          onRunLinkOperation={runLinkOperation}
-        />
-      {:else if view === 'env'}
-        <EnvView
-          envSets={envSets}
-          selectedEnvSet={selectedEnvSet}
-          activeEnvSet={activeEnvSet}
-          selectedShell={selectedShell}
-          shellChoices={shellChoices}
-          envScript={envScript}
-          busyEnvEmit={busy.env_emit}
-          errorMessage={errorMessage}
-          statusLine={statusLine}
-          onSelectEnvSet={openEnvDocument}
-          onSelectShell={(shell) => (selectedShell = shell)}
-          onEnvEmit={handleEnvEmit}
-          onCopyToClipboard={copyToClipboard}
-          onOpenManifestEditor={openManifestEditor}
-          onCreateManifestObject={requestManifestInsert}
-        />
-      {:else if view === 'scripts'}
-        <ScriptsView
-          scripts={scripts}
-          selectedScript={selectedScript}
-          activeScript={activeScript}
-          scriptStdin={scriptStdin}
-          scriptRun={scriptRun}
-          busyScriptRun={busy.script_run}
-          errorMessage={errorMessage}
-          statusLine={statusLine}
-          onSelectScript={openScriptDocument}
-          onScriptStdin={(next) => (scriptStdin = next)}
-          onScriptRun={handleScriptRun}
-          onCopyToClipboard={copyToClipboard}
-          onOpenManifestEditor={openManifestEditor}
-          onCreateManifestObject={requestManifestInsert}
-        />
-      {:else if view === 'impact'}
-        <ImpactView
-          impactMode={impactMode}
-          impact={impact}
-          selectedArtifact={selectedArtifact}
-          selectedProfile={selectedProfile}
-          busyImpact={busy.impact}
-          errorMessage={errorMessage}
-          statusLine={statusLine}
-          onSetImpactMode={setImpactMode}
-          onRefreshImpact={refreshImpactAnalysis}
-        />
-      {:else if view === 'mcp'}
-        <McpView
-          mcpServers={mcpServers}
-          selectedMcpServerId={selectedMcpServerId}
-          activeMcpServer={activeMcpServer}
-          errorMessage={errorMessage}
-          statusLine={statusLine}
-          onSelectMcpServer={openMcpDocument}
-          onCopyToClipboard={copyToClipboard}
-          onOpenManifestEditor={openManifestEditor}
-          onCreateManifestObject={requestManifestInsert}
-        />
-      {/if}
+      <div class="workbench-view">
+        {#if view === 'artifacts'}
+          <ArtifactsView
+            summary={summary}
+            selectedProfile={selectedProfile}
+            onSelectProfile={selectProfile}
+            onFocusArtifact={focusArtifact}
+            onOpenTarget={openTargetInLinks}
+            onRefreshWorkspace={bootstrapConfigured}
+            requestedArtifactId={artifactRequestId}
+            onRequestHandled={(id) => {
+              if (artifactRequestId === id) {
+                artifactRequestId = null;
+              }
+            }}
+            requestedManifestInsert={manifestInsertRequest}
+            onManifestInsertHandled={(kind) => {
+              if (manifestInsertRequest === kind) {
+                manifestInsertRequest = null;
+              }
+            }}
+            shortcutsEnabled={!paletteOpen}
+            statusLine={statusLine}
+            errorMessage={errorMessage}
+            setStatusLine={(next) => (statusLine = next)}
+            setErrorMessage={(next) => (errorMessage = next)}
+          />
+        {:else if view === 'links'}
+          <LinksView
+            targets={targets}
+            linkStatus={linkStatus}
+            selectedTargetId={selectedTargetId}
+            selectedTargets={selectedTargets}
+            linkSearch={linkSearch}
+            linkUnhealthyOnly={linkUnhealthyOnly}
+            linkForce={linkForce}
+            linkScope={linkScope}
+            linkOp={linkOp}
+            linkOpTitle={linkOpTitle}
+            activeTarget={activeTarget}
+            activeLinkStatus={activeLinkStatus}
+            selectedProfile={selectedProfile}
+            busyLinks={busy.links}
+            busyLinkOp={busy.link_op}
+            errorMessage={errorMessage}
+            statusLine={statusLine}
+            onLinkSearch={(next) => (linkSearch = next)}
+            onLinkUnhealthyOnly={(next) => (linkUnhealthyOnly = next)}
+            onLinkForce={(next) => (linkForce = next)}
+            onLinkScope={(next) => (linkScope = next)}
+            onSelectTarget={openTargetDocument}
+            onToggleTarget={toggleTargetSelection}
+            onRefreshLinkStatus={refreshLinkStatus}
+            onCopyToClipboard={copyToClipboard}
+            onRunLinkOperation={runLinkOperation}
+          />
+        {:else if view === 'env'}
+          <EnvView
+            envSets={envSets}
+            selectedEnvSet={selectedEnvSet}
+            activeEnvSet={activeEnvSet}
+            selectedShell={selectedShell}
+            shellChoices={shellChoices}
+            envScript={envScript}
+            busyEnvEmit={busy.env_emit}
+            errorMessage={errorMessage}
+            statusLine={statusLine}
+            onSelectEnvSet={openEnvDocument}
+            onSelectShell={(shell) => (selectedShell = shell)}
+            onEnvEmit={handleEnvEmit}
+            onCopyToClipboard={copyToClipboard}
+            onOpenManifestEditor={openManifestEditor}
+            onCreateManifestObject={requestManifestInsert}
+          />
+        {:else if view === 'scripts'}
+          <ScriptsView
+            scripts={scripts}
+            selectedScript={selectedScript}
+            activeScript={activeScript}
+            scriptStdin={scriptStdin}
+            scriptRun={scriptRun}
+            busyScriptRun={busy.script_run}
+            errorMessage={errorMessage}
+            statusLine={statusLine}
+            onSelectScript={openScriptDocument}
+            onScriptStdin={(next) => (scriptStdin = next)}
+            onScriptRun={handleScriptRun}
+            onCopyToClipboard={copyToClipboard}
+            onOpenManifestEditor={openManifestEditor}
+            onCreateManifestObject={requestManifestInsert}
+          />
+        {:else if view === 'impact'}
+          <ImpactView
+            impactMode={impactMode}
+            impact={impact}
+            selectedArtifact={selectedArtifact}
+            selectedProfile={selectedProfile}
+            busyImpact={busy.impact}
+            errorMessage={errorMessage}
+            statusLine={statusLine}
+            onSetImpactMode={setImpactMode}
+            onRefreshImpact={refreshImpactAnalysis}
+            onOpenTarget={openTargetInLinks}
+            onOpenArtifact={requestOpenArtifact}
+            onOpenProfile={openProfileInArtifacts}
+            onCopyToClipboard={copyToClipboard}
+          />
+        {:else if view === 'mcp'}
+          <McpView
+            mcpServers={mcpServers}
+            selectedMcpServerId={selectedMcpServerId}
+            activeMcpServer={activeMcpServer}
+            errorMessage={errorMessage}
+            statusLine={statusLine}
+            onSelectMcpServer={openMcpDocument}
+            onCopyToClipboard={copyToClipboard}
+            onOpenManifestEditor={openManifestEditor}
+            onCreateManifestObject={requestManifestInsert}
+          />
+        {/if}
+      </div>
 
       <CommandPalette
         open={paletteOpen}
@@ -1339,11 +1457,26 @@
         </div>
 
         <div class="statusbar__group statusbar__group--right">
+          {#if gitInfo}
+            <span
+              class={[
+                'statusbar__item',
+                'statusbar__item--git',
+                gitInfo.dirty ? 'statusbar__item--dirty' : ''
+              ].join(' ')}
+              title={gitInfo.repo_root}
+            >
+              git <strong class="mono">{gitHeadline}</strong>
+            </span>
+          {/if}
           {#if selectedProfile}
             <span class="statusbar__item">
               profile <strong class="mono">{selectedProfile}</strong>
             </span>
           {/if}
+          <span class="statusbar__item">
+            theme <strong class="mono">{resolvedTheme}</strong>
+          </span>
           <span class="statusbar__item mono">{statusFocus}</span>
           <span class="statusbar__item mono">{workspaceLabel}</span>
         </div>

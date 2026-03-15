@@ -8,7 +8,9 @@ use tracing::instrument;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GitInfo {
     pub repo_root: PathBuf,
+    pub branch: Option<String>,
     pub head: String,
+    pub head_short: String,
     pub dirty: bool,
 }
 
@@ -18,11 +20,25 @@ impl Git {
     #[instrument(skip_all, fields(start_dir=%normalize_for_display(start_dir)))]
     pub async fn detect(start_dir: &Path) -> Result<GitInfo> {
         let repo_root = run_git(start_dir, &["rev-parse", "--show-toplevel"]).await?;
+        let branch = match run_git(start_dir, &["symbolic-ref", "--quiet", "--short", "HEAD"]).await
+        {
+            Ok(value) => Some(value.trim().to_string()),
+            Err(AgentStowError::Git { message })
+                if message.contains("not a symbolic ref")
+                    || message.contains("fatal: ref HEAD is not a symbolic ref") =>
+            {
+                None
+            }
+            Err(error) => return Err(error),
+        };
         let head = run_git(start_dir, &["rev-parse", "HEAD"]).await?;
+        let head_short = run_git(start_dir, &["rev-parse", "--short", "HEAD"]).await?;
         let porcelain = run_git(start_dir, &["status", "--porcelain"]).await?;
         Ok(GitInfo {
             repo_root: PathBuf::from(repo_root.trim()),
+            branch,
             head: head.trim().to_string(),
+            head_short: head_short.trim().to_string(),
             dirty: !porcelain.trim().is_empty(),
         })
     }

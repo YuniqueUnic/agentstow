@@ -139,100 +139,104 @@
   });
 </script>
 
-<aside class="explorer surface" aria-label="资源面板">
-  <div class="explorer__head">
-    <p class="explorer__eyebrow">LINKS</p>
-    <p class="explorer__hint">以 targets 为主列表，多选与修复操作都在同一工作台完成。</p>
-  </div>
-
-  <div class="explorer__section explorer__section--fill">
-    <div class="section__title">
-      <span>Targets</span>
-      <strong>{filteredTargets.length}</strong>
-    </div>
-
-    <label class="field field--compact">
-      <span class="field__label">搜索 targets</span>
-      <input
-        class="field__input mono"
-        type="search"
-        placeholder="id/artifact/profile/path…"
-        value={linkSearch}
-        oninput={(event) => {
-          const target = event.currentTarget as HTMLInputElement | null;
-          onLinkSearch(target?.value ?? '');
-        }}
-      />
-    </label>
-
-    <label class="toggle" aria-label="Targets 过滤">
-      <input
-        class="toggle__control"
-        type="checkbox"
-        checked={linkUnhealthyOnly}
-        onchange={(event) => {
-          const target = event.currentTarget as HTMLInputElement | null;
-          onLinkUnhealthyOnly(Boolean(target?.checked));
-        }}
-      />
-      <span>仅显示不健康项</span>
-    </label>
-
-    {#if targets.length === 0}
-      <div class="list__static">
-        <span class="muted">（manifest 未声明 targets）</span>
-        <span class="mono">targets</span>
+<SplitView autoSaveId="workbench:view:links" initialLeftPct={24} minLeftPx={272} minRightPx={760}>
+  {#snippet left()}
+    <aside class="explorer surface" aria-label="资源面板">
+      <div class="explorer__head">
+        <p class="explorer__eyebrow">LINKS</p>
+        <p class="explorer__hint">以 targets 为主列表，多选与修复操作都在同一工作台完成。</p>
       </div>
-    {:else if filteredTargets.length === 0}
-      <div class="list__static">
-        <span class="muted">（无匹配结果）</span>
-        <span class="mono">{linkSearch.trim() || 'query'}</span>
-      </div>
-    {:else}
-      <div class="virtual-list" bind:this={targetListEl} role="list" aria-label="Declared targets list">
-        <div class="virtual-list__inner" style={`height:${$targetVirtualizer.getTotalSize()}px;`}>
-          {#each $targetVirtualizer.getVirtualItems() as row (row.key)}
-            {@const target = filteredTargets[row.index]}
-            {@const status = statusByPath.get(target.target_path) ?? null}
-            {@const isActive = selectedTargetId === target.id}
-            {@const isSelected = selectedTargets.includes(target.id)}
-            <div class="virtual-list__row" style={`transform:translateY(${row.start}px);`}>
-              <button
-                class={[
-                  'list__item',
-                  isActive ? 'list__item--active' : '',
-                  !isActive && isSelected ? 'list__item--selected' : ''
-                ].join(' ')}
-                onclick={(event) => {
-                  const e = event as MouseEvent;
-                  if (e.metaKey || e.ctrlKey) {
-                    onToggleTarget(target.id);
-                    return;
-                  }
-                  onSelectTarget(target.id);
-                }}
-                type="button"
-                title={target.target_path}
-              >
-                <span
-                  class={[
-                    'list__dot',
-                    !status ? 'list__dot--accent' : status.ok ? 'list__dot--ok' : 'list__dot--bad'
-                  ].join(' ')}
-                  aria-hidden="true"
-                ></span>
-                <span class="list__name">{target.id}</span>
-                <span class="list__meta">{target.artifact_id}@{target.profile ?? selectedProfile ?? 'default'}</span>
-              </button>
-            </div>
-          {/each}
+
+      <div class="explorer__section explorer__section--fill">
+        <div class="section__title">
+          <span>Targets</span>
+          <strong>{filteredTargets.length}</strong>
         </div>
-      </div>
-    {/if}
-  </div>
-</aside>
 
-<main class="canvas" aria-label="工作区画布">
+        <label class="field field--compact">
+          <span class="field__label">搜索 targets</span>
+          <input
+            class="field__input mono"
+            type="search"
+            placeholder="id/artifact/profile/path…"
+            value={linkSearch}
+            oninput={(event) => {
+              const target = event.currentTarget as HTMLInputElement | null;
+              onLinkSearch(target?.value ?? '');
+            }}
+          />
+        </label>
+
+        <label class="toggle" aria-label="Targets 过滤">
+          <input
+            class="toggle__control"
+            type="checkbox"
+            checked={linkUnhealthyOnly}
+            onchange={(event) => {
+              const target = event.currentTarget as HTMLInputElement | null;
+              onLinkUnhealthyOnly(Boolean(target?.checked));
+            }}
+          />
+          <span>仅显示不健康项</span>
+        </label>
+
+        {#if targets.length === 0}
+          <div class="list__static">
+            <span class="muted">（manifest 未声明 targets）</span>
+            <span class="mono">targets</span>
+          </div>
+        {:else if filteredTargets.length === 0}
+          <div class="list__static">
+            <span class="muted">（无匹配结果）</span>
+            <span class="mono">{linkSearch.trim() || 'query'}</span>
+          </div>
+        {:else}
+          <div class="virtual-list" bind:this={targetListEl} role="list" aria-label="Declared targets list">
+            <div class="virtual-list__inner" style={`height:${$targetVirtualizer.getTotalSize()}px;`}>
+              {#each $targetVirtualizer.getVirtualItems() as row (row.key)}
+                {@const target = filteredTargets[row.index]}
+                {@const status = statusByPath.get(target.target_path) ?? null}
+                {@const isActive = selectedTargetId === target.id}
+                {@const isSelected = selectedTargets.includes(target.id)}
+                <div class="virtual-list__row" style={`transform:translateY(${row.start}px);`}>
+                  <button
+                    class={[
+                      'list__item',
+                      isActive ? 'list__item--active' : '',
+                      !isActive && isSelected ? 'list__item--selected' : ''
+                    ].join(' ')}
+                    onclick={(event) => {
+                      const e = event as MouseEvent;
+                      if (e.metaKey || e.ctrlKey) {
+                        onToggleTarget(target.id);
+                        return;
+                      }
+                      onSelectTarget(target.id);
+                    }}
+                    type="button"
+                    title={target.target_path}
+                  >
+                    <span
+                      class={[
+                        'list__dot',
+                        !status ? 'list__dot--accent' : status.ok ? 'list__dot--ok' : 'list__dot--bad'
+                      ].join(' ')}
+                      aria-hidden="true"
+                    ></span>
+                    <span class="list__name">{target.id}</span>
+                    <span class="list__meta">{target.artifact_id}@{target.profile ?? selectedProfile ?? 'default'}</span>
+                  </button>
+                </div>
+              {/each}
+            </div>
+          </div>
+        {/if}
+      </div>
+    </aside>
+  {/snippet}
+
+  {#snippet right()}
+    <main class="canvas" aria-label="工作区画布">
   <div class="canvas__head">
     <div class="title">
       <strong>{activeTarget?.id ?? '未选择 target'}</strong>
@@ -537,4 +541,6 @@
       {/snippet}
     </SplitView>
   </div>
-</main>
+    </main>
+  {/snippet}
+</SplitView>

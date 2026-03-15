@@ -7,6 +7,7 @@ async fn detect_should_return_head() {
     let cwd = std::env::current_dir().unwrap();
     let info = Git::detect(&cwd).await.unwrap();
     assert_eq!(info.head.len(), 40);
+    assert!(!info.head_short.is_empty());
 }
 
 #[tokio::test]

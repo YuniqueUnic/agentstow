@@ -253,6 +253,10 @@ async fn run_cli(cli: Cli) -> Result<()> {
                     return Ok(());
                 }
                 println!("Repo root: {}", normalize_for_display(&info.repo_root));
+                if let Some(branch) = &info.branch {
+                    println!("Branch: {branch}");
+                }
+                println!("HEAD short: {}", info.head_short);
                 println!("HEAD: {}", info.head);
                 println!("Dirty: {}", info.dirty);
                 Ok(())

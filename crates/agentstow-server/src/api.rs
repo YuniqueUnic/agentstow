@@ -4,8 +4,8 @@ use agentstow_core::{AgentStowError, ArtifactId, ProfileName};
 use agentstow_web_types::{
     ApiError, ArtifactSourceUpdateRequest, EnvEmitRequest, HealthResponse, LinkApplyRequest,
     LinkPlanRequest, LinkRepairRequest, ManifestSourceUpdateRequest, ScriptRunRequest,
-    WorkspaceInitRequest, WorkspaceInitResponse, WorkspaceSelectRequest, WorkspaceSelectResponse,
-    WorkspaceStateResponse,
+    WorkspaceGitSummaryResponse, WorkspaceInitRequest, WorkspaceInitResponse,
+    WorkspaceSelectRequest, WorkspaceSelectResponse, WorkspaceStateResponse,
 };
 use axum::Router;
 use axum::extract::{Path as AxumPath, Query, State};
@@ -25,6 +25,7 @@ pub(crate) fn routes() -> Router<Arc<ServerState>> {
             get(api_workspace_state).post(api_workspace_select),
         )
         .route("/api/workspace/init", post(api_workspace_init))
+        .route("/api/workspace/git", get(api_workspace_git))
         .route("/api/manifest", get(api_manifest))
         .route(
             "/api/manifest/source",
@@ -94,6 +95,16 @@ async fn api_workspace_state(State(st): State<Arc<ServerState>>) -> Response {
         manifest_present,
     })
     .into_response()
+}
+
+async fn api_workspace_git(State(st): State<Arc<ServerState>>) -> Response {
+    let workspace_root = st.workspace_root.read().await.clone();
+    let Some(workspace_root) = workspace_root else {
+        return Json::<Option<WorkspaceGitSummaryResponse>>(None).into_response();
+    };
+
+    let queries = WorkspaceQueryService::new(workspace_root);
+    handle_result(queries.workspace_git().await)
 }
 
 async fn api_workspace_select(

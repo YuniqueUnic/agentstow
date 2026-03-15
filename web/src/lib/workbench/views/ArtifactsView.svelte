@@ -9,6 +9,7 @@
   import {
     ApiClientError,
     getArtifactSource,
+    getProfileDetail,
     getManifestSource,
     renderArtifact,
     updateArtifactSource,
@@ -17,6 +18,7 @@
   import type {
     ArtifactSourceResponse,
     ManifestSourceResponse,
+    ProfileDetailResponse,
     ValidateAsResponse,
     WorkspaceSummaryResponse
   } from '$lib/types';
@@ -88,6 +90,10 @@
   let tabMenu = $state<{ id: string; x: number; y: number } | null>(null);
   let tabMenuEl = $state<HTMLDivElement | null>(null);
   let lastAutoPreviewKey: string | null = null;
+  let profileDetail = $state<ProfileDetailResponse | null>(null);
+  let profileDetailBusy = $state(false);
+  let profileDetailError = $state<string | null>(null);
+  let profileRequestToken = 0;
 
   const fileArtifacts = $derived((summary?.artifacts ?? []).filter((a) => a.kind === 'file'));
   const dirArtifacts = $derived((summary?.artifacts ?? []).filter((a) => a.kind === 'dir'));
@@ -377,6 +383,38 @@
     }
   }
 
+  async function loadProfileDetail(profileId: string | null): Promise<void> {
+    const token = ++profileRequestToken;
+
+    if (!profileId) {
+      profileDetail = null;
+      profileDetailError = null;
+      profileDetailBusy = false;
+      return;
+    }
+
+    profileDetailBusy = true;
+    profileDetailError = null;
+
+    try {
+      const detail = await getProfileDetail(profileId);
+      if (token !== profileRequestToken) {
+        return;
+      }
+      profileDetail = detail;
+    } catch (error) {
+      if (token !== profileRequestToken) {
+        return;
+      }
+      profileDetail = null;
+      profileDetailError = describeError(error, '无法读取 profile 变量。');
+    } finally {
+      if (token === profileRequestToken) {
+        profileDetailBusy = false;
+      }
+    }
+  }
+
   function onKeyDown(event: KeyboardEvent): void {
     if (shortcutsEnabled === false) {
       return;
@@ -456,6 +494,10 @@
   });
 
   $effect(() => {
+    void loadProfileDetail(selectedProfile ?? null);
+  });
+
+  $effect(() => {
     const req = requestedArtifactId ?? null;
     if (!req) {
       return;
@@ -526,295 +568,464 @@
 
   const activeValidateAs = $derived(validateAsOf(activeTab, activeEditor?.source));
   const previewMode = $derived(activeValidateAs === 'markdown' ? 'markdown' : 'plain');
+  const activeArtifactSummary = $derived.by(() => {
+    if (!activeTab || activeTab === MANIFEST_DOC_ID) {
+      return null;
+    }
+    return fileArtifacts.find((artifact) => artifact.id === activeTab) ?? null;
+  });
+  const activeSourcePath = $derived(sourcePathOf(activeEditor?.source));
 </script>
 
-<aside class="explorer surface" aria-label="资源面板">
-  <div class="explorer__head">
-    <p class="explorer__eyebrow">ARTIFACTS</p>
-    <p class="explorer__hint">打开 artifact 或 manifest 后在右侧编辑、渲染与对比</p>
-  </div>
-
-  <div class="explorer__section">
-    <div class="section__title">
-      <span>Workspace Config</span>
-      <strong>1</strong>
-    </div>
-    <div class="chips chips--tight" aria-label="Manifest quick create">
-      <button class="chip" onclick={() => void insertManifestSnippet('profile')} type="button">
-        新建 profile
-      </button>
-      <button class="chip" onclick={() => void insertManifestSnippet('artifact')} type="button">
-        新建 artifact
-      </button>
-      <button class="chip" onclick={() => void insertManifestSnippet('target')} type="button">
-        新建 target
-      </button>
-      <button class="chip" onclick={() => void insertManifestSnippet('env_set')} type="button">
-        新建 env
-      </button>
-      <button class="chip" onclick={() => void insertManifestSnippet('script')} type="button">
-        新建 script
-      </button>
-      <button class="chip" onclick={() => void insertManifestSnippet('mcp_server')} type="button">
-        新建 MCP
-      </button>
-    </div>
-    <button
-      class={['list__item', activeTab === MANIFEST_DOC_ID ? 'list__item--active' : ''].join(' ')}
-      onclick={() => openDocument(MANIFEST_DOC_ID)}
-      type="button"
-      title="agentstow.toml"
-    >
-      <span class="list__dot list__dot--accent" aria-hidden="true"></span>
-      <span class="list__name">agentstow.toml</span>
-      <span class="list__meta">workspace</span>
-    </button>
-  </div>
-
-  <div class="explorer__section">
-    <div class="section__title">
-      <span>Sources</span>
-      <strong>{filteredFileArtifacts.length}</strong>
-    </div>
-
-    <label class="field field--compact">
-      <span class="field__label">搜索 artifacts</span>
-      <input
-        class="field__input mono"
-        type="search"
-        placeholder="id 或 source path…"
-        value={artifactSearch}
-        oninput={(event) => {
-          const target = event.currentTarget as HTMLInputElement | null;
-          artifactSearch = target?.value ?? '';
-        }}
-      />
-    </label>
-
-    {#if !summary}
-      <div class="list__static">
-        <span class="muted">读取中…</span>
-        <span class="mono">/api/workspace-summary</span>
-      </div>
-    {:else if fileArtifacts.length === 0}
-      <div class="list__static">
-        <span class="muted">（暂无 file artifacts）</span>
-        <span class="mono">artifacts</span>
-      </div>
-    {:else if filteredFileArtifacts.length === 0}
-      <div class="list__static">
-        <span class="muted">（无匹配结果）</span>
-        <span class="mono">{artifactSearch.trim() || 'query'}</span>
-      </div>
-    {:else}
-      <ul class="tree" aria-label="Artifacts explorer tree">
-        {#each artifactTree as node (node.path)}
-          <ArtifactTreeNode
-            node={node}
-            depth={0}
-            activeArtifactId={activeTab}
-            searchActive={artifactSearch.trim().length > 0}
-            onOpenArtifact={openDocument}
-          />
-        {/each}
-      </ul>
-    {/if}
-  </div>
-
-  {#if dirArtifacts.length > 0}
-    <div class="explorer__section">
-      <div class="section__title">
-        <span>Dir Artifacts</span>
-        <strong>{dirArtifacts.length}</strong>
+<SplitView autoSaveId="workbench:view:artifacts" initialLeftPct={22} minLeftPx={264} minRightPx={780}>
+  {#snippet left()}
+    <aside class="explorer surface" aria-label="资源面板">
+      <div class="explorer__head">
+        <p class="explorer__eyebrow">ARTIFACTS</p>
+        <p class="explorer__hint">用左侧 source tree 打开文档，右侧按 editor/preview/inspector 协作。</p>
       </div>
 
-      <ul class="list">
-        {#each dirArtifacts as artifact (artifact.id)}
-          <li>
-            <button
-              class="list__item"
-              onclick={() => describeDirArtifact(artifact.id)}
-              type="button"
-              title={artifact.source_path}
-            >
-              <span class="list__dot list__dot--accent" aria-hidden="true"></span>
-              <span class="list__name">{artifact.id}</span>
-              <span class="list__meta">
-                {basenameFromPath(relativeSourcePath(artifact.source_path, workspaceRoot))}
-              </span>
-            </button>
-          </li>
-        {/each}
-      </ul>
-    </div>
-  {/if}
-
-  {#if activeTab && activeTab !== MANIFEST_DOC_ID}
-    <div class="explorer__section">
-      <div class="section__title">
-        <span>Used By Targets</span>
-        <strong>{usageTargets.length}</strong>
-      </div>
-
-      {#if usageTargets.length === 0}
-        <div class="list__static">
-          <span class="muted">（未被任何 target 引用）</span>
-          <span class="mono">{activeTab}</span>
+      <div class="explorer__section">
+        <div class="section__title">
+          <span>Workspace Config</span>
+          <strong>1</strong>
         </div>
-      {:else}
-        <ul class="list">
-          {#each usageTargets as t (t.id)}
-            <li>
-              <button
-                class="list__item"
-                type="button"
-                disabled={!onOpenTarget}
-                onclick={() => onOpenTarget?.(t.id)}
-                title={t.target_path}
-              >
-                <span class="list__dot list__dot--accent" aria-hidden="true"></span>
-                <span class="list__name">{t.id}</span>
-                <span class="list__meta">{truncateMiddle(t.target_path, 22)}</span>
-              </button>
-            </li>
-          {/each}
-        </ul>
+        <div class="chips chips--tight" aria-label="Manifest quick create">
+          <button class="chip" onclick={() => void insertManifestSnippet('profile')} type="button">
+            新建 profile
+          </button>
+          <button class="chip" onclick={() => void insertManifestSnippet('artifact')} type="button">
+            新建 artifact
+          </button>
+          <button class="chip" onclick={() => void insertManifestSnippet('target')} type="button">
+            新建 target
+          </button>
+          <button class="chip" onclick={() => void insertManifestSnippet('env_set')} type="button">
+            新建 env
+          </button>
+          <button class="chip" onclick={() => void insertManifestSnippet('script')} type="button">
+            新建 script
+          </button>
+          <button class="chip" onclick={() => void insertManifestSnippet('mcp_server')} type="button">
+            新建 MCP
+          </button>
+        </div>
+        <button
+          class={['list__item', activeTab === MANIFEST_DOC_ID ? 'list__item--active' : ''].join(' ')}
+          onclick={() => openDocument(MANIFEST_DOC_ID)}
+          type="button"
+          title="agentstow.toml"
+        >
+          <span class="list__dot list__dot--accent" aria-hidden="true"></span>
+          <span class="list__name">agentstow.toml</span>
+          <span class="list__meta">workspace</span>
+        </button>
+      </div>
+
+      <div class="explorer__section">
+        <div class="section__title">
+          <span>Sources</span>
+          <strong>{filteredFileArtifacts.length}</strong>
+        </div>
+
+        <label class="field field--compact">
+          <span class="field__label">搜索 artifacts</span>
+          <input
+            class="field__input mono"
+            type="search"
+            placeholder="id 或 source path…"
+            value={artifactSearch}
+            oninput={(event) => {
+              const target = event.currentTarget as HTMLInputElement | null;
+              artifactSearch = target?.value ?? '';
+            }}
+          />
+        </label>
+
+        {#if !summary}
+          <div class="list__static">
+            <span class="muted">读取中…</span>
+            <span class="mono">/api/workspace-summary</span>
+          </div>
+        {:else if fileArtifacts.length === 0}
+          <div class="list__static">
+            <span class="muted">（暂无 file artifacts）</span>
+            <span class="mono">artifacts</span>
+          </div>
+        {:else if filteredFileArtifacts.length === 0}
+          <div class="list__static">
+            <span class="muted">（无匹配结果）</span>
+            <span class="mono">{artifactSearch.trim() || 'query'}</span>
+          </div>
+        {:else}
+          <ul class="tree" aria-label="Artifacts explorer tree">
+            {#each artifactTree as node (node.path)}
+              <ArtifactTreeNode
+                node={node}
+                depth={0}
+                activeArtifactId={activeTab}
+                searchActive={artifactSearch.trim().length > 0}
+                onOpenArtifact={openDocument}
+              />
+            {/each}
+          </ul>
+        {/if}
+      </div>
+
+      {#if dirArtifacts.length > 0}
+        <div class="explorer__section">
+          <div class="section__title">
+            <span>Dir Artifacts</span>
+            <strong>{dirArtifacts.length}</strong>
+          </div>
+
+          <ul class="list">
+            {#each dirArtifacts as artifact (artifact.id)}
+              <li>
+                <button
+                  class="list__item"
+                  onclick={() => describeDirArtifact(artifact.id)}
+                  type="button"
+                  title={artifact.source_path}
+                >
+                  <span class="list__dot list__dot--accent" aria-hidden="true"></span>
+                  <span class="list__name">{artifact.id}</span>
+                  <span class="list__meta">
+                    {basenameFromPath(relativeSourcePath(artifact.source_path, workspaceRoot))}
+                  </span>
+                </button>
+              </li>
+            {/each}
+          </ul>
+        </div>
       {/if}
-    </div>
-  {/if}
 
   <div class="explorer__section">
     <div class="section__title">
       <span>Profiles</span>
       <strong>{profileIds.length}</strong>
-    </div>
-    <div class="chips">
-      {#each profileIds as profileId (profileId)}
-        <button
-          class={['chip', selectedProfile === profileId ? 'chip--active' : ''].join(' ')}
-          onclick={() => onSelectProfile(profileId)}
-          type="button"
-        >
-          {profileId}
-        </button>
+        </div>
+        <div class="chips">
+          {#each profileIds as profileId (profileId)}
+            <button
+              class={['chip', selectedProfile === profileId ? 'chip--active' : ''].join(' ')}
+              onclick={() => onSelectProfile(profileId)}
+              type="button"
+            >
+              {profileId}
+            </button>
       {/each}
     </div>
   </div>
+
+  <div class="explorer__section">
+    <div class="section__title">
+      <span>Profile Vars</span>
+      <strong>{profileDetail?.merged_vars.length ?? 0}</strong>
+    </div>
+
+    {#if !selectedProfile}
+      <div class="list__static">
+        <span class="muted">（选择 profile 后查看变量与占位）</span>
+        <span class="mono">vars</span>
+      </div>
+    {:else if profileDetailBusy}
+      <div class="list__static">
+        <span class="muted">读取中…</span>
+        <span class="mono">{selectedProfile}</span>
+      </div>
+    {:else if profileDetailError}
+      <p class="empty empty--flush">{profileDetailError}</p>
+    {:else if !profileDetail || profileDetail.merged_vars.length === 0}
+      <div class="list__static">
+        <span class="muted">（该 profile 暂无变量）</span>
+        <span class="mono">{selectedProfile}</span>
+      </div>
+    {:else}
+      <div class="token-list token-list--stack">
+        {#each profileDetail.merged_vars as variable (variable.key)}
+          <button
+            class="token token--interactive"
+            type="button"
+            title={variable.value_json}
+            onclick={() => void copyToClipboard(`{{ ${variable.key} }}`, 'Tera 占位符')}
+          >
+            <span class="token__label">{variable.key}</span>
+            <span class="token__meta mono">{`{{ ${variable.key} }}`}</span>
+          </button>
+        {/each}
+      </div>
+    {/if}
+  </div>
 </aside>
+  {/snippet}
 
-<main class="canvas" aria-label="工作区画布">
-  <div class="canvas__head">
-    <div class="title">
-      <strong>{titleLabel}</strong>
-      <span class="muted">
-        {activeTab === MANIFEST_DOC_ID ? '· workspace config' : selectedProfile ? `· ${selectedProfile}` : ''}
-      </span>
-    </div>
+  {#snippet right()}
+    <main class="canvas" aria-label="工作区画布">
+      <div class="canvas__head">
+        <div class="title">
+          <strong>{titleLabel}</strong>
+          <span class="muted">
+            {activeTab === MANIFEST_DOC_ID ? '· workspace config' : selectedProfile ? `· ${selectedProfile}` : ''}
+          </span>
+        </div>
 
-    <div class="canvas__actions">
-      <button
-        class="ui-button ui-button--ghost"
-        disabled={!activeEditor?.dirty || activeEditor?.busySave}
-        type="button"
-        onclick={() => void saveActiveArtifact()}
-      >
-        {activeEditor?.busySave ? '保存中…' : activeEditor?.dirty ? '保存' : '已保存'}
-      </button>
-      <button
-        class="ui-button ui-button--primary"
-        disabled={!activeTab || (!isManifestTab(activeTab) && !selectedProfile) || activeEditor?.busyPreview}
-        type="button"
-        onclick={() => void refreshPreview()}
-      >
-        {activeEditor?.busyPreview ? '处理中…' : activeTab === MANIFEST_DOC_ID ? '说明 / 校验' : '渲染预览'}
-      </button>
-      <button class="ui-button ui-button--subtle" disabled={!activeTab} type="button" onclick={closeActiveArtifact}>
-        关闭
-      </button>
-    </div>
-  </div>
+        <div class="canvas__actions">
+          <button
+            class="ui-button ui-button--ghost"
+            disabled={!activeEditor?.dirty || activeEditor?.busySave}
+            type="button"
+            onclick={() => void saveActiveArtifact()}
+          >
+            {activeEditor?.busySave ? '保存中…' : activeEditor?.dirty ? '保存' : '已保存'}
+          </button>
+          <button
+            class="ui-button ui-button--primary"
+            disabled={!activeTab || (!isManifestTab(activeTab) && !selectedProfile) || activeEditor?.busyPreview}
+            type="button"
+            onclick={() => void refreshPreview()}
+          >
+            {activeEditor?.busyPreview ? '处理中…' : activeTab === MANIFEST_DOC_ID ? '说明 / 校验' : '渲染预览'}
+          </button>
+          <button
+            class="ui-button ui-button--subtle"
+            disabled={!activeTab}
+            type="button"
+            onclick={closeActiveArtifact}
+          >
+            关闭
+          </button>
+        </div>
+      </div>
 
-  {#if errorMessage}
-    <p class="notice notice--error">{errorMessage}</p>
-  {/if}
-  <p class="status-line" aria-live="polite">{statusLine}</p>
+      {#if errorMessage}
+        <p class="notice notice--error">{errorMessage}</p>
+      {/if}
+      <p class="status-line" aria-live="polite">{statusLine}</p>
 
-  <div class="split surface">
-    <SplitView autoSaveId="workbench:artifacts:shell" initialLeftPct={52} minLeftPx={360} minRightPx={360}>
-      {#snippet left()}
-        <div class="pane">
-          <div class="pane__title">
-            <div style="display:flex; align-items:center; justify-content:space-between; gap:12px;">
-              <span>Source</span>
-              <EditorTabs
-                tabs={tabsModel}
-                active={activeTab}
-                onChange={(next) => {
-                  activeTab = next;
-                }}
-                onClose={(id) => closeArtifactTab(id)}
-                onReorder={(nextOrder) => reorderTabs(nextOrder)}
-                onOpenContextMenu={(id, x, y) => openTabMenu(id, x, y)}
-              />
+      <div class="canvas__body">
+        <SplitView
+          autoSaveId="workbench:artifacts:inspector"
+          initialLeftPct={72}
+          minLeftPx={560}
+          minRightPx={280}
+        >
+          {#snippet left()}
+            <div class="split surface">
+              <SplitView
+                autoSaveId="workbench:artifacts:shell"
+                initialLeftPct={52}
+                minLeftPx={360}
+                minRightPx={360}
+              >
+                {#snippet left()}
+                  <div class="pane">
+                    <div class="pane__title">
+                      <div class="pane__title-row">
+                        <span>Source</span>
+                        <EditorTabs
+                          tabs={tabsModel}
+                          active={activeTab}
+                          onChange={(next) => {
+                            activeTab = next;
+                          }}
+                          onClose={(id) => closeArtifactTab(id)}
+                          onReorder={(nextOrder) => reorderTabs(nextOrder)}
+                          onOpenContextMenu={(id, x, y) => openTabMenu(id, x, y)}
+                        />
+                      </div>
+                    </div>
+                    <div class="pane__body">
+                      {#if !activeTab}
+                        <p class="muted">（请选择一个 artifact）</p>
+                      {:else if activeEditor?.busySource}
+                        <p class="muted">读取中…</p>
+                      {:else}
+                        <CodeEditor
+                          value={activeEditor?.editorText ?? ''}
+                          onChange={(next) => {
+                            if (!activeTab) {
+                              return;
+                            }
+                            const st = editors[activeTab];
+                            if (!st) {
+                              return;
+                            }
+                            st.editorText = next;
+                            st.dirty = savedContentOf(st.source) !== next;
+                          }}
+                        />
+                      {/if}
+                    </div>
+                  </div>
+                {/snippet}
+
+                {#snippet right()}
+                  <div class="pane">
+                    <div class="pane__title">Preview</div>
+                    <div class="pane__body">
+                      <Tabs.Root value={rightMode} onValueChange={(next) => (rightMode = next as typeof rightMode)}>
+                        <Tabs.List class="tabs" aria-label="Preview mode">
+                          <Tabs.Trigger class="tab" value="preview">Rendered</Tabs.Trigger>
+                          <Tabs.Trigger class="tab" value="diff">Diff</Tabs.Trigger>
+                        </Tabs.List>
+
+                        <Tabs.Content class="tabs__panel" value="preview">
+                          <OutputViewer text={activeEditor?.previewText || '（暂无预览）'} mode={previewMode} />
+                        </Tabs.Content>
+
+                        <Tabs.Content class="tabs__panel" value="diff">
+                          <DiffViewer
+                            original={savedContentOf(activeEditor?.source)}
+                            modified={activeEditor?.editorText ?? ''}
+                            fromLabel={activeTab ? `${activeTab} (saved)` : 'saved'}
+                            toLabel={activeTab ? `${activeTab} (edited)` : 'edited'}
+                          />
+                        </Tabs.Content>
+                      </Tabs.Root>
+                    </div>
+                  </div>
+                {/snippet}
+              </SplitView>
             </div>
-          </div>
-          <div class="pane__body">
-            {#if !activeTab}
-              <p class="muted">（请选择一个 artifact）</p>
-            {:else if activeEditor?.busySource}
-              <p class="muted">读取中…</p>
-            {:else}
-              <CodeEditor
-                value={activeEditor?.editorText ?? ''}
-                onChange={(next) => {
-                  if (!activeTab) {
-                    return;
-                  }
-                  const st = editors[activeTab];
-                  if (!st) {
-                    return;
-                  }
-                  st.editorText = next;
-                  st.dirty = savedContentOf(st.source) !== next;
-                }}
-              />
-            {/if}
-          </div>
-        </div>
-      {/snippet}
+          {/snippet}
 
-      {#snippet right()}
-        <div class="pane">
-          <div class="pane__title">Preview</div>
-          <div class="pane__body">
-            <Tabs.Root value={rightMode} onValueChange={(next) => (rightMode = next as typeof rightMode)}>
-              <Tabs.List class="tabs" aria-label="Preview mode">
-                <Tabs.Trigger class="tab" value="preview">Rendered</Tabs.Trigger>
-                <Tabs.Trigger class="tab" value="diff">Diff</Tabs.Trigger>
-              </Tabs.List>
+          {#snippet right()}
+            <section class="region secondary-sidebar" aria-label="Artifacts 检查器">
+              <div class="region__header">
+                <span>Inspector</span>
+                <span class="mono">{activeTab === MANIFEST_DOC_ID ? 'manifest' : activeTab ?? 'idle'}</span>
+              </div>
 
-              <Tabs.Content class="tabs__panel" value="preview">
-                <OutputViewer
-                  text={activeEditor?.previewText || '（暂无预览）'}
-                  mode={previewMode}
-                />
-              </Tabs.Content>
+              <div class="region__body">
+                {#if !activeTab}
+                  <p class="empty empty--flush">（打开 artifact 或 manifest 后查看上下文与变量）</p>
+                {:else if activeTab === MANIFEST_DOC_ID}
+                  <div class="inspector-section">
+                    <div class="section__title">
+                      <span>Workspace Summary</span>
+                      <strong>{summary?.workspace_root ? 'ready' : 'idle'}</strong>
+                    </div>
+                    <div class="inspector-table">
+                      <div class="inspector-row">
+                        <span class="inspector-row__label">Profiles</span>
+                        <span class="inspector-row__value inspector-row__value--mono">{profiles.length}</span>
+                      </div>
+                      <div class="inspector-row">
+                        <span class="inspector-row__label">Artifacts</span>
+                        <span class="inspector-row__value inspector-row__value--mono">{summary?.artifacts.length ?? 0}</span>
+                      </div>
+                      <div class="inspector-row">
+                        <span class="inspector-row__label">Targets</span>
+                        <span class="inspector-row__value inspector-row__value--mono">{summary?.targets.length ?? 0}</span>
+                      </div>
+                      <div class="inspector-row">
+                        <span class="inspector-row__label">Env Sets</span>
+                        <span class="inspector-row__value inspector-row__value--mono">{summary?.env_sets.length ?? 0}</span>
+                      </div>
+                      <div class="inspector-row">
+                        <span class="inspector-row__label">Scripts</span>
+                        <span class="inspector-row__value inspector-row__value--mono">{summary?.scripts.length ?? 0}</span>
+                      </div>
+                      <div class="inspector-row">
+                        <span class="inspector-row__label">MCP</span>
+                        <span class="inspector-row__value inspector-row__value--mono">{summary?.mcp_servers.length ?? 0}</span>
+                      </div>
+                    </div>
+                  </div>
+                {:else}
+                  <div class="inspector-section">
+                    <div class="section__title">
+                      <span>Document</span>
+                      <strong>{activeArtifactSummary?.kind ?? 'file'}</strong>
+                    </div>
+                    <div class="inspector-table">
+                      <div class="inspector-row">
+                        <span class="inspector-row__label">Artifact</span>
+                        <span class="inspector-row__value inspector-row__value--mono">{activeTab}</span>
+                      </div>
+                      <div class="inspector-row">
+                        <span class="inspector-row__label">Source</span>
+                        <span class="inspector-row__value inspector-row__value--mono">
+                          {activeSourcePath ?? activeArtifactSummary?.source_path ?? '（未加载）'}
+                        </span>
+                      </div>
+                      <div class="inspector-row">
+                        <span class="inspector-row__label">Template</span>
+                        <span class="inspector-row__value inspector-row__value--mono">
+                          {activeArtifactSummary?.template ? 'tera / jinja-like' : 'plain text'}
+                        </span>
+                      </div>
+                      <div class="inspector-row">
+                        <span class="inspector-row__label">Validate</span>
+                        <span class="inspector-row__value inspector-row__value--mono">{activeValidateAs}</span>
+                      </div>
+                    </div>
+                  </div>
 
-              <Tabs.Content class="tabs__panel" value="diff">
-                <DiffViewer
-                  original={savedContentOf(activeEditor?.source)}
-                  modified={activeEditor?.editorText ?? ''}
-                  fromLabel={activeTab ? `${activeTab} (saved)` : 'saved'}
-                  toLabel={activeTab ? `${activeTab} (edited)` : 'edited'}
-                />
-              </Tabs.Content>
-            </Tabs.Root>
-          </div>
-        </div>
-      {/snippet}
-    </SplitView>
-  </div>
-</main>
+                  <div class="inspector-section">
+                    <div class="section__title">
+                      <span>Profile Context</span>
+                      <strong>{selectedProfile ?? '未选择'}</strong>
+                    </div>
+
+                    {#if profileDetailBusy}
+                      <p class="empty empty--flush">读取 profile 变量中…</p>
+                    {:else if profileDetailError}
+                      <p class="empty empty--flush">{profileDetailError}</p>
+                    {:else if !selectedProfile}
+                      <p class="empty empty--flush">（选择 profile 后显示渲染变量）</p>
+                    {:else if !profileDetail || profileDetail.merged_vars.length === 0}
+                      <p class="empty empty--flush">（当前 profile 没有 merged vars）</p>
+                    {:else}
+                      <div class="inspector-table">
+                        {#each profileDetail.merged_vars as item (item.key)}
+                          <div class="inspector-row">
+                            <span class="inspector-row__label">{item.key}</span>
+                            <span class="inspector-row__value inspector-row__value--mono">{item.value_json}</span>
+                          </div>
+                        {/each}
+                      </div>
+                    {/if}
+                  </div>
+
+                  <div class="inspector-section">
+                    <div class="section__title">
+                      <span>Used By Targets</span>
+                      <strong>{usageTargets.length}</strong>
+                    </div>
+
+                    {#if usageTargets.length === 0}
+                      <p class="empty empty--flush">（未被任何 target 引用）</p>
+                    {:else}
+                      <ul class="result-list">
+                        {#each usageTargets as t (t.id)}
+                          <li class="result-row">
+                            <button
+                              class="result-row__button"
+                              type="button"
+                              disabled={!onOpenTarget}
+                              onclick={() => onOpenTarget?.(t.id)}
+                              title={t.target_path}
+                            >
+                              <span class="pill pill--neutral">{t.method}</span>
+                              <span class="result-row__title">{t.id}</span>
+                              <span class="result-row__detail">{truncateMiddle(t.target_path, 64)}</span>
+                            </button>
+                          </li>
+                        {/each}
+                      </ul>
+                    {/if}
+                  </div>
+                {/if}
+              </div>
+            </section>
+          {/snippet}
+        </SplitView>
+      </div>
+    </main>
+  {/snippet}
+</SplitView>
 
 {#if tabMenu}
   <div

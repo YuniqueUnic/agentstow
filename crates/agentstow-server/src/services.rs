@@ -5,6 +5,7 @@ use agentstow_core::{
     AgentStowDirs, AgentStowError, ArtifactId, ArtifactKind, InstallMethod, ProfileName, Result,
     SecretBinding, TargetName, ValidateAs, normalize_for_display,
 };
+use agentstow_git::Git;
 use agentstow_linker::{ApplyOptions, InstallSource, LinkJob, RenderStore, apply_job, plan_job};
 use agentstow_manifest::{Manifest, McpTransport};
 use agentstow_render::Renderer;
@@ -17,11 +18,12 @@ use agentstow_web_types::{
     ImpactSubjectKindResponse, InstallMethodResponse, LinkApplyRequest, LinkDesiredInstallResponse,
     LinkOperationActionResponse, LinkOperationItemResponse, LinkOperationResponse,
     LinkPlanItemResponse, LinkPlanRequest, LinkRecordResponse, LinkRepairRequest,
-    LinkStatusResponseItem, ManifestResponse, ManifestSourceResponse, McpServerSummaryResponse,
-    McpTransportKindResponse, ProfileDetailResponse, ProfileSummaryResponse, ProfileVarResponse,
-    RenderResponse, ScriptRunResponse, ScriptSummaryResponse, ShellKindResponse,
-    TargetSummaryResponse, ValidateAsResponse, ValidationIssueResponse, WatchModeResponse,
-    WatchStatusResponse, WorkspaceCountsResponse, WorkspaceSummaryResponse,
+    LinkStatusResponseItem, ManifestResponse, ManifestSourceResponse, McpHeaderResponse,
+    McpServerSummaryResponse, McpTransportKindResponse, ProfileDetailResponse,
+    ProfileSummaryResponse, ProfileVarResponse, RenderResponse, ScriptRunResponse,
+    ScriptSummaryResponse, ShellKindResponse, TargetSummaryResponse, ValidateAsResponse,
+    ValidationIssueResponse, WatchModeResponse, WatchStatusResponse, WorkspaceCountsResponse,
+    WorkspaceGitSummaryResponse, WorkspaceSummaryResponse,
 };
 use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
@@ -418,6 +420,26 @@ impl WorkspaceQueryService {
             mcp_servers,
             issues,
         })
+    }
+
+    pub(crate) async fn workspace_git(&self) -> Result<Option<WorkspaceGitSummaryResponse>> {
+        match Git::detect(&self.workspace_root).await {
+            Ok(info) => Ok(Some(WorkspaceGitSummaryResponse {
+                repo_root: normalize_for_display(&info.repo_root),
+                branch: info.branch,
+                head: info.head,
+                head_short: info.head_short,
+                dirty: info.dirty,
+            })),
+            Err(AgentStowError::Git { message })
+                if message.contains("not a git repository")
+                    || message
+                        .contains("not a git repository (or any of the parent directories)") =>
+            {
+                Ok(None)
+            }
+            Err(error) => Err(error),
+        }
     }
 
     pub(crate) fn artifact_detail(
@@ -995,18 +1017,57 @@ fn build_mcp_server_summaries(manifest: &Manifest) -> Vec<McpServerSummaryRespon
         .mcp_servers
         .iter()
         .map(|(name, server)| {
-            let (transport_kind, location) = match &server.transport {
-                McpTransport::Stdio { command, .. } => {
-                    (McpTransportKindResponse::Stdio, command.clone())
+            let (transport_kind, location, command, args, url, headers) = match &server.transport {
+                McpTransport::Stdio { command, args } => (
+                    McpTransportKindResponse::Stdio,
+                    command.clone(),
+                    Some(command.clone()),
+                    args.clone(),
+                    None,
+                    Vec::new(),
+                ),
+                McpTransport::Http {
+                    url,
+                    headers: header_map,
+                } => {
+                    let mut headers: Vec<_> = header_map
+                        .iter()
+                        .map(|(key, value)| McpHeaderResponse {
+                            key: key.clone(),
+                            value: value.clone(),
+                        })
+                        .collect();
+                    headers.sort_by(|left, right| left.key.cmp(&right.key));
+
+                    (
+                        McpTransportKindResponse::Http,
+                        url.clone(),
+                        None,
+                        Vec::new(),
+                        Some(url.clone()),
+                        headers,
+                    )
                 }
-                McpTransport::Http { url, .. } => (McpTransportKindResponse::Http, url.clone()),
             };
+            let env_bindings: Vec<_> = server
+                .env
+                .iter()
+                .map(|env| EnvVarSummaryResponse {
+                    key: env.key.clone(),
+                    binding: summarize_secret_binding(&env.binding),
+                })
+                .collect();
 
             McpServerSummaryResponse {
                 id: name.clone(),
                 transport_kind,
                 location,
-                env_keys: server.env.iter().map(|env| env.key.clone()).collect(),
+                command,
+                args,
+                url,
+                headers,
+                env_keys: env_bindings.iter().map(|env| env.key.clone()).collect(),
+                env_bindings,
             }
         })
         .collect()

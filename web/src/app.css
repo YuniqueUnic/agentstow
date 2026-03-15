@@ -1,12 +1,48 @@
 :root {
-  color-scheme: dark;
+  color-scheme: light dark;
   font-family: 'IBM Plex Sans', 'Segoe UI', sans-serif;
   line-height: 1.5;
   font-weight: 400;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  --page-grid-size: 24px;
+  --selection-bg: color-mix(in oklch, var(--primary) 28%, transparent);
+}
 
+:root[data-theme='light'] {
+  color-scheme: light;
+  --canvas: oklch(0.985 0.003 95);
+  --canvas-deep: oklch(0.955 0.004 95);
+  --canvas-tint: oklch(0.978 0.006 95);
+  --surface: oklch(0.972 0.004 95);
+  --surface-strong: oklch(0.944 0.006 95);
+  --surface-muted: oklch(0.918 0.008 95);
+  --topbar-bg: oklch(0.948 0.005 95);
+  --rail-bg: oklch(0.928 0.006 95);
+  --explorer-bg: oklch(0.958 0.005 95);
+  --panel-bg: oklch(0.982 0.002 95);
+  --panel-elevated: oklch(0.965 0.004 95);
+  --line: oklch(0.84 0.01 95);
+  --line-strong: oklch(0.73 0.014 95);
+  --ink: oklch(0.22 0.01 255);
+  --ink-soft: oklch(0.4 0.012 255);
+  --ink-muted: oklch(0.56 0.012 255);
+  --primary: oklch(0.56 0.13 255);
+  --primary-strong: oklch(0.5 0.13 255);
+  --primary-soft: oklch(0.9 0.03 255);
+  --accent: oklch(0.62 0.12 72);
+  --success: oklch(0.62 0.12 156);
+  --danger: oklch(0.58 0.16 28);
+  --shadow: 0 20px 48px rgba(21, 29, 41, 0.08);
+  --page-gradient:
+    linear-gradient(180deg, color-mix(in oklch, white 72%, var(--canvas-tint)), var(--canvas));
+  --page-grid-color: color-mix(in oklch, var(--line) 20%, transparent);
+  --page-grid-opacity: 0.78;
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
   --canvas: oklch(0.19 0.012 255);
   --canvas-deep: oklch(0.15 0.012 255);
   --canvas-tint: oklch(0.235 0.015 255);
@@ -30,6 +66,76 @@
   --success: oklch(0.73 0.14 156);
   --danger: oklch(0.66 0.18 28);
   --shadow: 0 26px 70px rgba(3, 9, 19, 0.32);
+  --page-gradient:
+    linear-gradient(180deg, color-mix(in oklch, var(--canvas-tint) 62%, var(--canvas-deep)), var(--canvas-deep));
+  --page-grid-color: color-mix(in oklch, var(--line) 16%, transparent);
+  --page-grid-opacity: 0.32;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    color-scheme: dark;
+    --canvas: oklch(0.19 0.012 255);
+    --canvas-deep: oklch(0.15 0.012 255);
+    --canvas-tint: oklch(0.235 0.015 255);
+    --surface: oklch(0.215 0.014 255);
+    --surface-strong: oklch(0.252 0.016 255);
+    --surface-muted: oklch(0.288 0.018 255);
+    --topbar-bg: oklch(0.225 0.014 255);
+    --rail-bg: oklch(0.17 0.012 255);
+    --explorer-bg: oklch(0.2 0.013 255);
+    --panel-bg: oklch(0.208 0.014 255);
+    --panel-elevated: oklch(0.24 0.015 255);
+    --line: oklch(0.345 0.016 255);
+    --line-strong: oklch(0.44 0.02 255);
+    --ink: oklch(0.92 0.01 92);
+    --ink-soft: oklch(0.74 0.015 92);
+    --ink-muted: oklch(0.59 0.014 92);
+    --primary: oklch(0.68 0.145 248);
+    --primary-strong: oklch(0.58 0.148 248);
+    --primary-soft: oklch(0.33 0.07 248);
+    --accent: oklch(0.76 0.13 72);
+    --success: oklch(0.73 0.14 156);
+    --danger: oklch(0.66 0.18 28);
+    --shadow: 0 26px 70px rgba(3, 9, 19, 0.32);
+    --page-gradient:
+      linear-gradient(180deg, color-mix(in oklch, var(--canvas-tint) 62%, var(--canvas-deep)), var(--canvas-deep));
+    --page-grid-color: color-mix(in oklch, var(--line) 16%, transparent);
+    --page-grid-opacity: 0.32;
+  }
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme='dark']) {
+    color-scheme: light;
+    --canvas: oklch(0.985 0.003 95);
+    --canvas-deep: oklch(0.955 0.004 95);
+    --canvas-tint: oklch(0.978 0.006 95);
+    --surface: oklch(0.972 0.004 95);
+    --surface-strong: oklch(0.944 0.006 95);
+    --surface-muted: oklch(0.918 0.008 95);
+    --topbar-bg: oklch(0.948 0.005 95);
+    --rail-bg: oklch(0.928 0.006 95);
+    --explorer-bg: oklch(0.958 0.005 95);
+    --panel-bg: oklch(0.982 0.002 95);
+    --panel-elevated: oklch(0.965 0.004 95);
+    --line: oklch(0.84 0.01 95);
+    --line-strong: oklch(0.73 0.014 95);
+    --ink: oklch(0.22 0.01 255);
+    --ink-soft: oklch(0.4 0.012 255);
+    --ink-muted: oklch(0.56 0.012 255);
+    --primary: oklch(0.56 0.13 255);
+    --primary-strong: oklch(0.5 0.13 255);
+    --primary-soft: oklch(0.9 0.03 255);
+    --accent: oklch(0.62 0.12 72);
+    --success: oklch(0.62 0.12 156);
+    --danger: oklch(0.58 0.16 28);
+    --shadow: 0 20px 48px rgba(21, 29, 41, 0.08);
+    --page-gradient:
+      linear-gradient(180deg, color-mix(in oklch, white 72%, var(--canvas-tint)), var(--canvas));
+    --page-grid-color: color-mix(in oklch, var(--line) 20%, transparent);
+    --page-grid-opacity: 0.78;
+  }
 }
 
 html,
@@ -41,10 +147,7 @@ body,
 body {
   margin: 0;
   color: var(--ink);
-  background:
-    radial-gradient(circle at top left, color-mix(in oklch, var(--primary) 18%, transparent), transparent 32%),
-    radial-gradient(circle at bottom right, color-mix(in oklch, var(--accent) 10%, transparent), transparent 30%),
-    linear-gradient(180deg, color-mix(in oklch, var(--canvas-tint) 62%, var(--canvas-deep)), var(--canvas-deep));
+  background: var(--page-gradient);
   background-attachment: fixed;
 }
 
@@ -54,11 +157,10 @@ body::before {
   inset: 0;
   pointer-events: none;
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0)),
-    linear-gradient(90deg, color-mix(in oklch, var(--line) 14%, transparent) 1px, transparent 1px),
-    linear-gradient(0deg, color-mix(in oklch, var(--line) 11%, transparent) 1px, transparent 1px);
-  background-size: auto, 28px 28px, 28px 28px;
-  opacity: 0.26;
+    linear-gradient(90deg, var(--page-grid-color) 1px, transparent 1px),
+    linear-gradient(0deg, var(--page-grid-color) 1px, transparent 1px);
+  background-size: var(--page-grid-size) var(--page-grid-size);
+  opacity: var(--page-grid-opacity);
 }
 
 * {
@@ -96,7 +198,7 @@ pre,
 }
 
 ::selection {
-  background: color-mix(in oklch, var(--primary) 32%, black);
+  background: var(--selection-bg);
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -31,6 +31,16 @@ pub struct WorkspaceStateResponse {
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
+pub struct WorkspaceGitSummaryResponse {
+    pub repo_root: String,
+    pub branch: Option<String>,
+    pub head: String,
+    pub head_short: String,
+    pub dirty: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct WorkspaceSelectRequest {
     pub workspace_root: String,
 }
@@ -382,7 +392,19 @@ pub struct McpServerSummaryResponse {
     pub id: String,
     pub transport_kind: McpTransportKindResponse,
     pub location: String,
+    pub command: Option<String>,
+    pub args: Vec<String>,
+    pub url: Option<String>,
+    pub headers: Vec<McpHeaderResponse>,
     pub env_keys: Vec<String>,
+    pub env_bindings: Vec<EnvVarSummaryResponse>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct McpHeaderResponse {
+    pub key: String,
+    pub value: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -446,6 +468,7 @@ pub fn export_bindings() -> Result<(), ts_rs::ExportError> {
     HealthResponse::export_all(&config)?;
     ManifestResponse::export_all(&config)?;
     WorkspaceStateResponse::export_all(&config)?;
+    WorkspaceGitSummaryResponse::export_all(&config)?;
     WorkspaceSelectRequest::export_all(&config)?;
     WorkspaceSelectResponse::export_all(&config)?;
     WorkspaceInitRequest::export_all(&config)?;

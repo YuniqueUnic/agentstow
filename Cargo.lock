@@ -176,6 +176,7 @@ version = "0.1.0"
 dependencies = [
  "agentstow-core",
  "agentstow-env",
+ "agentstow-git",
  "agentstow-linker",
  "agentstow-manifest",
  "agentstow-render",

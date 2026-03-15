@@ -19,6 +19,7 @@ import type {
   ScriptRunRequest,
   ScriptRunResponse,
   WatchStatusResponse,
+  WorkspaceGitSummaryResponse,
   WorkspaceInitRequest,
   WorkspaceInitResponse,
   WorkspaceSelectResponse,
@@ -130,6 +131,10 @@ export function updateManifestSource(
 
 export function getWorkspaceState(): Promise<WorkspaceStateResponse> {
   return fetchJson<WorkspaceStateResponse>('/api/workspace');
+}
+
+export function getWorkspaceGit(): Promise<WorkspaceGitSummaryResponse | null> {
+  return fetchJson<WorkspaceGitSummaryResponse | null>('/api/workspace/git');
 }
 
 export function selectWorkspace(workspace_root: string): Promise<WorkspaceSelectResponse> {
