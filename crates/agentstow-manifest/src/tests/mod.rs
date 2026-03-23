@@ -259,6 +259,45 @@ vars = {}
 }
 
 #[test]
+fn load_should_parse_render_context_sections() {
+    let temp = assert_fs::TempDir::new().unwrap();
+    temp.child("agentstow.toml")
+        .write_str(
+            r#"
+[profiles.base]
+vars = { name = "AgentStow" }
+
+[render_context.env_files.shared]
+path = ".env"
+
+[render_context.files.reference]
+path = "reference.md"
+
+[render_context.mcp_servers.local]
+server = "filesystem"
+
+[mcp_servers.filesystem]
+transport = { kind = "stdio", command = "npx", args = ["-y", "@modelcontextprotocol/server-filesystem", "."] }
+"#,
+        )
+        .unwrap();
+
+    let manifest = Manifest::load_from_path(temp.child("agentstow.toml").path()).unwrap();
+    assert_eq!(manifest.render_context.env_files.len(), 1);
+    assert_eq!(manifest.render_context.files.len(), 1);
+    assert_eq!(manifest.render_context.mcp_servers.len(), 1);
+    assert_eq!(
+        manifest
+            .render_context
+            .mcp_servers
+            .get("local")
+            .unwrap()
+            .server,
+        "filesystem"
+    );
+}
+
+#[test]
 fn load_should_error_when_target_references_missing_profile() {
     let temp = assert_fs::TempDir::new().unwrap();
     temp.child("agentstow.toml")

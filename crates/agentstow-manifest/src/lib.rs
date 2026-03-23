@@ -37,6 +37,7 @@ pub struct Manifest {
     pub profiles: BTreeMap<ProfileName, Profile>,
     pub artifacts: BTreeMap<ArtifactId, ArtifactDef>,
     pub targets: BTreeMap<TargetName, TargetDef>,
+    pub render_context: RenderContextDef,
     pub env_sets: BTreeMap<String, EnvSet>,
     pub scripts: BTreeMap<String, ScriptDef>,
     pub mcp_servers: BTreeMap<String, McpServerDef>,
@@ -198,6 +199,43 @@ impl TargetDef {
     }
 }
 
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct RenderContextDef {
+    #[serde(default)]
+    pub env_files: BTreeMap<String, RenderEnvFileDef>,
+    #[serde(default)]
+    pub files: BTreeMap<String, RenderFileDef>,
+    #[serde(default)]
+    pub mcp_servers: BTreeMap<String, RenderMcpServerContextDef>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RenderEnvFileDef {
+    pub path: PathBuf,
+}
+
+impl RenderEnvFileDef {
+    pub fn absolute_path(&self, workspace_root: &Path) -> PathBuf {
+        absolutize(workspace_root, &self.path)
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RenderFileDef {
+    pub path: PathBuf,
+}
+
+impl RenderFileDef {
+    pub fn absolute_path(&self, workspace_root: &Path) -> PathBuf {
+        absolutize(workspace_root, &self.path)
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RenderMcpServerContextDef {
+    pub server: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EnvVarDef {
     pub key: String,
@@ -263,6 +301,8 @@ struct ManifestToml {
     #[serde(default)]
     targets: BTreeMap<TargetName, TargetDef>,
     #[serde(default)]
+    render_context: RenderContextDef,
+    #[serde(default)]
     env_sets: BTreeMap<String, EnvSet>,
     #[serde(default)]
     scripts: BTreeMap<String, ScriptDef>,
@@ -294,6 +334,7 @@ impl Manifest {
             profiles: parsed.profiles,
             artifacts: parsed.artifacts,
             targets: parsed.targets,
+            render_context: parsed.render_context,
             env_sets: parsed.env_sets,
             scripts: parsed.scripts,
             mcp_servers: parsed.mcp_servers,

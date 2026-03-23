@@ -90,6 +90,10 @@ name = "agentstow-linker"
 version = "0.1.0"
 dependencies = [
  "agentstow-core",
+ "agentstow-manifest",
+ "agentstow-render",
+ "agentstow-state",
+ "agentstow-validate",
  "anyhow",
  "assert_fs",
  "blake3",
@@ -102,6 +106,7 @@ dependencies = [
  "serde",
  "tempfile",
  "thiserror 2.0.18",
+ "time",
  "tracing",
 ]
 
@@ -142,8 +147,10 @@ version = "0.1.0"
 dependencies = [
  "agentstow-core",
  "agentstow-manifest",
+ "agentstow-mcp",
  "anyhow",
  "assert_fs",
+ "dotenvy",
  "fs-err",
  "ignore",
  "pretty_assertions",

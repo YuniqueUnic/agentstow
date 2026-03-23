@@ -7,7 +7,9 @@ version.workspace = true
 [dependencies]
 agentstow-core = { path = "../agentstow-core" }
 agentstow-manifest = { path = "../agentstow-manifest" }
+agentstow-mcp = { path = "../agentstow-mcp" }
 anyhow.workspace = true
+dotenvy.workspace = true
 fs-err.workspace = true
 ignore.workspace = true
 serde_json.workspace = true
