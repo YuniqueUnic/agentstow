@@ -2,6 +2,7 @@ use super::*;
 use agentstow_core::ProfileName;
 use assert_fs::prelude::*;
 use pretty_assertions::assert_eq;
+use std::path::PathBuf;
 
 #[test]
 fn profile_merge_order_later_extends_wins_and_self_wins() {
@@ -259,42 +260,52 @@ vars = {}
 }
 
 #[test]
-fn load_should_parse_render_context_sections() {
+fn load_should_parse_env_files_file_contexts_and_mcp_imports() {
     let temp = assert_fs::TempDir::new().unwrap();
+    temp.child("mcps.json")
+        .write_str(
+            r#"{
+  "mcpServers": {
+    "filesystem": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "."]
+    }
+  }
+}"#,
+        )
+        .unwrap();
     temp.child("agentstow.toml")
         .write_str(
             r#"
 [profiles.base]
 vars = { name = "AgentStow" }
 
-[render_context.env_files.shared]
-path = ".env"
+[env.files]
+paths = [".env"]
 
-[render_context.files.reference]
+[files.reference]
 path = "reference.md"
 
-[render_context.mcp_servers.local]
-server = "filesystem"
+[mcp_servers.file]
+path = "mcps.json"
 
-[mcp_servers.filesystem]
-transport = { kind = "stdio", command = "npx", args = ["-y", "@modelcontextprotocol/server-filesystem", "."] }
+[mcp_servers.local]
+[mcp_servers.local.transport]
+kind = "http"
+url = "https://example.com/mcp"
+
 "#,
         )
         .unwrap();
 
     let manifest = Manifest::load_from_path(temp.child("agentstow.toml").path()).unwrap();
-    assert_eq!(manifest.render_context.env_files.len(), 1);
-    assert_eq!(manifest.render_context.files.len(), 1);
-    assert_eq!(manifest.render_context.mcp_servers.len(), 1);
+    assert_eq!(manifest.env.files.paths, vec![PathBuf::from(".env")]);
     assert_eq!(
-        manifest
-            .render_context
-            .mcp_servers
-            .get("local")
-            .unwrap()
-            .server,
-        "filesystem"
+        manifest.files.get("reference").unwrap().path,
+        PathBuf::from("reference.md")
     );
+    assert!(manifest.mcp_servers.contains_key("filesystem"));
+    assert!(manifest.mcp_servers.contains_key("local"));
 }
 
 #[test]

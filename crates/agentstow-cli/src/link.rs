@@ -4,7 +4,7 @@ use agentstow_core::{
 };
 use agentstow_linker::{
     ApplyOptions, RenderStore, apply_job, build_link_instance_record, build_link_job_from_manifest,
-    check_link_record_health, plan_job,
+    check_link_record_health, plan_job, preflight_job,
 };
 use agentstow_manifest::Manifest;
 use agentstow_state::StateDb;
@@ -59,8 +59,8 @@ async fn link_apply_or_plan(
     let dirs = AgentStowDirs::from_env()?;
     let render_store = RenderStore::new(dirs.cache_dir.join("agentstow"), &manifest.workspace_root);
 
+    let mut jobs = Vec::new();
     let mut plan_items = Vec::new();
-    let mut applied_items = Vec::new();
 
     let selected: Vec<(&TargetName, &agentstow_manifest::TargetDef)> = if only_targets.is_empty() {
         manifest.targets.iter().collect()
@@ -97,11 +97,19 @@ async fn link_apply_or_plan(
 
         let item = plan_job(&job, &render_store)?;
         plan_items.push(item);
+        jobs.push(job);
+    }
 
-        if !plan_only {
-            let applied = apply_job(&job, &render_store, ApplyOptions { force })?;
+    let mut applied_items = Vec::new();
+    if !plan_only {
+        let apply_options = ApplyOptions { force };
+        for job in &jobs {
+            preflight_job(job, &render_store, apply_options)?;
+        }
+        for job in &jobs {
+            let applied = apply_job(job, &render_store, apply_options)?;
             applied_items.push(applied.clone());
-            record_link_instance(manifest, &dirs, &job, &render_store)?;
+            record_link_instance(manifest, &dirs, job, &render_store)?;
         }
     }
 

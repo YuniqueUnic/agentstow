@@ -6,14 +6,19 @@ vars = { owner = "platform-team", workspace_name = "codex-lab", default_profile 
 [env.files]     # 这个是能够将文件内容解析为环境变量的功能, 这个键是程序保留的
 paths = [".env"]
 
-[files.reference] # 这里是将这个 reference.md 文件作为可以被引用解析和注入的文件
+[env]
+THIS_IS_ENV = "true"
+DIRECT_ENV = "可以直接在这里声明环境变量，或者通过上面的 env.files 从文件中加载环境变量"
+DUPLICATE_ENV = "如果同一个环境变量在这里和 env.files 中都有声明，那么以这里为准, 覆盖掉 env.files 中的声明"
+
+[file.reference] # 这里是将这个 reference.md 文件作为可以被引用解析和注入的文件
 path = "reference.md"
 
-[files.worker_description]
-path = "agents/descriptions/worker.md"
+[file.worker_description]
+path = "templates/agents/descriptions/worker.md"
 
-[files.explorer_description]
-path = "agents/descriptions/explorer.md"
+[file.explorer_description]
+path = "templates/agents/descriptions/explorer.md"
 
 [mcp_servers.file] # 这个是能够将 json 格式的 mcp 配置文件也解析作为 mcp servers, 这个键是程序保留的
 path = "mcps.json" # 这里的 mcps.json 文件内容需要符合 MCP Server 的配置格式, 解析后会将其中的 MCP Server 配置注入到 mcp_servers 中, 以供后续引用和使用
@@ -89,6 +94,5 @@ artifact = "dotenv"
 profile = "base"
 target_path = "demo-targets-2/.env"
 method = "symlink"
-
 
 

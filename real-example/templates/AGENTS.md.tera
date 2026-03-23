@@ -6,9 +6,10 @@
 - Default profile: {{ default_profile }}
 
 ## Shared Fragment
-{{ files.reference_fragment | trim }}
+{{ files.reference | trim }}
 
 ## Working Rules
 - Prefer `cargo fmt --all` before finishing Rust changes.
 - Treat generated MCP config as reviewable artifacts.
 - Keep secrets as `${VAR}` placeholders or `[REDACTED_SECRET]`.
+- Imported filesystem launcher: {{ mcp_servers.filesystem.mcpServers.filesystem.command }}

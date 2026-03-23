@@ -2,9 +2,9 @@
 
 这个目录是 `docs/example` 的可执行替代版本，直接对齐当前 `agentstow` 的真实能力：
 
-- `render_context.env_files`：把仓库内 `.env` 安全值注入模板。
-- `render_context.files`：把参考片段和角色描述注入模板。
-- `render_context.mcp_servers`：把 MCP server 定义渲染进 `.agents/*.toml`。
+- `env.files`：把一个或多个 `.env` 文件合并成模板上下文里的 `env_files.shared.*`。
+- `files.*`：把参考片段和角色描述注入模板。
+- `mcp_servers.file`：从 `mcps.json` 导入 MCP server，再和显式声明的 servers 一起注入模板上下文。
 - `kind = "dir" + template = true`：把整棵 `.agents` 目录作为一等渲染产物。
 - `copy + symlink`：同一批渲染结果既可复制到目标，也可直接软链接到目标。
 
@@ -14,6 +14,7 @@
 
 ```bash
 cargo run -p agentstow-cli -- --cwd real-example --profile base render --artifact workspace_agents --dry-run
+cargo run -p agentstow-cli -- --cwd real-example --profile base render --artifact agents_dir --out demo-render/.agents
 cargo run -p agentstow-cli -- --cwd real-example link
 cargo run -p agentstow-cli -- --cwd real-example link status
 ```

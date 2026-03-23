@@ -135,10 +135,8 @@ fn build_tera_context(manifest: &Manifest, profile: &ProfileName) -> Result<Cont
 }
 
 fn load_env_file_contexts(manifest: &Manifest) -> Result<serde_json::Value> {
-    let mut out = serde_json::Map::new();
-    for (alias, def) in &manifest.render_context.env_files {
-        let path = def.absolute_path(&manifest.workspace_root);
-        let mut values = serde_json::Map::new();
+    let mut shared = serde_json::Map::new();
+    for path in manifest.env.files.absolute_paths(&manifest.workspace_root) {
         let iter = dotenvy::from_path_iter(&path).map_err(|e| AgentStowError::Render {
             message: format!(
                 "读取 env file 失败：path={}, {e}",
@@ -154,16 +152,20 @@ fn load_env_file_contexts(manifest: &Manifest) -> Result<serde_json::Value> {
                 )
                 .into(),
             })?;
-            values.insert(key, serde_json::Value::String(value));
+            shared.insert(key, serde_json::Value::String(value));
         }
-        out.insert(alias.clone(), serde_json::Value::Object(values));
+    }
+
+    let mut out = serde_json::Map::new();
+    if !shared.is_empty() || !manifest.env.files.paths.is_empty() {
+        out.insert("shared".to_string(), serde_json::Value::Object(shared));
     }
     Ok(serde_json::Value::Object(out))
 }
 
 fn load_file_contexts(manifest: &Manifest) -> Result<serde_json::Value> {
     let mut out = serde_json::Map::new();
-    for (alias, def) in &manifest.render_context.files {
+    for (alias, def) in &manifest.files {
         let path = def.absolute_path(&manifest.workspace_root);
         let content = fs_err::read_to_string(&path).map_err(|e| AgentStowError::Render {
             message: format!(
@@ -179,23 +181,12 @@ fn load_file_contexts(manifest: &Manifest) -> Result<serde_json::Value> {
 
 fn load_mcp_contexts(manifest: &Manifest) -> Result<serde_json::Value> {
     let mut out = serde_json::Map::new();
-    for (alias, def) in &manifest.render_context.mcp_servers {
-        let server =
-            manifest
-                .mcp_servers
-                .get(&def.server)
-                .ok_or_else(|| AgentStowError::Manifest {
-                    message: format!(
-                        "render_context.mcp_servers 引用不存在的 mcp server: {}",
-                        def.server
-                    )
-                    .into(),
-                })?;
-        let rendered = Mcp::render_server_json(&def.server, server)?;
+    for (name, server) in &manifest.mcp_servers {
+        let rendered = Mcp::render_server_json(name, server)?;
         let value = serde_json::from_str(&rendered).map_err(|e| AgentStowError::Render {
-            message: format!("解析 mcp render output 失败：server={}, {e}", def.server).into(),
+            message: format!("解析 mcp render output 失败：server={}, {e}", name).into(),
         })?;
-        out.insert(alias.clone(), value);
+        out.insert(name.clone(), value);
     }
     Ok(serde_json::Value::Object(out))
 }

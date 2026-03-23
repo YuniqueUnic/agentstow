@@ -40,6 +40,122 @@ validate_as = "none"
 }
 
 #[test]
+fn render_dir_out_should_materialize_rendered_directory() {
+    let temp = assert_fs::TempDir::new().unwrap();
+    temp.child("templates/agents/skills")
+        .create_dir_all()
+        .unwrap();
+    temp.child("templates/agents/worker.toml.tera")
+        .write_str("name = \"{{ workspace }}\"")
+        .unwrap();
+    temp.child("templates/agents/skills/rule.md")
+        .write_str("Keep builds reproducible.")
+        .unwrap();
+
+    temp.child("agentstow.toml")
+        .write_str(
+            r#"
+[profiles.base]
+workspace = "codex-lab"
+
+[artifacts.agents_dir]
+kind = "dir"
+source = "templates/agents"
+template = true
+"#,
+        )
+        .unwrap();
+
+    let mut cmd = Command::cargo_bin("agentstow").unwrap();
+    cmd.arg("--cwd")
+        .arg(temp.path())
+        .arg("--profile")
+        .arg("base")
+        .arg("render")
+        .arg("--artifact")
+        .arg("agents_dir")
+        .arg("--out")
+        .arg(temp.child("rendered/.agents").path());
+
+    cmd.assert().success();
+    assert_eq!(
+        std::fs::read_to_string(temp.child("rendered/.agents/worker.toml").path()).unwrap(),
+        "name = \"codex-lab\""
+    );
+    assert_eq!(
+        std::fs::read_to_string(temp.child("rendered/.agents/skills/rule.md").path()).unwrap(),
+        "Keep builds reproducible."
+    );
+}
+
+#[test]
+fn render_should_support_real_example_style_contexts() {
+    let temp = assert_fs::TempDir::new().unwrap();
+    temp.child("artifacts").create_dir_all().unwrap();
+    temp.child("artifacts/hello.txt.tera")
+        .write_str(
+            "owner={{ env_files.shared.OWNER }}\nref={{ files.reference }}\ncmd={{ mcp_servers.filesystem.mcpServers.filesystem.command }}\n",
+        )
+        .unwrap();
+    temp.child(".env")
+        .write_str("OWNER=platform-team\n")
+        .unwrap();
+    temp.child("reference.md")
+        .write_str("reference-fragment")
+        .unwrap();
+    temp.child("mcps.json")
+        .write_str(
+            r#"{
+  "mcpServers": {
+    "filesystem": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "."]
+    }
+  }
+}"#,
+        )
+        .unwrap();
+
+    temp.child("agentstow.toml")
+        .write_str(
+            r#"
+[profiles.base]
+vars = { name = "CLI" }
+
+[env.files]
+paths = [".env"]
+
+[files.reference]
+path = "reference.md"
+
+[mcp_servers.file]
+path = "mcps.json"
+
+[artifacts.hello]
+kind = "file"
+source = "artifacts/hello.txt.tera"
+template = true
+validate_as = "none"
+"#,
+        )
+        .unwrap();
+
+    let mut cmd = Command::cargo_bin("agentstow").unwrap();
+    cmd.arg("--cwd")
+        .arg(temp.path())
+        .arg("--profile")
+        .arg("base")
+        .arg("render")
+        .arg("--artifact")
+        .arg("hello")
+        .arg("--dry-run");
+
+    cmd.assert().success().stdout(predicate::str::contains(
+        "owner=platform-team\nref=reference-fragment\ncmd=npx",
+    ));
+}
+
+#[test]
 fn link_plan_json_should_be_machine_readable() {
     let temp = assert_fs::TempDir::new().unwrap();
     temp.child("artifacts").create_dir_all().unwrap();
@@ -124,6 +240,67 @@ method = "copy"
     assert_eq!(text, "Hello State!");
 
     assert!(temp.child("home/data/agentstow.db").path().exists());
+}
+
+#[test]
+fn link_should_preflight_all_targets_before_mutation() {
+    let temp = assert_fs::TempDir::new().unwrap();
+    temp.child("artifacts").create_dir_all().unwrap();
+    temp.child("artifacts/ok.txt.tera")
+        .write_str("ok-{{ name }}")
+        .unwrap();
+    temp.child("artifacts/conflict.txt.tera")
+        .write_str("conflict-{{ name }}")
+        .unwrap();
+    temp.child("proj").create_dir_all().unwrap();
+    temp.child("proj/conflict.txt")
+        .write_str("user-owned")
+        .unwrap();
+
+    temp.child("agentstow.toml")
+        .write_str(
+            r#"
+[profiles.base]
+vars = { name = "demo" }
+
+[artifacts.ok]
+kind = "file"
+source = "artifacts/ok.txt.tera"
+template = true
+validate_as = "none"
+
+[artifacts.conflict]
+kind = "file"
+source = "artifacts/conflict.txt.tera"
+template = true
+validate_as = "none"
+
+[targets.ok]
+artifact = "ok"
+profile = "base"
+target_path = "proj/ok.txt"
+method = "copy"
+
+[targets.conflict]
+artifact = "conflict"
+profile = "base"
+target_path = "proj/conflict.txt"
+method = "copy"
+"#,
+        )
+        .unwrap();
+
+    let mut cmd = Command::cargo_bin("agentstow").unwrap();
+    cmd.arg("--cwd").arg(temp.path()).arg("link");
+
+    cmd.assert()
+        .failure()
+        .stderr(predicate::str::contains("target 已存在且内容不同"));
+    assert!(!temp.child("proj/ok.txt").path().exists());
+    assert_eq!(
+        std::fs::read_to_string(temp.child("proj/conflict.txt").path()).unwrap(),
+        "user-owned"
+    );
 }
 
 #[test]

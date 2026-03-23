@@ -27,6 +27,7 @@ blake3.workspace = true
 fs-err.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+tempfile.workspace = true
 time.workspace = true
 tokio.workspace = true
 tracing.workspace = true

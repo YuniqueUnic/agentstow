@@ -1,7 +1,7 @@
-use agentstow_core::{AgentStowError, ArtifactId, Result};
+use agentstow_core::{AgentStowError, ArtifactId, ArtifactKind, Result};
 use agentstow_env::Env;
 use agentstow_mcp::Mcp;
-use agentstow_render::Renderer;
+use agentstow_render::{RenderedDirEntryKind, Renderer};
 use agentstow_scripts::{ScriptRunRequest, ScriptRunner};
 use agentstow_validate::Validator;
 use tracing::instrument;
@@ -12,7 +12,7 @@ use crate::cli::{
     ScriptsSubcommand, ServeArgs, ValidateArgs,
 };
 use crate::link;
-use crate::output::{print_json, write_bytes_file, write_text_file};
+use crate::output::{print_json, write_bytes_file, write_rendered_dir, write_text_file};
 use crate::workspace;
 
 #[instrument(skip_all)]
@@ -45,35 +45,104 @@ fn render_command(ctx: &CommandContext, args: RenderArgs) -> Result<()> {
     let manifest = ctx.load_manifest()?;
     let profile = ctx.resolve_profile(args.profile.as_deref(), Some(&manifest))?;
     let artifact_id = ArtifactId::parse(args.artifact)?;
-    let rendered = Renderer::render_file(&manifest, &artifact_id, &profile)?;
-    let artifact_def = manifest.artifacts.get(&rendered.artifact_id).unwrap();
-    Validator::validate_rendered_file(artifact_def, &rendered.bytes)?;
+    let artifact_def =
+        manifest
+            .artifacts
+            .get(&artifact_id)
+            .ok_or_else(|| AgentStowError::Manifest {
+                message: format!("artifact 不存在：{}", artifact_id.as_str()).into(),
+            })?;
 
-    if ctx.json() {
-        print_json(&serde_json::json!({
-            "artifact_id": rendered.artifact_id.as_str(),
-            "profile": rendered.profile.as_str(),
-            "text": String::from_utf8_lossy(&rendered.bytes),
-        }))?;
-        return Ok(());
+    match artifact_def.kind {
+        ArtifactKind::File => {
+            let rendered = Renderer::render_file(&manifest, &artifact_id, &profile)?;
+            Validator::validate_rendered_file(artifact_def, &rendered.bytes)?;
+
+            if ctx.json() {
+                print_json(&serde_json::json!({
+                    "artifact_id": rendered.artifact_id.as_str(),
+                    "profile": rendered.profile.as_str(),
+                    "kind": "file",
+                    "text": String::from_utf8_lossy(&rendered.bytes),
+                }))?;
+                return Ok(());
+            }
+
+            if args.dry_run || args.out.is_none() {
+                print!("{}", String::from_utf8_lossy(&rendered.bytes));
+                return Ok(());
+            }
+
+            let out_path = args.out.expect("guarded by is_none check");
+            write_bytes_file(&out_path, &rendered.bytes)
+        }
+        ArtifactKind::Dir => {
+            let rendered = Renderer::render_dir(&manifest, &artifact_id, &profile)?;
+
+            if ctx.json() {
+                let entries = rendered
+                    .entries
+                    .iter()
+                    .map(|entry| {
+                        serde_json::json!({
+                            "path": entry.relative_path.to_string_lossy(),
+                            "kind": match entry.kind {
+                                RenderedDirEntryKind::Dir => "dir",
+                                RenderedDirEntryKind::File => "file",
+                            },
+                            "bytes_len": entry.bytes.len(),
+                        })
+                    })
+                    .collect::<Vec<_>>();
+                print_json(&serde_json::json!({
+                    "artifact_id": rendered.artifact_id.as_str(),
+                    "profile": rendered.profile.as_str(),
+                    "kind": "dir",
+                    "entries": entries,
+                }))?;
+                return Ok(());
+            }
+
+            if args.dry_run || args.out.is_none() {
+                for entry in &rendered.entries {
+                    let kind = match entry.kind {
+                        RenderedDirEntryKind::Dir => "dir",
+                        RenderedDirEntryKind::File => "file",
+                    };
+                    println!("{kind}\t{}", entry.relative_path.to_string_lossy());
+                }
+                return Ok(());
+            }
+
+            if let Some(out_path) = args.out {
+                return write_rendered_dir(&out_path, &rendered);
+            }
+            Ok(())
+        }
     }
-
-    if args.dry_run || args.out.is_none() {
-        print!("{}", String::from_utf8_lossy(&rendered.bytes));
-        return Ok(());
-    }
-
-    let out_path = args.out.expect("guarded by is_none check");
-    write_bytes_file(&out_path, &rendered.bytes)
 }
 
 fn validate_command(ctx: &CommandContext, args: ValidateArgs) -> Result<()> {
     let manifest = ctx.load_manifest()?;
     let profile = ctx.resolve_profile(args.profile.as_deref(), Some(&manifest))?;
     let artifact_id = ArtifactId::parse(args.artifact)?;
-    let rendered = Renderer::render_file(&manifest, &artifact_id, &profile)?;
-    let artifact_def = manifest.artifacts.get(&rendered.artifact_id).unwrap();
-    Validator::validate_rendered_file(artifact_def, &rendered.bytes)?;
+    let artifact_def =
+        manifest
+            .artifacts
+            .get(&artifact_id)
+            .ok_or_else(|| AgentStowError::Manifest {
+                message: format!("artifact 不存在：{}", artifact_id.as_str()).into(),
+            })?;
+
+    match artifact_def.kind {
+        ArtifactKind::File => {
+            let rendered = Renderer::render_file(&manifest, &artifact_id, &profile)?;
+            Validator::validate_rendered_file(artifact_def, &rendered.bytes)?;
+        }
+        ArtifactKind::Dir => {
+            let _ = Renderer::render_dir(&manifest, &artifact_id, &profile)?;
+        }
+    }
     if ctx.json() {
         print_json(&serde_json::json!({ "ok": true }))?;
     } else {

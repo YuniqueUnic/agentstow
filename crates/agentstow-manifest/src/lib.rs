@@ -35,9 +35,10 @@ pub struct WorkspaceProbe {
 pub struct Manifest {
     pub workspace_root: PathBuf,
     pub profiles: BTreeMap<ProfileName, Profile>,
+    pub env: EnvContextDef,
+    pub files: BTreeMap<String, FileContextDef>,
     pub artifacts: BTreeMap<ArtifactId, ArtifactDef>,
     pub targets: BTreeMap<TargetName, TargetDef>,
-    pub render_context: RenderContextDef,
     pub env_sets: BTreeMap<String, EnvSet>,
     pub scripts: BTreeMap<String, ScriptDef>,
     pub mcp_servers: BTreeMap<String, McpServerDef>,
@@ -200,40 +201,35 @@ impl TargetDef {
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct RenderContextDef {
+pub struct EnvContextDef {
     #[serde(default)]
-    pub env_files: BTreeMap<String, RenderEnvFileDef>,
-    #[serde(default)]
-    pub files: BTreeMap<String, RenderFileDef>,
-    #[serde(default)]
-    pub mcp_servers: BTreeMap<String, RenderMcpServerContextDef>,
+    pub files: EnvFilesDef,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RenderEnvFileDef {
-    pub path: PathBuf,
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct EnvFilesDef {
+    #[serde(default)]
+    pub paths: Vec<PathBuf>,
 }
 
-impl RenderEnvFileDef {
-    pub fn absolute_path(&self, workspace_root: &Path) -> PathBuf {
-        absolutize(workspace_root, &self.path)
+impl EnvFilesDef {
+    pub fn absolute_paths(&self, workspace_root: &Path) -> Vec<PathBuf> {
+        self.paths
+            .iter()
+            .map(|path| absolutize(workspace_root, path))
+            .collect()
     }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RenderFileDef {
+pub struct FileContextDef {
     pub path: PathBuf,
 }
 
-impl RenderFileDef {
+impl FileContextDef {
     pub fn absolute_path(&self, workspace_root: &Path) -> PathBuf {
         absolutize(workspace_root, &self.path)
     }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RenderMcpServerContextDef {
-    pub server: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -297,17 +293,51 @@ struct ManifestToml {
     #[serde(default)]
     profiles: BTreeMap<ProfileName, Profile>,
     #[serde(default)]
+    env: EnvContextDef,
+    #[serde(default)]
+    files: BTreeMap<String, FileContextDef>,
+    #[serde(default)]
     artifacts: BTreeMap<ArtifactId, ArtifactDef>,
     #[serde(default)]
     targets: BTreeMap<TargetName, TargetDef>,
-    #[serde(default)]
-    render_context: RenderContextDef,
     #[serde(default)]
     env_sets: BTreeMap<String, EnvSet>,
     #[serde(default)]
     scripts: BTreeMap<String, ScriptDef>,
     #[serde(default)]
-    mcp_servers: BTreeMap<String, McpServerDef>,
+    mcp_servers: toml::Table,
+}
+
+#[derive(Debug, Deserialize)]
+struct McpServerImportDef {
+    path: PathBuf,
+}
+
+#[derive(Debug, Deserialize)]
+struct ImportedMcpJsonFile {
+    #[serde(rename = "mcpServers", default)]
+    mcp_servers: BTreeMap<String, ImportedMcpJsonServer>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum ImportedMcpJsonServer {
+    Stdio {
+        command: String,
+        #[serde(default)]
+        args: Vec<String>,
+        #[serde(default)]
+        env: BTreeMap<String, String>,
+    },
+    Http {
+        #[serde(rename = "type")]
+        _type: Option<String>,
+        url: String,
+        #[serde(default)]
+        headers: HashMap<String, String>,
+        #[serde(default)]
+        env: BTreeMap<String, String>,
+    },
 }
 
 impl Manifest {
@@ -328,16 +358,18 @@ impl Manifest {
         })?;
 
         validate_manifest(&parsed, workspace_root)?;
+        let mcp_servers = resolve_mcp_servers(&parsed.mcp_servers, workspace_root)?;
 
         Ok(Self {
             workspace_root: workspace_root.to_path_buf(),
             profiles: parsed.profiles,
+            env: parsed.env,
+            files: parsed.files,
             artifacts: parsed.artifacts,
             targets: parsed.targets,
-            render_context: parsed.render_context,
             env_sets: parsed.env_sets,
             scripts: parsed.scripts,
-            mcp_servers: parsed.mcp_servers,
+            mcp_servers,
         })
     }
 
@@ -375,6 +407,93 @@ impl Manifest {
             })?;
         profile.merged_vars(&self.profiles)
     }
+}
+
+fn resolve_mcp_servers(
+    raw: &toml::Table,
+    workspace_root: &Path,
+) -> Result<BTreeMap<String, McpServerDef>> {
+    let mut servers = BTreeMap::new();
+
+    for (name, value) in raw {
+        if name == "file" {
+            let import = value
+                .clone()
+                .try_into::<McpServerImportDef>()
+                .map_err(|error| AgentStowError::Manifest {
+                    message: format!("解析 mcp_servers.file 失败：{error}").into(),
+                })?;
+            import_mcp_servers_from_file(&mut servers, workspace_root, &import.path)?;
+            continue;
+        }
+
+        let server =
+            value
+                .clone()
+                .try_into::<McpServerDef>()
+                .map_err(|error| AgentStowError::Manifest {
+                    message: format!("解析 mcp_servers.{name} 失败：{error}").into(),
+                })?;
+        if servers.insert(name.clone(), server).is_some() {
+            return Err(AgentStowError::Manifest {
+                message: format!("重复的 mcp server 名称：{name}").into(),
+            });
+        }
+    }
+
+    Ok(servers)
+}
+
+fn import_mcp_servers_from_file(
+    servers: &mut BTreeMap<String, McpServerDef>,
+    workspace_root: &Path,
+    path: &Path,
+) -> Result<()> {
+    let absolute_path = absolutize(workspace_root, path);
+    let content = std::fs::read_to_string(&absolute_path).map_err(AgentStowError::from)?;
+    let imported: ImportedMcpJsonFile =
+        serde_json::from_str(&content).map_err(|error| AgentStowError::Manifest {
+            message: format!(
+                "解析 mcp server 导入文件失败：path={}, {error}",
+                normalize_for_display(&absolute_path),
+            )
+            .into(),
+        })?;
+
+    for (name, server) in imported.mcp_servers {
+        if servers.contains_key(&name) {
+            return Err(AgentStowError::Manifest {
+                message: format!("导入的 mcp server 与现有名称冲突：{name}").into(),
+            });
+        }
+        servers.insert(name, imported_mcp_server_to_def(server));
+    }
+
+    Ok(())
+}
+
+fn imported_mcp_server_to_def(server: ImportedMcpJsonServer) -> McpServerDef {
+    match server {
+        ImportedMcpJsonServer::Stdio { command, args, env } => McpServerDef {
+            transport: McpTransport::Stdio { command, args },
+            env: imported_env_map_to_defs(env),
+        },
+        ImportedMcpJsonServer::Http {
+            url, headers, env, ..
+        } => McpServerDef {
+            transport: McpTransport::Http { url, headers },
+            env: imported_env_map_to_defs(env),
+        },
+    }
+}
+
+fn imported_env_map_to_defs(env: BTreeMap<String, String>) -> Vec<EnvVarDef> {
+    env.into_iter()
+        .map(|(key, value)| EnvVarDef {
+            key,
+            binding: SecretBinding::Literal { value },
+        })
+        .collect()
 }
 
 pub fn init_workspace_skeleton(workspace_root: &Path) -> Result<WorkspaceInitOutcome> {

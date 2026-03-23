@@ -76,9 +76,21 @@ validate_as = "none"
 fn render_should_include_env_file_and_mcp_contexts() {
     let temp = assert_fs::TempDir::new().unwrap();
     temp.child("artifacts").create_dir_all().unwrap();
+    temp.child("mcps.json")
+        .write_str(
+            r#"{
+  "mcpServers": {
+    "filesystem": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "."]
+    }
+  }
+}"#,
+        )
+        .unwrap();
     temp.child("artifacts/hello.txt.tera")
         .write_str(
-            "owner={{ env_files.shared.OWNER }}\nref={{ files.reference }}\ncmd={{ mcp_servers.local.mcpServers.filesystem.command }}\n",
+            "owner={{ env_files.shared.OWNER }}\nref={{ files.reference }}\ncmd={{ mcp_servers.filesystem.mcpServers.filesystem.command }}\n",
         )
         .unwrap();
     temp.child(".env")
@@ -100,17 +112,14 @@ source = "artifacts/hello.txt.tera"
 template = true
 validate_as = "none"
 
-[render_context.env_files.shared]
-path = ".env"
+[env.files]
+paths = [".env"]
 
-[render_context.files.reference]
+[files.reference]
 path = "reference.md"
 
-[render_context.mcp_servers.local]
-server = "filesystem"
-
-[mcp_servers.filesystem]
-transport = { kind = "stdio", command = "npx", args = ["-y", "@modelcontextprotocol/server-filesystem", "."] }
+[mcp_servers.file]
+path = "mcps.json"
 "#,
         )
         .unwrap();

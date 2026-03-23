@@ -6,6 +6,7 @@ use agentstow_core::{
 use agentstow_linker::{
     ApplyOptions, DesiredInstall, LinkPlanItem, RenderStore, apply_job, build_link_instance_record,
     build_link_job_from_manifest, check_link_job_health, check_link_record_health, plan_job,
+    preflight_job,
 };
 use agentstow_manifest::{Manifest, TargetDef};
 use agentstow_state::{LinkInstanceRecord, StateDb};
@@ -66,7 +67,7 @@ impl WorkspaceQueryService {
         let default_profile = parse_default_profile(req.default_profile)?;
         let selected = select_manifest_targets(&manifest, &req.targets)?;
 
-        let mut items = Vec::new();
+        let mut jobs = Vec::new();
         for (target_name, target) in selected {
             let profile = resolve_target_profile(target_name, target, default_profile.as_ref())?;
             let job = build_link_job_from_manifest(
@@ -77,7 +78,17 @@ impl WorkspaceQueryService {
                 &render_store,
             )?;
             let healthy_before = check_link_job_health(&job, &render_store).unwrap_or(false);
-            let applied = apply_job(&job, &render_store, ApplyOptions { force: req.force })?;
+            jobs.push((job, healthy_before));
+        }
+
+        let apply_options = ApplyOptions { force: req.force };
+        for (job, _) in &jobs {
+            preflight_job(job, &render_store, apply_options)?;
+        }
+
+        let mut items = Vec::new();
+        for (job, healthy_before) in jobs {
+            let applied = apply_job(&job, &render_store, apply_options)?;
             record_link_instance(&db, &manifest, &job, &render_store)?;
 
             items.push(LinkOperationItemResponse {
@@ -106,6 +117,7 @@ impl WorkspaceQueryService {
         let default_profile = parse_default_profile(req.default_profile)?;
         let selected = select_manifest_targets(&manifest, &req.targets)?;
 
+        let mut pending = Vec::new();
         let mut items = Vec::new();
         for (target_name, target) in selected {
             let profile = resolve_target_profile(target_name, target, default_profile.as_ref())?;
@@ -127,8 +139,16 @@ impl WorkspaceQueryService {
                 });
                 continue;
             }
+            pending.push(job);
+        }
 
-            let applied = apply_job(&job, &render_store, ApplyOptions { force: req.force })?;
+        let apply_options = ApplyOptions { force: req.force };
+        for job in &pending {
+            preflight_job(job, &render_store, apply_options)?;
+        }
+
+        for job in pending {
+            let applied = apply_job(&job, &render_store, apply_options)?;
             record_link_instance(&db, &manifest, &job, &render_store)?;
 
             items.push(LinkOperationItemResponse {
