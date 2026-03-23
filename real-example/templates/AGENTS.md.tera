@@ -4,9 +4,11 @@
 - Owner: {{ owner }}
 - Workspace: {{ workspace_name }}
 - Default profile: {{ default_profile }}
+- Direct env sample: {{ env.DIRECT_ENV }}
+- Override sample: {{ env.DUPLICATE_ENV }}
 
 ## Shared Fragment
-{{ files.reference | trim }}
+{{ file.reference | trim }}
 
 ## Working Rules
 - Prefer `cargo fmt --all` before finishing Rust changes.

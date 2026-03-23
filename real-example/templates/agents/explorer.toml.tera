@@ -1,5 +1,5 @@
 name = "explorer"
-description = {{ files.explorer_description | json_encode }}
+description = {{ file.explorer_description | json_encode }}
 model = "gpt-5.4"
 model_reasoning_effort = "high"
 tool_output_token_limit = 24000
@@ -16,3 +16,5 @@ url = {{ mcp_servers.tavily.mcpServers.tavily.url | json_encode }}
 
 [mcp_servers.tavily.env]
 TAVILY_API_KEY = {{ mcp_servers.tavily.mcpServers.tavily.env.TAVILY_API_KEY | json_encode }}
+
+{{ mcp_servers.filesystem }}

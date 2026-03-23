@@ -9,6 +9,7 @@ use agentstow_linker::{
 use agentstow_manifest::Manifest;
 use agentstow_state::StateDb;
 use serde::Serialize;
+use std::collections::HashSet;
 use time::OffsetDateTime;
 
 use crate::bootstrap::CommandContext;
@@ -111,6 +112,7 @@ async fn link_apply_or_plan(
             applied_items.push(applied.clone());
             record_link_instance(manifest, &dirs, job, &render_store)?;
         }
+        prune_removed_link_instances(manifest, &dirs)?;
     }
 
     if json {
@@ -146,6 +148,17 @@ fn record_link_instance(
     let db = StateDb::open(dirs)?;
     let record = build_link_instance_record(manifest, job, store, OffsetDateTime::now_utc())?;
     db.upsert_link_instance(&record)?;
+    Ok(())
+}
+
+fn prune_removed_link_instances(manifest: &Manifest, dirs: &AgentStowDirs) -> Result<()> {
+    let db = StateDb::open(dirs)?;
+    let keep_target_paths: HashSet<_> = manifest
+        .targets
+        .values()
+        .map(|target| target.absolute_target_path(&manifest.workspace_root))
+        .collect();
+    db.prune_link_instances_not_in(&manifest.workspace_root, &keep_target_paths)?;
     Ok(())
 }
 

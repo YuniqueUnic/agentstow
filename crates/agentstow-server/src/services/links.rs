@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use time::OffsetDateTime;
 
 use agentstow_core::{
@@ -106,6 +108,8 @@ impl WorkspaceQueryService {
             });
         }
 
+        prune_removed_link_records(&db, &manifest)?;
+
         Ok(LinkOperationResponse { items })
     }
 
@@ -157,6 +161,8 @@ impl WorkspaceQueryService {
                 message: Some("repaired".to_string()),
             });
         }
+
+        prune_removed_link_records(&db, &manifest)?;
 
         Ok(LinkOperationResponse { items })
     }
@@ -220,6 +226,16 @@ fn record_link_instance(
 ) -> Result<()> {
     let record = build_link_instance_record(manifest, job, store, OffsetDateTime::now_utc())?;
     db.upsert_link_instance(&record)?;
+    Ok(())
+}
+
+fn prune_removed_link_records(db: &StateDb, manifest: &Manifest) -> Result<()> {
+    let keep_target_paths: HashSet<_> = manifest
+        .targets
+        .values()
+        .map(|target| target.absolute_target_path(&manifest.workspace_root))
+        .collect();
+    db.prune_link_instances_not_in(&manifest.workspace_root, &keep_target_paths)?;
     Ok(())
 }
 

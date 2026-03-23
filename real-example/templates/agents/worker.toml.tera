@@ -1,5 +1,5 @@
 name = "worker"
-description = {{ files.worker_description | json_encode }}
+description = {{ file.worker_description | json_encode }}
 model = "gpt-5.4"
 model_reasoning_effort = "high"
 tool_output_token_limit = 40000

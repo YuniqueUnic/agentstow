@@ -36,7 +36,7 @@ pub struct Manifest {
     pub workspace_root: PathBuf,
     pub profiles: BTreeMap<ProfileName, Profile>,
     pub env: EnvContextDef,
-    pub files: BTreeMap<String, FileContextDef>,
+    pub file: BTreeMap<String, FileContextDef>,
     pub artifacts: BTreeMap<ArtifactId, ArtifactDef>,
     pub targets: BTreeMap<TargetName, TargetDef>,
     pub env_sets: BTreeMap<String, EnvSet>,
@@ -200,10 +200,39 @@ impl TargetDef {
     }
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize)]
 pub struct EnvContextDef {
-    #[serde(default)]
     pub files: EnvFilesDef,
+    pub vars: BTreeMap<String, String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RawEnvContextDef {
+    #[serde(default)]
+    files: EnvFilesDef,
+    #[serde(flatten)]
+    vars: toml::Table,
+}
+
+impl<'de> Deserialize<'de> for EnvContextDef {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let raw = RawEnvContextDef::deserialize(deserializer)?;
+        let vars = raw
+            .vars
+            .into_iter()
+            .map(|(key, value)| {
+                toml_value_to_env_string::<D::Error>(&key, value).map(|value| (key, value))
+            })
+            .collect::<std::result::Result<BTreeMap<_, _>, _>>()?;
+
+        Ok(Self {
+            files: raw.files,
+            vars,
+        })
+    }
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -229,6 +258,22 @@ pub struct FileContextDef {
 impl FileContextDef {
     pub fn absolute_path(&self, workspace_root: &Path) -> PathBuf {
         absolutize(workspace_root, &self.path)
+    }
+}
+
+fn toml_value_to_env_string<E>(key: &str, value: toml::Value) -> std::result::Result<String, E>
+where
+    E: de::Error,
+{
+    match value {
+        toml::Value::String(value) => Ok(value),
+        toml::Value::Integer(value) => Ok(value.to_string()),
+        toml::Value::Float(value) => Ok(value.to_string()),
+        toml::Value::Boolean(value) => Ok(value.to_string()),
+        toml::Value::Datetime(value) => Ok(value.to_string()),
+        toml::Value::Array(_) | toml::Value::Table(_) => Err(E::custom(format!(
+            "env.{key} 必须是字符串或可字符串化的标量"
+        ))),
     }
 }
 
@@ -295,7 +340,7 @@ struct ManifestToml {
     #[serde(default)]
     env: EnvContextDef,
     #[serde(default)]
-    files: BTreeMap<String, FileContextDef>,
+    file: BTreeMap<String, FileContextDef>,
     #[serde(default)]
     artifacts: BTreeMap<ArtifactId, ArtifactDef>,
     #[serde(default)]
@@ -364,7 +409,7 @@ impl Manifest {
             workspace_root: workspace_root.to_path_buf(),
             profiles: parsed.profiles,
             env: parsed.env,
-            files: parsed.files,
+            file: parsed.file,
             artifacts: parsed.artifacts,
             targets: parsed.targets,
             env_sets: parsed.env_sets,

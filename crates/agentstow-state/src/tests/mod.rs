@@ -241,3 +241,49 @@ fn upsert_should_remove_descendant_rows_when_parent_target_takes_ownership() {
         );
     });
 }
+
+#[test]
+fn prune_link_instances_not_in_should_remove_stale_rows() {
+    let temp = assert_fs::TempDir::new().unwrap();
+    let home = temp.child("home");
+    home.create_dir_all().unwrap();
+
+    temp_env::with_var("AGENTSTOW_HOME", Some(home.path()), || {
+        let dirs = AgentStowDirs::from_env().unwrap();
+        let db = StateDb::open(&dirs).unwrap();
+        let workspace_root = temp.child("ws").path().to_path_buf();
+        let keep_target = temp.child("proj/AGENTS.md").path().to_path_buf();
+        let stale_target = temp.child("proj/README.rendered.md").path().to_path_buf();
+
+        db.upsert_link_instance(&LinkInstanceRecord {
+            workspace_root: workspace_root.clone(),
+            artifact_id: ArtifactId::new_unchecked("keep"),
+            profile: ProfileName::new_unchecked("base"),
+            target_path: keep_target.clone(),
+            method: InstallMethod::Copy,
+            rendered_path: None,
+            blake3: Some("keep".to_string()),
+            updated_at: OffsetDateTime::now_utc(),
+        })
+        .unwrap();
+
+        db.upsert_link_instance(&LinkInstanceRecord {
+            workspace_root: workspace_root.clone(),
+            artifact_id: ArtifactId::new_unchecked("stale"),
+            profile: ProfileName::new_unchecked("base"),
+            target_path: stale_target,
+            method: InstallMethod::Copy,
+            rendered_path: None,
+            blake3: Some("stale".to_string()),
+            updated_at: OffsetDateTime::now_utc(),
+        })
+        .unwrap();
+
+        db.prune_link_instances_not_in(&workspace_root, &std::iter::once(keep_target).collect())
+            .unwrap();
+
+        let listed = db.list_link_instances(&workspace_root).unwrap();
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].artifact_id.as_str(), "keep");
+    });
+}

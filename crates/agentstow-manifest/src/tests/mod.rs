@@ -260,7 +260,7 @@ vars = {}
 }
 
 #[test]
-fn load_should_parse_env_files_file_contexts_and_mcp_imports() {
+fn load_should_parse_env_file_inline_vars_file_contexts_and_mcp_imports() {
     let temp = assert_fs::TempDir::new().unwrap();
     temp.child("mcps.json")
         .write_str(
@@ -280,10 +280,14 @@ fn load_should_parse_env_files_file_contexts_and_mcp_imports() {
 [profiles.base]
 vars = { name = "AgentStow" }
 
+[env]
+DIRECT_ENV = "from-inline"
+DUPLICATE_ENV = "from-manifest"
+
 [env.files]
 paths = [".env"]
 
-[files.reference]
+[file.reference]
 path = "reference.md"
 
 [mcp_servers.file]
@@ -300,8 +304,13 @@ url = "https://example.com/mcp"
 
     let manifest = Manifest::load_from_path(temp.child("agentstow.toml").path()).unwrap();
     assert_eq!(manifest.env.files.paths, vec![PathBuf::from(".env")]);
+    assert_eq!(manifest.env.vars.get("DIRECT_ENV").unwrap(), "from-inline");
     assert_eq!(
-        manifest.files.get("reference").unwrap().path,
+        manifest.env.vars.get("DUPLICATE_ENV").unwrap(),
+        "from-manifest"
+    );
+    assert_eq!(
+        manifest.file.get("reference").unwrap().path,
         PathBuf::from("reference.md")
     );
     assert!(manifest.mcp_servers.contains_key("filesystem"));

@@ -1,4 +1,6 @@
-EXAMPLE_OWNER={{ owner }}
-EXAMPLE_WORKSPACE={{ workspace_name }}
-TAVILY_API_KEY={{ env_files.shared.TAVILY_API_KEY }}
-ACE_TOOL_TOKEN={{ env_files.shared.ACE_TOOL_TOKEN }}
+EXAMPLE_OWNER={{ owner | json_encode }}
+EXAMPLE_WORKSPACE={{ workspace_name | json_encode }}
+DIRECT_ENV={{ env.DIRECT_ENV | json_encode }}
+DUPLICATE_ENV={{ env.DUPLICATE_ENV | json_encode }}
+TAVILY_API_KEY={{ env.TAVILY_API_KEY | json_encode }}
+ACE_TOOL_TOKEN={{ env.ACE_TOOL_TOKEN | json_encode }}

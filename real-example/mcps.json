@@ -1,8 +1,45 @@
 {
   "mcpServers": {
     "filesystem": {
+      "transport": "stdio",
       "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-filesystem", "."]
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-filesystem",
+        "."
+      ],
+      "env": {
+        "NODE_ENV": "production",
+        "DEBUG": "mcp:*"
+      }
+    },
+
+    "fetch": {
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-fetch"],
+      "env": {
+        "HTTP_PROXY": "http://127.0.0.1:7890"
+      }
+    },
+
+    "weather-http": {
+      "transport": "http",
+      "url": "https://api.example.com/mcp",
+      "headers": {
+        "Authorization": "Bearer demo-key"
+      },
+      "env": {
+        "TIMEOUT": "10000"
+      }
+    },
+
+    "streaming-ai": {
+      "transport": "sse",
+      "url": "https://api.example.com/mcp/sse",
+      "headers": {
+        "Authorization": "Bearer demo-key"
+      }
     }
   }
 }

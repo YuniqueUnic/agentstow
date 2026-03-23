@@ -94,11 +94,11 @@ fn render_should_support_real_example_style_contexts() {
     temp.child("artifacts").create_dir_all().unwrap();
     temp.child("artifacts/hello.txt.tera")
         .write_str(
-            "owner={{ env_files.shared.OWNER }}\nref={{ files.reference }}\ncmd={{ mcp_servers.filesystem.mcpServers.filesystem.command }}\n",
+            "owner={{ env.OWNER }}\ndirect={{ env.DIRECT_ENV }}\nduplicate={{ env.DUPLICATE_ENV }}\nref={{ file.reference }}\ncmd={{ mcp_servers.filesystem.mcpServers.filesystem.command }}\n",
         )
         .unwrap();
     temp.child(".env")
-        .write_str("OWNER=platform-team\n")
+        .write_str("OWNER=platform-team\nDUPLICATE_ENV=from-dotenv\n")
         .unwrap();
     temp.child("reference.md")
         .write_str("reference-fragment")
@@ -122,10 +122,14 @@ fn render_should_support_real_example_style_contexts() {
 [profiles.base]
 vars = { name = "CLI" }
 
+[env]
+DIRECT_ENV = "from-inline"
+DUPLICATE_ENV = "from-manifest"
+
 [env.files]
 paths = [".env"]
 
-[files.reference]
+[file.reference]
 path = "reference.md"
 
 [mcp_servers.file]
@@ -151,8 +155,112 @@ validate_as = "none"
         .arg("--dry-run");
 
     cmd.assert().success().stdout(predicate::str::contains(
-        "owner=platform-team\nref=reference-fragment\ncmd=npx",
+        "owner=platform-team\ndirect=from-inline\nduplicate=from-manifest\nref=reference-fragment\ncmd=npx",
     ));
+}
+
+#[test]
+fn link_should_prune_removed_targets_from_status() {
+    let temp = assert_fs::TempDir::new().unwrap();
+    temp.child("artifacts").create_dir_all().unwrap();
+    temp.child("artifacts/current.txt")
+        .write_str("current")
+        .unwrap();
+    temp.child("artifacts/stale.txt")
+        .write_str("stale")
+        .unwrap();
+    temp.child("proj").create_dir_all().unwrap();
+    temp.child("home").create_dir_all().unwrap();
+
+    temp.child("agentstow.toml")
+        .write_str(
+            r#"
+[profiles.base]
+vars = {}
+
+[artifacts.current]
+kind = "file"
+source = "artifacts/current.txt"
+template = false
+validate_as = "none"
+
+[artifacts.stale]
+kind = "file"
+source = "artifacts/stale.txt"
+template = false
+validate_as = "none"
+
+[targets.current]
+artifact = "current"
+profile = "base"
+target_path = "proj/current.txt"
+method = "copy"
+
+[targets.stale]
+artifact = "stale"
+profile = "base"
+target_path = "proj/stale.txt"
+method = "copy"
+"#,
+        )
+        .unwrap();
+
+    let mut first_link = Command::cargo_bin("agentstow").unwrap();
+    first_link
+        .arg("--cwd")
+        .arg(temp.path())
+        .env("AGENTSTOW_HOME", temp.child("home").path())
+        .arg("link");
+    first_link.assert().success();
+
+    temp.child("agentstow.toml")
+        .write_str(
+            r#"
+[profiles.base]
+vars = {}
+
+[artifacts.current]
+kind = "file"
+source = "artifacts/current.txt"
+template = false
+validate_as = "none"
+
+[targets.current]
+artifact = "current"
+profile = "base"
+target_path = "proj/current.txt"
+method = "copy"
+"#,
+        )
+        .unwrap();
+
+    let mut second_link = Command::cargo_bin("agentstow").unwrap();
+    second_link
+        .arg("--cwd")
+        .arg(temp.path())
+        .env("AGENTSTOW_HOME", temp.child("home").path())
+        .arg("link");
+    second_link.assert().success();
+
+    let mut status = Command::cargo_bin("agentstow").unwrap();
+    status
+        .arg("--cwd")
+        .arg(temp.path())
+        .arg("--json")
+        .env("AGENTSTOW_HOME", temp.child("home").path())
+        .arg("link")
+        .arg("status");
+
+    let output = status.assert().success().get_output().stdout.clone();
+    let items: serde_json::Value = serde_json::from_slice(&output).unwrap();
+    let statuses = items.as_array().unwrap();
+    assert_eq!(statuses.len(), 1);
+    assert!(
+        statuses[0]["target_path"]
+            .as_str()
+            .unwrap()
+            .ends_with("/proj/current.txt")
+    );
 }
 
 #[test]

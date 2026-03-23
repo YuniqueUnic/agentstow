@@ -125,8 +125,8 @@ impl Renderer {
 
 fn build_tera_context(manifest: &Manifest, profile: &ProfileName) -> Result<Context> {
     let mut vars = manifest.profile_vars(profile)?;
-    vars.insert("env_files".to_string(), load_env_file_contexts(manifest)?);
-    vars.insert("files".to_string(), load_file_contexts(manifest)?);
+    vars.insert("env".to_string(), load_env_context(manifest)?);
+    vars.insert("file".to_string(), load_file_contexts(manifest)?);
     vars.insert("mcp_servers".to_string(), load_mcp_contexts(manifest)?);
 
     Context::from_serialize(&vars).map_err(|e| AgentStowError::Render {
@@ -134,8 +134,8 @@ fn build_tera_context(manifest: &Manifest, profile: &ProfileName) -> Result<Cont
     })
 }
 
-fn load_env_file_contexts(manifest: &Manifest) -> Result<serde_json::Value> {
-    let mut shared = serde_json::Map::new();
+fn load_env_context(manifest: &Manifest) -> Result<serde_json::Value> {
+    let mut out = serde_json::Map::new();
     for path in manifest.env.files.absolute_paths(&manifest.workspace_root) {
         let iter = dotenvy::from_path_iter(&path).map_err(|e| AgentStowError::Render {
             message: format!(
@@ -152,20 +152,20 @@ fn load_env_file_contexts(manifest: &Manifest) -> Result<serde_json::Value> {
                 )
                 .into(),
             })?;
-            shared.insert(key, serde_json::Value::String(value));
+            out.insert(key, serde_json::Value::String(value));
         }
     }
 
-    let mut out = serde_json::Map::new();
-    if !shared.is_empty() || !manifest.env.files.paths.is_empty() {
-        out.insert("shared".to_string(), serde_json::Value::Object(shared));
+    for (key, value) in &manifest.env.vars {
+        out.insert(key.clone(), serde_json::Value::String(value.clone()));
     }
+
     Ok(serde_json::Value::Object(out))
 }
 
 fn load_file_contexts(manifest: &Manifest) -> Result<serde_json::Value> {
     let mut out = serde_json::Map::new();
-    for (alias, def) in &manifest.files {
+    for (alias, def) in &manifest.file {
         let path = def.absolute_path(&manifest.workspace_root);
         let content = fs_err::read_to_string(&path).map_err(|e| AgentStowError::Render {
             message: format!(

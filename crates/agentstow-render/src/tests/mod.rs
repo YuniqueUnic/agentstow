@@ -73,7 +73,7 @@ validate_as = "none"
 }
 
 #[test]
-fn render_should_include_env_file_and_mcp_contexts() {
+fn render_should_include_env_file_inline_env_file_contexts_and_mcp_contexts() {
     let temp = assert_fs::TempDir::new().unwrap();
     temp.child("artifacts").create_dir_all().unwrap();
     temp.child("mcps.json")
@@ -90,11 +90,11 @@ fn render_should_include_env_file_and_mcp_contexts() {
         .unwrap();
     temp.child("artifacts/hello.txt.tera")
         .write_str(
-            "owner={{ env_files.shared.OWNER }}\nref={{ files.reference }}\ncmd={{ mcp_servers.filesystem.mcpServers.filesystem.command }}\n",
+            "owner={{ env.OWNER }}\ndirect={{ env.DIRECT_ENV }}\nduplicate={{ env.DUPLICATE_ENV }}\nref={{ file.reference }}\ncmd={{ mcp_servers.filesystem.mcpServers.filesystem.command }}\n",
         )
         .unwrap();
     temp.child(".env")
-        .write_str("OWNER=platform-team\nENABLED=true\n")
+        .write_str("OWNER=platform-team\nDUPLICATE_ENV=from-dotenv\n")
         .unwrap();
     temp.child("reference.md")
         .write_str("reference-fragment")
@@ -106,6 +106,10 @@ fn render_should_include_env_file_and_mcp_contexts() {
 [profiles.base]
 vars = { name = "AgentStow" }
 
+[env]
+DIRECT_ENV = "from-inline"
+DUPLICATE_ENV = "from-manifest"
+
 [artifacts.hello]
 kind = "file"
 source = "artifacts/hello.txt.tera"
@@ -115,7 +119,7 @@ validate_as = "none"
 [env.files]
 paths = [".env"]
 
-[files.reference]
+[file.reference]
 path = "reference.md"
 
 [mcp_servers.file]
@@ -134,6 +138,8 @@ path = "mcps.json"
 
     let text = String::from_utf8(out.bytes).unwrap();
     assert!(text.contains("owner=platform-team"));
+    assert!(text.contains("direct=from-inline"));
+    assert!(text.contains("duplicate=from-manifest"));
     assert!(text.contains("ref=reference-fragment"));
     assert!(text.contains("cmd=npx"));
 }

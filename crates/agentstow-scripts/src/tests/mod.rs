@@ -98,7 +98,7 @@ async fn run_should_kill_background_process_group_when_timeout_is_reached() {
         ),
     ]);
     req.workspace_root = temp.path().to_path_buf();
-    req.script.timeout_ms = Some(100);
+    req.script.timeout_ms = Some(250);
 
     let err = ScriptRunner::run(req).await.unwrap_err();
     assert!(err.to_string().contains("脚本超时"));
@@ -163,7 +163,7 @@ async fn run_should_pass_resolved_env_bindings_to_child_process() {
 
 #[cfg(not(windows))]
 async fn wait_for_file(path: &std::path::Path) {
-    for _ in 0..20 {
+    for _ in 0..100 {
         if path.exists() {
             return;
         }

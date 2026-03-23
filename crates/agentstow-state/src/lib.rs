@@ -1,4 +1,6 @@
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use agentstow_core::{
     AgentStowDirs, AgentStowError, ArtifactId, InstallMethod, ProfileName, Result,
@@ -40,6 +42,10 @@ impl StateDb {
             )
             .into(),
         })?;
+        conn.busy_timeout(Duration::from_secs(5))
+            .map_err(|e| AgentStowError::State {
+                message: format!("配置 sqlite busy timeout 失败：{e}").into(),
+            })?;
         let db = Self { db_path, conn };
         db.init()?;
         Ok(db)
@@ -254,6 +260,31 @@ ORDER BY target_path
             })?);
         }
         Ok(out)
+    }
+
+    pub fn prune_link_instances_not_in(
+        &self,
+        workspace_root: &Path,
+        keep_target_paths: &HashSet<PathBuf>,
+    ) -> Result<()> {
+        let existing = self.list_link_instances(workspace_root)?;
+        for item in existing {
+            if keep_target_paths.contains(&item.target_path) {
+                continue;
+            }
+            self.conn
+                .execute(
+                    "DELETE FROM link_instances WHERE workspace_root = ?1 AND target_path = ?2",
+                    params![
+                        workspace_root.to_string_lossy(),
+                        item.target_path.to_string_lossy(),
+                    ],
+                )
+                .map_err(|e| AgentStowError::State {
+                    message: format!("删除过期 link instance 失败：{e}").into(),
+                })?;
+        }
+        Ok(())
     }
 }
 
