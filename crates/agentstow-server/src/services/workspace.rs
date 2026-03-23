@@ -13,7 +13,7 @@ use super::WorkspaceQueryService;
 use super::env::build_env_usage_index;
 use super::issues::{collect_subject_ids, collect_workspace_issues, filter_issues};
 use super::summary::{
-    build_artifact_summaries, build_declared_profile_vars, build_env_set_summaries,
+    build_artifact_summaries, build_declared_profile_vars, build_env_emit_set_summaries,
     build_mcp_server_summaries, build_profile_summaries, build_profile_vars,
     build_script_summaries, build_target_summaries, profile_var_syntax_mode_response,
 };
@@ -73,7 +73,7 @@ impl WorkspaceQueryService {
     pub(crate) fn workspace_summary(&self) -> Result<WorkspaceSummaryResponse> {
         let projection = WorkspaceProjection::load(self)?;
         let env_usage = build_env_usage_index(&projection.manifest);
-        let env_sets = build_env_set_summaries(&projection.manifest, &env_usage);
+        let env_emit_sets = build_env_emit_set_summaries(&projection.manifest, &env_usage);
         let scripts = build_script_summaries(&projection.manifest, &env_usage);
         let mcp_servers = build_mcp_server_summaries(&projection.manifest, &env_usage);
         let healthy_link_count = projection.link_status.iter().filter(|item| item.ok).count();
@@ -88,7 +88,7 @@ impl WorkspaceQueryService {
                 profile_count: projection.profiles.len(),
                 artifact_count: projection.artifacts.len(),
                 target_count: projection.targets.len(),
-                env_set_count: env_sets.len(),
+                env_emit_set_count: env_emit_sets.len(),
                 script_count: scripts.len(),
                 mcp_server_count: mcp_servers.len(),
                 link_count: projection.link_status.len(),
@@ -98,7 +98,7 @@ impl WorkspaceQueryService {
             profiles: projection.profiles,
             artifacts: projection.artifacts,
             targets: projection.targets,
-            env_sets,
+            env_emit_sets,
             scripts,
             mcp_servers,
             issues: projection.issues,

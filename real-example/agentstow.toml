@@ -11,6 +11,12 @@ THIS_IS_ENV = "true"
 DIRECT_ENV = "可以直接在这里声明环境变量，或者通过上面的 env.files 从文件中加载环境变量"
 DUPLICATE_ENV = "如果同一个环境变量在这里和 env.files 中都有声明，那么以这里为准, 覆盖掉 env.files 中的声明"
 
+[env.emit.demo]
+vars = [
+  { key = "WORKSPACE_NAME", binding = { kind = "literal", value = "codex-lab" } },
+  { key = "WORKSPACE_OWNER", binding = { kind = "literal", value = "platform-team" } }
+]
+
 [file.reference] # 这里是将这个 reference.md 文件作为可以被引用解析和注入的文件
 path = "reference.md"
 
@@ -94,5 +100,4 @@ artifact = "dotenv"
 profile = "base"
 target_path = "demo-targets-2/.env"
 method = "symlink"
-
 

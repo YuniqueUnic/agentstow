@@ -160,13 +160,20 @@ fn env_command(ctx: &CommandContext, args: EnvArgs) -> Result<()> {
             stdout,
             out,
         } => {
-            let env_set = manifest
-                .env_sets
-                .get(&set)
-                .ok_or_else(|| AgentStowError::Manifest {
-                    message: format!("env set 不存在：{set}").into(),
-                })?;
-            let vars = Env::resolve_env_set(env_set)?;
+            let vars = match set.as_deref() {
+                Some(set) => {
+                    let env_set =
+                        manifest
+                            .env
+                            .emit
+                            .get(set)
+                            .ok_or_else(|| AgentStowError::Manifest {
+                                message: format!("env emit set 不存在：{set}").into(),
+                            })?;
+                    Env::resolve_env_set(env_set)?
+                }
+                None => Env::resolve_context(&manifest.env, &manifest.workspace_root)?,
+            };
             let script = Env::emit_shell(shell, &vars)?;
 
             if ctx.json() {

@@ -112,7 +112,7 @@ pub struct EnvArgs {
 pub enum EnvSubcommand {
     Emit {
         #[arg(long)]
-        set: String,
+        set: Option<String>,
         #[arg(long)]
         shell: ShellKind,
         #[arg(long)]

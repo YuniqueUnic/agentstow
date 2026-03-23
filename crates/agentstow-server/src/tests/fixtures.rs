@@ -72,7 +72,7 @@ artifact = "hello"
 target_path = "proj/adhoc.md"
 method = "copy"
 
-[env_sets.default]
+[env.emit.default]
 vars = [
   { key = "OPENAI_API_KEY", binding = { kind = "env", var = "OPENAI_API_KEY" } }
 ]

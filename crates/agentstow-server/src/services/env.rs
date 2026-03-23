@@ -13,19 +13,24 @@ use super::common::shell_kind;
 impl WorkspaceQueryService {
     pub(crate) fn env_emit(
         &self,
-        env_set_id: &str,
+        set: Option<&str>,
         shell: ShellKindResponse,
     ) -> Result<EnvEmitResponse> {
         let manifest = self.load_manifest()?;
-        let env_set =
-            manifest
-                .env_sets
-                .get(env_set_id)
-                .ok_or_else(|| AgentStowError::Manifest {
-                    message: format!("env set 不存在：{env_set_id}").into(),
-                })?;
-
-        let resolved = agentstow_env::Env::resolve_env_set(env_set)?;
+        let resolved = match set {
+            Some(set) => {
+                let env_set =
+                    manifest
+                        .env
+                        .emit
+                        .get(set)
+                        .ok_or_else(|| AgentStowError::Manifest {
+                            message: format!("env emit set 不存在：{set}").into(),
+                        })?;
+                agentstow_env::Env::resolve_env_set(env_set)?
+            }
+            None => agentstow_env::Env::resolve_context(&manifest.env, &manifest.workspace_root)?,
+        };
         let text = agentstow_env::Env::emit_shell(shell_kind(shell), &resolved)?;
         Ok(EnvEmitResponse { text })
     }
@@ -36,15 +41,15 @@ pub(crate) fn build_env_usage_index(
 ) -> BTreeMap<String, Vec<EnvUsageRefResponse>> {
     let mut usage = BTreeMap::<String, Vec<EnvUsageRefResponse>>::new();
 
-    for (env_set_id, env_set) in &manifest.env_sets {
+    for (env_set_id, env_set) in &manifest.env.emit {
         for env_var in &env_set.vars {
             usage
                 .entry(env_var.key.clone())
                 .or_default()
                 .push(EnvUsageRefResponse {
-                    owner_kind: EnvUsageOwnerKindResponse::EnvSet,
+                    owner_kind: EnvUsageOwnerKindResponse::EnvEmitSet,
                     owner_id: env_set_id.clone(),
-                    label: format!("Env Set · {env_set_id}"),
+                    label: format!("Env Emit Set · {env_set_id}"),
                 });
         }
     }

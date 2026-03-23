@@ -16,4 +16,5 @@ thiserror.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]
+assert_fs.workspace = true
 pretty_assertions.workspace = true

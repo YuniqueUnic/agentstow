@@ -631,8 +631,8 @@ async fn api_env_emit(
     State(st): State<Arc<ServerState>>,
     Json(req): Json<EnvEmitRequest>,
 ) -> Response {
-    if req.env_set_id.trim().is_empty() {
-        return api_error(StatusCode::BAD_REQUEST, "env_set_id 不能为空");
+    if req.set.as_ref().is_some_and(|set| set.trim().is_empty()) {
+        return api_error(StatusCode::BAD_REQUEST, "set 不能为空");
     }
 
     let queries = match queries_from_state(&st).await {
@@ -640,7 +640,7 @@ async fn api_env_emit(
         Err(error) => return api_error(StatusCode::BAD_REQUEST, error),
     };
 
-    handle_result(queries.env_emit(&req.env_set_id, req.shell))
+    handle_result(queries.env_emit(req.set.as_deref(), req.shell))
 }
 
 async fn api_script_run(

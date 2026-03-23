@@ -1,3 +1,5 @@
+use assert_fs::prelude::*;
+
 use super::*;
 
 #[test]
@@ -44,6 +46,35 @@ fn resolve_env_set_should_reject_invalid_shell_key() {
     let err = Env::resolve_env_set(&env_set).unwrap_err();
     assert_eq!(err.exit_code(), agentstow_core::ExitCode::InvalidConfig);
     assert!(err.to_string().contains("env key 非法"));
+}
+
+#[test]
+fn resolve_context_should_merge_files_and_inline_values() {
+    let temp = assert_fs::TempDir::new().unwrap();
+    temp.child(".env")
+        .write_str("OWNER=platform-team\nDUPLICATE_ENV=from-dotenv\n")
+        .unwrap();
+
+    let env = agentstow_manifest::EnvContextDef {
+        files: agentstow_manifest::EnvFilesDef {
+            paths: vec![".env".into()],
+        },
+        emit: Default::default(),
+        vars: std::collections::BTreeMap::from([
+            ("DIRECT_ENV".to_string(), "from-inline".to_string()),
+            ("DUPLICATE_ENV".to_string(), "from-manifest".to_string()),
+        ]),
+    };
+
+    let vars = Env::resolve_context(&env, temp.path()).unwrap();
+    assert_eq!(
+        vars,
+        vec![
+            ("DIRECT_ENV".to_string(), "from-inline".to_string()),
+            ("DUPLICATE_ENV".to_string(), "from-manifest".to_string()),
+            ("OWNER".to_string(), "platform-team".to_string()),
+        ]
+    );
 }
 
 #[test]

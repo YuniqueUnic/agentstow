@@ -39,7 +39,6 @@ pub struct Manifest {
     pub file: BTreeMap<String, FileContextDef>,
     pub artifacts: BTreeMap<ArtifactId, ArtifactDef>,
     pub targets: BTreeMap<TargetName, TargetDef>,
-    pub env_sets: BTreeMap<String, EnvSet>,
     pub scripts: BTreeMap<String, ScriptDef>,
     pub mcp_servers: BTreeMap<String, McpServerDef>,
 }
@@ -203,6 +202,7 @@ impl TargetDef {
 #[derive(Debug, Clone, Default, Serialize)]
 pub struct EnvContextDef {
     pub files: EnvFilesDef,
+    pub emit: BTreeMap<String, EnvSet>,
     pub vars: BTreeMap<String, String>,
 }
 
@@ -210,6 +210,8 @@ pub struct EnvContextDef {
 struct RawEnvContextDef {
     #[serde(default)]
     files: EnvFilesDef,
+    #[serde(default)]
+    emit: BTreeMap<String, EnvSet>,
     #[serde(flatten)]
     vars: toml::Table,
 }
@@ -230,6 +232,7 @@ impl<'de> Deserialize<'de> for EnvContextDef {
 
         Ok(Self {
             files: raw.files,
+            emit: raw.emit,
             vars,
         })
     }
@@ -346,8 +349,6 @@ struct ManifestToml {
     #[serde(default)]
     targets: BTreeMap<TargetName, TargetDef>,
     #[serde(default)]
-    env_sets: BTreeMap<String, EnvSet>,
-    #[serde(default)]
     scripts: BTreeMap<String, ScriptDef>,
     #[serde(default)]
     mcp_servers: toml::Table,
@@ -412,7 +413,6 @@ impl Manifest {
             file: parsed.file,
             artifacts: parsed.artifacts,
             targets: parsed.targets,
-            env_sets: parsed.env_sets,
             scripts: parsed.scripts,
             mcp_servers,
         })

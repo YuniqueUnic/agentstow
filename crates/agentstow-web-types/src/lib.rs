@@ -193,7 +193,7 @@ pub enum ShellKindResponse {
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct EnvEmitRequest {
-    pub env_set_id: String,
+    pub set: Option<String>,
     pub shell: ShellKindResponse,
 }
 
@@ -265,7 +265,7 @@ pub enum SecretBindingKindResponse {
 #[serde(rename_all = "snake_case")]
 #[ts(export)]
 pub enum EnvUsageOwnerKindResponse {
-    EnvSet,
+    EnvEmitSet,
     Script,
     McpServer,
 }
@@ -425,7 +425,7 @@ pub struct WorkspaceCountsResponse {
     pub profile_count: usize,
     pub artifact_count: usize,
     pub target_count: usize,
-    pub env_set_count: usize,
+    pub env_emit_set_count: usize,
     pub script_count: usize,
     pub mcp_server_count: usize,
     pub link_count: usize,
@@ -517,7 +517,7 @@ pub struct EnvUsageRefResponse {
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
-pub struct EnvSetSummaryResponse {
+pub struct EnvEmitSetSummaryResponse {
     pub id: String,
     pub vars: Vec<EnvVarSummaryResponse>,
     pub available_count: usize,
@@ -621,7 +621,7 @@ pub struct WorkspaceSummaryResponse {
     pub profiles: Vec<ProfileSummaryResponse>,
     pub artifacts: Vec<ArtifactSummaryResponse>,
     pub targets: Vec<TargetSummaryResponse>,
-    pub env_sets: Vec<EnvSetSummaryResponse>,
+    pub env_emit_sets: Vec<EnvEmitSetSummaryResponse>,
     pub scripts: Vec<ScriptSummaryResponse>,
     pub mcp_servers: Vec<McpServerSummaryResponse>,
     pub issues: Vec<ValidationIssueResponse>,
@@ -719,7 +719,7 @@ pub fn export_bindings() -> Result<(), ts_rs::ExportError> {
     ProfileVarSyntaxModeResponse::export_all(&config)?;
     EnvUsageRefResponse::export_all(&config)?;
     EnvVarSummaryResponse::export_all(&config)?;
-    EnvSetSummaryResponse::export_all(&config)?;
+    EnvEmitSetSummaryResponse::export_all(&config)?;
     ScriptSummaryResponse::export_all(&config)?;
     McpServerSummaryResponse::export_all(&config)?;
     McpCheckStatusResponse::export_all(&config)?;

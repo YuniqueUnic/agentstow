@@ -4,7 +4,7 @@ export type WorkspaceCountsResponse = {
   profile_count: number;
   artifact_count: number;
   target_count: number;
-  env_set_count: number;
+  env_emit_set_count: number;
   script_count: number;
   mcp_server_count: number;
   link_count: number;

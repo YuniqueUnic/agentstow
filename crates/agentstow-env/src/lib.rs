@@ -1,10 +1,48 @@
-use agentstow_core::{AgentStowError, Result, ShellKind};
-use agentstow_manifest::{EnvSet, EnvVarDef};
+use std::collections::BTreeMap;
+use std::path::Path;
+
+use agentstow_core::{AgentStowError, Result, ShellKind, normalize_for_display};
+use agentstow_manifest::{EnvContextDef, EnvSet, EnvVarDef};
 use tracing::instrument;
 
 pub struct Env;
 
 impl Env {
+    #[instrument(skip_all)]
+    pub fn resolve_context(
+        env: &EnvContextDef,
+        workspace_root: &Path,
+    ) -> Result<Vec<(String, String)>> {
+        let mut out = BTreeMap::new();
+
+        for path in env.files.absolute_paths(workspace_root) {
+            let iter = dotenvy::from_path_iter(&path).map_err(|e| AgentStowError::Manifest {
+                message: format!(
+                    "读取 env file 失败：path={}, {e}",
+                    normalize_for_display(&path)
+                )
+                .into(),
+            })?;
+            for item in iter {
+                let (key, value) = item.map_err(|e| AgentStowError::Manifest {
+                    message: format!(
+                        "解析 env file 失败：path={}, {e}",
+                        normalize_for_display(&path)
+                    )
+                    .into(),
+                })?;
+                out.insert(key, value);
+            }
+        }
+
+        for (key, value) in &env.vars {
+            validate_env_key(key)?;
+            out.insert(key.clone(), value.clone());
+        }
+
+        Ok(out.into_iter().collect())
+    }
+
     #[instrument(skip_all)]
     pub fn resolve_env_set(env_set: &EnvSet) -> Result<Vec<(String, String)>> {
         let mut out = Vec::with_capacity(env_set.vars.len());

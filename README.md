@@ -73,6 +73,31 @@ agentstow link
 agentstow link status
 ```
 
+### 2.1) 环境导出
+
+`[env.files] + [env]` 负责渲染期上下文，同时也可以直接导出成 shell 脚本：
+
+```toml
+[env.files]
+paths = [".env"]
+
+[env]
+APP_MODE = "dev"
+
+[env.emit.runtime]
+vars = [
+  { key = "OPENAI_API_KEY", binding = { kind = "env", var = "OPENAI_API_KEY" } }
+]
+```
+
+```bash
+# 直接导出 `[env.files] + [env]` 的合并结果
+agentstow env emit --shell bash
+
+# 导出命名 env emit set
+agentstow env emit --set runtime --shell bash
+```
+
 ### 3) 本地 Web（Material3 风格最小 UI）
 
 ```bash

@@ -23,7 +23,7 @@ fn api_workspace_summary_should_expose_prd_read_model() {
             assert_eq!(body["counts"]["profile_count"], serde_json::json!(2));
             assert_eq!(body["counts"]["artifact_count"], serde_json::json!(2));
             assert_eq!(body["counts"]["target_count"], serde_json::json!(3));
-            assert_eq!(body["counts"]["env_set_count"], serde_json::json!(1));
+            assert_eq!(body["counts"]["env_emit_set_count"], serde_json::json!(1));
             assert_eq!(body["counts"]["script_count"], serde_json::json!(1));
             assert_eq!(body["counts"]["mcp_server_count"], serde_json::json!(1));
             assert_eq!(body["mcp_servers"][0]["command"], serde_json::json!("npx"));
@@ -53,7 +53,10 @@ fn api_workspace_summary_should_expose_prd_read_model() {
                 body["mcp_servers"][0]["env_bindings"][0]["available"],
                 serde_json::json!(false)
             );
-            assert_eq!(body["env_sets"][0]["missing_count"], serde_json::json!(1));
+            assert_eq!(
+                body["env_emit_sets"][0]["missing_count"],
+                serde_json::json!(1)
+            );
             assert_eq!(
                 body["issues"][0]["code"],
                 serde_json::json!("target_profile_missing")

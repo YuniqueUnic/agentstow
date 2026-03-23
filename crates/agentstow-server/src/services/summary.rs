@@ -3,7 +3,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use agentstow_core::{ProfileName, Result, normalize_for_display};
 use agentstow_manifest::{Manifest, McpTransport, Profile, ProfileVarSyntaxMode};
 use agentstow_web_types::{
-    ArtifactSummaryResponse, EnvSetSummaryResponse, EnvUsageRefResponse, McpHeaderResponse,
+    ArtifactSummaryResponse, EnvEmitSetSummaryResponse, EnvUsageRefResponse, McpHeaderResponse,
     McpServerSummaryResponse, McpTransportKindResponse, ProfileSummaryResponse, ProfileVarResponse,
     ProfileVarSyntaxModeResponse, ScriptSummaryResponse, TargetSummaryResponse,
 };
@@ -143,16 +143,17 @@ pub(crate) fn profile_var_syntax_mode_response(
     }
 }
 
-pub(crate) fn build_env_set_summaries(
+pub(crate) fn build_env_emit_set_summaries(
     manifest: &Manifest,
     usage: &BTreeMap<String, Vec<EnvUsageRefResponse>>,
-) -> Vec<EnvSetSummaryResponse> {
+) -> Vec<EnvEmitSetSummaryResponse> {
     manifest
-        .env_sets
+        .env
+        .emit
         .iter()
         .map(|(name, env_set)| {
             let vars = build_env_var_summaries(&env_set.vars, usage);
-            EnvSetSummaryResponse {
+            EnvEmitSetSummaryResponse {
                 id: name.clone(),
                 available_count: vars.iter().filter(|var| var.available).count(),
                 missing_count: vars.iter().filter(|var| !var.available).count(),

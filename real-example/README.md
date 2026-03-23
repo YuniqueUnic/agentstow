@@ -3,6 +3,7 @@
 这个目录是 `docs/example` 的可执行替代版本，直接对齐当前 `agentstow` 的真实能力：
 
 - `[env.files] + [env]`：先从一个或多个 `.env` 文件加载变量，再由 `[env]` 里的直接声明覆盖同名值，统一注入模板上下文里的 `env.*`。
+- `[env.emit.<name>]`：定义命名的 shell 导出集合；`agentstow env emit` 不带 `--set` 时会直接导出 `[env.files] + [env]` 的合并结果，带 `--set demo` 时则导出对应命名集合。
 - `file.*`：把参考片段和角色描述注入模板上下文。
 - `mcp_servers.file`：从 `mcps.json` 导入 MCP server，再和显式声明的 servers 一起注入模板上下文。
   `mcp_servers.<name>` 会按当前目标文件格式自动渲染；无法判断时回退 JSON。
@@ -17,6 +18,8 @@
 ```bash
 cargo run -p agentstow-cli -- --cwd real-example --profile base render --artifact workspace_agents --dry-run
 cargo run -p agentstow-cli -- --cwd real-example --profile base render --artifact agents_dir --out demo-render/.agents
+cargo run -p agentstow-cli -- --cwd real-example env emit --shell bash
+cargo run -p agentstow-cli -- --cwd real-example env emit --set demo --shell bash
 cargo run -p agentstow-cli -- --cwd real-example link
 cargo run -p agentstow-cli -- --cwd real-example link status
 ```

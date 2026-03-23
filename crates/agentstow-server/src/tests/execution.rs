@@ -20,7 +20,7 @@ fn api_env_emit_should_generate_shell_script_for_env_set() {
                 let resp = server
                     .post("/api/env/emit")
                     .json(&serde_json::json!({
-                        "env_set_id": "default",
+                        "set": "default",
                         "shell": "bash",
                     }))
                     .await;

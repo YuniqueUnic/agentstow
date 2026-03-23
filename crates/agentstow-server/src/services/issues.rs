@@ -17,7 +17,7 @@ pub(crate) fn collect_workspace_issues(
 ) -> Vec<ValidationIssueResponse> {
     let mut issues = Vec::new();
     issues.extend(collect_target_render_issues(manifest));
-    issues.extend(collect_env_set_binding_issues(manifest));
+    issues.extend(collect_env_emit_set_binding_issues(manifest));
     issues.extend(collect_script_binding_issues(manifest));
     issues.extend(collect_mcp_issues(manifest));
     issues.extend(collect_link_issues(targets, link_status));
@@ -77,11 +77,11 @@ fn collect_target_render_issues(manifest: &Manifest) -> Vec<ValidationIssueRespo
     issues
 }
 
-fn collect_env_set_binding_issues(manifest: &Manifest) -> Vec<ValidationIssueResponse> {
-    collect_binding_issues(manifest.env_sets.iter().flat_map(|(env_set_id, env_set)| {
+fn collect_env_emit_set_binding_issues(manifest: &Manifest) -> Vec<ValidationIssueResponse> {
+    collect_binding_issues(manifest.env.emit.iter().flat_map(|(env_set_id, env_set)| {
         env_set.vars.iter().map(move |env_var| {
             (
-                "env_set",
+                "env_emit_set",
                 env_set_id.as_str(),
                 "env_binding_unavailable",
                 env_var,

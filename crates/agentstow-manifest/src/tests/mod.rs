@@ -287,6 +287,11 @@ DUPLICATE_ENV = "from-manifest"
 [env.files]
 paths = [".env"]
 
+[env.emit.default]
+vars = [
+  { key = "OPENAI_API_KEY", binding = { kind = "env", var = "OPENAI_API_KEY" } }
+]
+
 [file.reference]
 path = "reference.md"
 
@@ -305,6 +310,7 @@ url = "https://example.com/mcp"
     let manifest = Manifest::load_from_path(temp.child("agentstow.toml").path()).unwrap();
     assert_eq!(manifest.env.files.paths, vec![PathBuf::from(".env")]);
     assert_eq!(manifest.env.vars.get("DIRECT_ENV").unwrap(), "from-inline");
+    assert!(manifest.env.emit.contains_key("default"));
     assert_eq!(
         manifest.env.vars.get("DUPLICATE_ENV").unwrap(),
         "from-manifest"

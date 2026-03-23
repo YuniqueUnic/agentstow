@@ -61,6 +61,7 @@ dependencies = [
  "agentstow-core",
  "agentstow-manifest",
  "anyhow",
+ "assert_fs",
  "dotenvy",
  "pretty_assertions",
  "serde",
