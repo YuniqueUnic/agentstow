@@ -42,6 +42,49 @@ fn render_server_json_should_only_include_selected_server() {
 }
 
 #[test]
+fn render_server_toml_should_emit_full_embeddable_block() {
+    let server = agentstow_manifest::McpServerDef {
+        transport: agentstow_manifest::McpTransport::Stdio {
+            command: "npx".to_string(),
+            args: vec!["demo-mcp".to_string(), "--stdio".to_string()],
+        },
+        env: vec![agentstow_manifest::EnvVarDef {
+            key: "TOKEN".to_string(),
+            binding: agentstow_core::SecretBinding::Env {
+                var: "TOKEN".to_string(),
+            },
+        }],
+    };
+
+    let rendered = Mcp::render_server_toml("demo_server", &server).unwrap();
+    assert!(rendered.contains("[mcp_servers.demo-server]"));
+    assert!(rendered.contains("args = [\"demo-mcp\", \"--stdio\"]"));
+    assert!(rendered.contains("command = \"npx\""));
+    assert!(rendered.contains("[mcp_servers.demo-server.env]"));
+    assert!(rendered.contains("TOKEN = \"${TOKEN}\""));
+}
+
+#[test]
+fn convert_server_snippet_should_support_yaml() {
+    let server = agentstow_manifest::McpServerDef {
+        transport: agentstow_manifest::McpTransport::Http {
+            url: "https://example.com/mcp".to_string(),
+            headers: std::collections::HashMap::from([(
+                "Accept".to_string(),
+                "application/json".to_string(),
+            )]),
+        },
+        env: vec![],
+    };
+
+    let json = Mcp::render_server_json("demo", &server).unwrap();
+    let yaml = Mcp::convert_server_snippet(&json, McpSnippetFormat::Yaml).unwrap();
+    assert!(yaml.contains("mcpServers:"));
+    assert!(yaml.contains("demo:"));
+    assert!(yaml.contains("url: https://example.com/mcp"));
+}
+
+#[test]
 fn launcher_preview_should_render_stdio_command_line() {
     let server = agentstow_manifest::McpServerDef {
         transport: agentstow_manifest::McpTransport::Stdio {

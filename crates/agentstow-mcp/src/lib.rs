@@ -2,33 +2,62 @@ use std::collections::BTreeMap;
 
 use agentstow_core::{AgentStowError, Result};
 use agentstow_manifest::{EnvVarDef, McpServerDef, McpTransport};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tracing::instrument;
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct McpJsonFile {
     #[serde(rename = "mcpServers")]
     pub mcp_servers: BTreeMap<String, McpJsonServer>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum McpJsonServer {
     Stdio {
         command: String,
-        #[serde(skip_serializing_if = "Vec::is_empty")]
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
         args: Vec<String>,
-        #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+        #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
         env: BTreeMap<String, String>,
     },
     Http {
         r#type: String,
         url: String,
-        #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+        #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
         headers: BTreeMap<String, String>,
-        #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+        #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
         env: BTreeMap<String, String>,
     },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum McpSnippetFormat {
+    Json,
+    Toml,
+    Yaml,
+}
+
+#[derive(Debug, Deserialize)]
+struct McpTomlFile {
+    #[serde(rename = "mcp_servers", default)]
+    mcp_servers: BTreeMap<String, McpTomlServer>,
+}
+
+#[derive(Debug, Deserialize)]
+struct McpTomlServer {
+    #[serde(default)]
+    command: Option<String>,
+    #[serde(default)]
+    args: Vec<String>,
+    #[serde(rename = "type", default)]
+    type_name: Option<String>,
+    #[serde(default)]
+    url: Option<String>,
+    #[serde(default)]
+    headers: BTreeMap<String, String>,
+    #[serde(default)]
+    env: BTreeMap<String, String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -97,6 +126,34 @@ impl Mcp {
         serde_json::to_string_pretty(&file).map_err(|e| AgentStowError::Mcp {
             message: format!("序列化 MCP JSON 失败：{e}").into(),
         })
+    }
+
+    pub fn render_server_toml(name: &str, server: &McpServerDef) -> Result<String> {
+        Self::validate_server(name, server)?;
+        render_server_toml_payload(name, &render_server_payload(server))
+    }
+
+    pub fn render_server_snippet(
+        name: &str,
+        server: &McpServerDef,
+        format: McpSnippetFormat,
+    ) -> Result<String> {
+        match format {
+            McpSnippetFormat::Json => Self::render_server_json(name, server),
+            McpSnippetFormat::Toml => Self::render_server_toml(name, server),
+            McpSnippetFormat::Yaml => {
+                render_server_yaml_payload(name, &render_server_payload(server))
+            }
+        }
+    }
+
+    pub fn convert_server_snippet(rendered: &str, format: McpSnippetFormat) -> Result<String> {
+        let (name, server) = parse_rendered_server(rendered)?;
+        match format {
+            McpSnippetFormat::Json => render_server_json_payload(&name, &server),
+            McpSnippetFormat::Toml => render_server_toml_payload(&name, &server),
+            McpSnippetFormat::Yaml => render_server_yaml_payload(&name, &server),
+        }
     }
 
     pub fn launcher_preview(server: &McpServerDef) -> String {
@@ -202,6 +259,110 @@ fn bindings_to_env_map(envs: &[EnvVarDef]) -> BTreeMap<String, String> {
     out
 }
 
+fn render_server_json_payload(name: &str, server: &McpJsonServer) -> Result<String> {
+    let file = McpJsonFile {
+        mcp_servers: BTreeMap::from([(name.to_string(), server.clone())]),
+    };
+    serde_json::to_string_pretty(&file).map_err(|e| AgentStowError::Mcp {
+        message: format!("序列化 MCP JSON 失败：{e}").into(),
+    })
+}
+
+fn render_server_toml_payload(name: &str, server: &McpJsonServer) -> Result<String> {
+    let rendered_name = render_server_name(name);
+    let mut lines = vec![format!("[mcp_servers.{rendered_name}]")];
+    match server {
+        McpJsonServer::Stdio { command, args, env } => {
+            if !args.is_empty() {
+                lines.push(format!("args = {}", encode_toml_string_array(args)?));
+            }
+            lines.push(format!("command = {}", encode_toml_string(command)?));
+            append_env_block(&mut lines, &rendered_name, env.clone())?;
+        }
+        McpJsonServer::Http {
+            r#type,
+            url,
+            headers,
+            env,
+        } => {
+            lines.push(format!("type = {}", encode_toml_string(r#type)?));
+            lines.push(format!("url = {}", encode_toml_string(url)?));
+            if !headers.is_empty() {
+                lines.push(String::new());
+                lines.push(format!("[mcp_servers.{rendered_name}.headers]"));
+                for (key, value) in headers {
+                    lines.push(format!("{key} = {}", encode_toml_string(value)?));
+                }
+            }
+            append_env_block(&mut lines, &rendered_name, env.clone())?;
+        }
+    }
+
+    Ok(lines.join("\n") + "\n")
+}
+
+fn render_server_yaml_payload(name: &str, server: &McpJsonServer) -> Result<String> {
+    let file = McpJsonFile {
+        mcp_servers: BTreeMap::from([(name.to_string(), server.clone())]),
+    };
+    serde_yaml::to_string(&file).map_err(|e| AgentStowError::Mcp {
+        message: format!("序列化 MCP YAML 失败：{e}").into(),
+    })
+}
+
+fn parse_rendered_server(rendered: &str) -> Result<(String, McpJsonServer)> {
+    if let Ok(file) = serde_json::from_str::<McpJsonFile>(rendered) {
+        return extract_single_server(file.mcp_servers);
+    }
+    if let Ok(file) = serde_yaml::from_str::<McpJsonFile>(rendered) {
+        return extract_single_server(file.mcp_servers);
+    }
+    if let Ok(file) = toml::from_str::<McpTomlFile>(rendered) {
+        let servers = file
+            .mcp_servers
+            .into_iter()
+            .map(|(name, server)| Ok((name, server.into_json_server()?)))
+            .collect::<Result<BTreeMap<_, _>>>()?;
+        return extract_single_server(servers);
+    }
+
+    Err(AgentStowError::Mcp {
+        message: "无法解析 MCP 片段：既不是单 server JSON，也不是单 server TOML".into(),
+    })
+}
+
+fn extract_single_server(
+    servers: BTreeMap<String, McpJsonServer>,
+) -> Result<(String, McpJsonServer)> {
+    let mut iter = servers.into_iter();
+    let first = iter.next().ok_or_else(|| AgentStowError::Mcp {
+        message: "MCP 片段里没有 server".into(),
+    })?;
+    if iter.next().is_some() {
+        return Err(AgentStowError::Mcp {
+            message: "MCP 片段一次只能转换一个 server".into(),
+        });
+    }
+    Ok(first)
+}
+
+fn append_env_block(
+    lines: &mut Vec<String>,
+    rendered_name: &str,
+    env: BTreeMap<String, String>,
+) -> Result<()> {
+    if env.is_empty() {
+        return Ok(());
+    }
+
+    lines.push(String::new());
+    lines.push(format!("[mcp_servers.{rendered_name}.env]"));
+    for (key, value) in env {
+        lines.push(format!("{key} = {}", encode_toml_string(&value)?));
+    }
+    Ok(())
+}
+
 fn render_server_payload(server: &McpServerDef) -> McpJsonServer {
     let env = bindings_to_env_map(&server.env);
     match &server.transport {
@@ -219,6 +380,47 @@ fn render_server_payload(server: &McpServerDef) -> McpJsonServer {
                 .collect(),
             env,
         },
+    }
+}
+
+fn render_server_name(name: &str) -> String {
+    name.replace('_', "-")
+}
+
+fn encode_toml_string(value: &str) -> Result<String> {
+    serde_json::to_string(value).map_err(|e| AgentStowError::Mcp {
+        message: format!("序列化 MCP TOML 字符串失败：{e}").into(),
+    })
+}
+
+fn encode_toml_string_array(values: &[String]) -> Result<String> {
+    let encoded = values
+        .iter()
+        .map(|value| encode_toml_string(value))
+        .collect::<Result<Vec<_>>>()?;
+    Ok(format!("[{}]", encoded.join(", ")))
+}
+
+impl McpTomlServer {
+    fn into_json_server(self) -> Result<McpJsonServer> {
+        if let Some(command) = self.command {
+            return Ok(McpJsonServer::Stdio {
+                command,
+                args: self.args,
+                env: self.env,
+            });
+        }
+        if let Some(url) = self.url {
+            return Ok(McpJsonServer::Http {
+                r#type: self.type_name.unwrap_or_else(|| "http".to_string()),
+                url,
+                headers: self.headers,
+                env: self.env,
+            });
+        }
+        Err(AgentStowError::Mcp {
+            message: "TOML MCP 片段缺少 command/url，无法判断 transport".into(),
+        })
     }
 }
 

@@ -10,8 +10,20 @@
 ## Shared Fragment
 {{ file.reference | trim }}
 
+## Imported MCP Example
+```json
+{{ mcp_servers.filesystem | trim }}
+```
+
+```toml
+{{ mcp_servers.filesystem | trim | toml }}
+```
+
+```yaml
+{{ mcp_servers.filesystem | trim | yaml }}
+```
+
 ## Working Rules
 - Prefer `cargo fmt --all` before finishing Rust changes.
 - Treat generated MCP config as reviewable artifacts.
 - Keep secrets as `${VAR}` placeholders or `[REDACTED_SECRET]`.
-- Imported filesystem launcher: {{ mcp_servers.filesystem.mcpServers.filesystem.command }}

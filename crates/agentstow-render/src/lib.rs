@@ -1,11 +1,13 @@
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use agentstow_core::{
-    AgentStowError, ArtifactId, ArtifactKind, ProfileName, Result, normalize_for_display,
+    AgentStowError, ArtifactId, ArtifactKind, ProfileName, Result, ValidateAs,
+    normalize_for_display,
 };
 use agentstow_manifest::Manifest;
-use agentstow_mcp::Mcp;
-use tera::Context;
+use agentstow_mcp::{Mcp, McpSnippetFormat};
+use tera::{Context, Filter, Tera, Value};
 use tracing::instrument;
 
 #[derive(Debug, Clone)]
@@ -38,6 +40,13 @@ pub enum RenderedDirEntryKind {
 #[derive(Debug, Clone)]
 pub struct Renderer;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum McpContextFormat {
+    Json,
+    Toml,
+    Yaml,
+}
+
 impl Renderer {
     #[instrument(skip_all, fields(artifact_id=%artifact_id, profile=%profile))]
     pub fn render_file(
@@ -59,9 +68,13 @@ impl Renderer {
             });
         }
 
-        let ctx = build_tera_context(manifest, profile)?;
         let source_path = artifact.source_path(&manifest.workspace_root);
         let bytes = if artifact.template {
+            let ctx = build_tera_context(
+                manifest,
+                profile,
+                infer_mcp_context_format(&source_path, artifact.validate_as),
+            )?;
             render_tera_template_file(&source_path, &ctx)?
         } else {
             fs_err::read(&source_path).map_err(AgentStowError::from)?
@@ -94,7 +107,6 @@ impl Renderer {
             });
         }
 
-        let ctx = build_tera_context(manifest, profile)?;
         let source_root = artifact.source_path(&manifest.workspace_root);
         if !source_root.is_dir() {
             return Err(AgentStowError::Render {
@@ -108,10 +120,12 @@ impl Renderer {
 
         let mut entries = Vec::new();
         collect_rendered_dir_entries(
+            manifest,
+            profile,
             &source_root,
             &source_root,
             artifact.template,
-            &ctx,
+            artifact.validate_as,
             &mut entries,
         )?;
 
@@ -123,11 +137,18 @@ impl Renderer {
     }
 }
 
-fn build_tera_context(manifest: &Manifest, profile: &ProfileName) -> Result<Context> {
+fn build_tera_context(
+    manifest: &Manifest,
+    profile: &ProfileName,
+    mcp_format: McpContextFormat,
+) -> Result<Context> {
     let mut vars = manifest.profile_vars(profile)?;
     vars.insert("env".to_string(), load_env_context(manifest)?);
     vars.insert("file".to_string(), load_file_contexts(manifest)?);
-    vars.insert("mcp_servers".to_string(), load_mcp_contexts(manifest)?);
+    vars.insert(
+        "mcp_servers".to_string(),
+        load_mcp_contexts(manifest, mcp_format)?,
+    );
 
     Context::from_serialize(&vars).map_err(|e| AgentStowError::Render {
         message: format!("构建 Tera context 失败：{e}").into(),
@@ -179,23 +200,22 @@ fn load_file_contexts(manifest: &Manifest) -> Result<serde_json::Value> {
     Ok(serde_json::Value::Object(out))
 }
 
-fn load_mcp_contexts(manifest: &Manifest) -> Result<serde_json::Value> {
+fn load_mcp_contexts(manifest: &Manifest, format: McpContextFormat) -> Result<serde_json::Value> {
     let mut out = serde_json::Map::new();
     for (name, server) in &manifest.mcp_servers {
-        let rendered = Mcp::render_server_json(name, server)?;
-        let value = serde_json::from_str(&rendered).map_err(|e| AgentStowError::Render {
-            message: format!("解析 mcp render output 失败：server={}, {e}", name).into(),
-        })?;
-        out.insert(name.clone(), value);
+        let rendered = Mcp::render_server_snippet(name, server, format.into())?;
+        out.insert(name.clone(), serde_json::Value::String(rendered));
     }
     Ok(serde_json::Value::Object(out))
 }
 
 fn collect_rendered_dir_entries(
+    manifest: &Manifest,
+    profile: &ProfileName,
     source_root: &Path,
     current_dir: &Path,
     template_enabled: bool,
-    ctx: &Context,
+    validate_as: ValidateAs,
     entries: &mut Vec<RenderedDirEntry>,
 ) -> Result<()> {
     let mut dir_entries = fs_err::read_dir(current_dir)
@@ -224,7 +244,15 @@ fn collect_rendered_dir_entries(
                 kind: RenderedDirEntryKind::Dir,
                 bytes: Vec::new(),
             });
-            collect_rendered_dir_entries(source_root, &path, template_enabled, ctx, entries)?;
+            collect_rendered_dir_entries(
+                manifest,
+                profile,
+                source_root,
+                &path,
+                template_enabled,
+                validate_as,
+                entries,
+            )?;
             continue;
         }
         if !file_type.is_file() {
@@ -232,10 +260,13 @@ fn collect_rendered_dir_entries(
         }
 
         let (render_path, bytes) = if template_enabled && is_tera_template_file(&path) {
-            (
-                strip_tera_suffix(relative_path),
-                render_tera_template_file(&path, ctx)?,
-            )
+            let render_path = strip_tera_suffix(relative_path);
+            let ctx = build_tera_context(
+                manifest,
+                profile,
+                infer_mcp_context_format(&render_path, validate_as),
+            )?;
+            (render_path, render_tera_template_file(&path, &ctx)?)
         } else {
             (
                 relative_path,
@@ -272,8 +303,22 @@ fn strip_tera_suffix(path: PathBuf) -> PathBuf {
 
 fn render_tera_template_file(path: &Path, ctx: &Context) -> Result<Vec<u8>> {
     let template = fs_err::read_to_string(path).map_err(AgentStowError::from)?;
-    let rendered =
-        tera::Tera::one_off(&template, ctx, false).map_err(|e| AgentStowError::Render {
+    let mut tera = Tera::default();
+    tera.autoescape_on(Vec::<&'static str>::new());
+    tera.register_filter("toml", McpSnippetFilter::new(McpSnippetFormat::Toml));
+    tera.register_filter("json", McpSnippetFilter::new(McpSnippetFormat::Json));
+    tera.register_filter("yaml", McpSnippetFilter::new(McpSnippetFormat::Yaml));
+    tera.add_raw_template("inline", &template)
+        .map_err(|e| AgentStowError::Render {
+            message: format!(
+                "加载 Tera 模板失败：path={}, {e}; detail={e:?}",
+                normalize_for_display(path)
+            )
+            .into(),
+        })?;
+    let rendered = tera
+        .render("inline", ctx)
+        .map_err(|e| AgentStowError::Render {
             message: format!(
                 "Tera render 失败：path={}, {e}; detail={e:?}",
                 normalize_for_display(path)
@@ -281,6 +326,53 @@ fn render_tera_template_file(path: &Path, ctx: &Context) -> Result<Vec<u8>> {
             .into(),
         })?;
     Ok(rendered.into_bytes())
+}
+
+fn infer_mcp_context_format(path: &Path, validate_as: ValidateAs) -> McpContextFormat {
+    match validate_as {
+        ValidateAs::Toml => McpContextFormat::Toml,
+        ValidateAs::Json => McpContextFormat::Json,
+        ValidateAs::None | ValidateAs::Markdown | ValidateAs::Shell => match path
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .map(|ext| ext.to_ascii_lowercase())
+        {
+            Some(ext) if ext == "toml" => McpContextFormat::Toml,
+            Some(ext) if ext == "yaml" || ext == "yml" => McpContextFormat::Yaml,
+            _ => McpContextFormat::Json,
+        },
+    }
+}
+
+impl From<McpContextFormat> for McpSnippetFormat {
+    fn from(value: McpContextFormat) -> Self {
+        match value {
+            McpContextFormat::Json => McpSnippetFormat::Json,
+            McpContextFormat::Toml => McpSnippetFormat::Toml,
+            McpContextFormat::Yaml => McpSnippetFormat::Yaml,
+        }
+    }
+}
+
+struct McpSnippetFilter {
+    format: McpSnippetFormat,
+}
+
+impl McpSnippetFilter {
+    fn new(format: McpSnippetFormat) -> Self {
+        Self { format }
+    }
+}
+
+impl Filter for McpSnippetFilter {
+    fn filter(&self, value: &Value, _args: &HashMap<String, Value>) -> tera::Result<Value> {
+        let input = value
+            .as_str()
+            .ok_or_else(|| tera::Error::msg("mcp 片段过滤器只接受字符串输入"))?;
+        let rendered = Mcp::convert_server_snippet(input, self.format)
+            .map_err(|e| tera::Error::msg(e.to_string()))?;
+        Ok(Value::String(rendered))
+    }
 }
 
 #[cfg(test)]

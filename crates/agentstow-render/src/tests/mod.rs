@@ -90,7 +90,7 @@ fn render_should_include_env_file_inline_env_file_contexts_and_mcp_contexts() {
         .unwrap();
     temp.child("artifacts/hello.txt.tera")
         .write_str(
-            "owner={{ env.OWNER }}\ndirect={{ env.DIRECT_ENV }}\nduplicate={{ env.DUPLICATE_ENV }}\nref={{ file.reference }}\ncmd={{ mcp_servers.filesystem.mcpServers.filesystem.command }}\n",
+            "owner={{ env.OWNER }}\ndirect={{ env.DIRECT_ENV }}\nduplicate={{ env.DUPLICATE_ENV }}\nref={{ file.reference }}\njson={{ mcp_servers.filesystem | trim }}\ntoml={{ mcp_servers.filesystem | trim | toml }}\nyaml={{ mcp_servers.filesystem | trim | yaml }}\n",
         )
         .unwrap();
     temp.child(".env")
@@ -141,5 +141,8 @@ path = "mcps.json"
     assert!(text.contains("direct=from-inline"));
     assert!(text.contains("duplicate=from-manifest"));
     assert!(text.contains("ref=reference-fragment"));
-    assert!(text.contains("cmd=npx"));
+    assert!(text.contains("json={\n  \"mcpServers\": {"));
+    assert!(text.contains("toml=[mcp_servers.filesystem]"));
+    assert!(text.contains("command = \"npx\""));
+    assert!(text.contains("yaml=mcpServers:"));
 }

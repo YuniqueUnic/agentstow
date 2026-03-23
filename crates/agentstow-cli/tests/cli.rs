@@ -94,7 +94,7 @@ fn render_should_support_real_example_style_contexts() {
     temp.child("artifacts").create_dir_all().unwrap();
     temp.child("artifacts/hello.txt.tera")
         .write_str(
-            "owner={{ env.OWNER }}\ndirect={{ env.DIRECT_ENV }}\nduplicate={{ env.DUPLICATE_ENV }}\nref={{ file.reference }}\ncmd={{ mcp_servers.filesystem.mcpServers.filesystem.command }}\n",
+            "owner={{ env.OWNER }}\ndirect={{ env.DIRECT_ENV }}\nduplicate={{ env.DUPLICATE_ENV }}\nref={{ file.reference }}\njson={{ mcp_servers.filesystem | trim }}\ntoml={{ mcp_servers.filesystem | trim | toml }}\nyaml={{ mcp_servers.filesystem | trim | yaml }}\n",
         )
         .unwrap();
     temp.child(".env")
@@ -155,7 +155,7 @@ validate_as = "none"
         .arg("--dry-run");
 
     cmd.assert().success().stdout(predicate::str::contains(
-        "owner=platform-team\ndirect=from-inline\nduplicate=from-manifest\nref=reference-fragment\ncmd=npx",
+        "owner=platform-team\ndirect=from-inline\nduplicate=from-manifest\nref=reference-fragment\njson={\n  \"mcpServers\": {\n    \"filesystem\": {\n      \"command\": \"npx\"",
     ));
 }
 
