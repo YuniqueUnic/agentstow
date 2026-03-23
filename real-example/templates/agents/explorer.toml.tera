@@ -1,0 +1,18 @@
+name = "explorer"
+description = {{ files.explorer_description | json_encode }}
+model = "gpt-5.4"
+model_reasoning_effort = "high"
+tool_output_token_limit = 24000
+developer_instructions = "Read-only analysis for {{ workspace_name }}"
+model_reasoning_summary = "concise"
+model_verbosity = "low"
+
+[mcp_servers.sequential-thinking]
+args = {{ mcp_servers.sequential_thinking.mcpServers.sequential_thinking.args | json_encode }}
+command = {{ mcp_servers.sequential_thinking.mcpServers.sequential_thinking.command | json_encode }}
+
+[mcp_servers.tavily]
+url = {{ mcp_servers.tavily.mcpServers.tavily.url | json_encode }}
+
+[mcp_servers.tavily.env]
+TAVILY_API_KEY = {{ mcp_servers.tavily.mcpServers.tavily.env.TAVILY_API_KEY | json_encode }}

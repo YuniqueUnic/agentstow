@@ -1,0 +1,91 @@
+[profiles.base]
+vars = { owner = "platform-team", workspace_name = "codex-lab", default_profile = "base" }
+
+[render_context.env_files.shared]
+path = ".env"
+
+[render_context.files.reference_fragment]
+path = "reference.md"
+
+[render_context.files.worker_description]
+path = "descriptions/worker.md"
+
+[render_context.files.explorer_description]
+path = "descriptions/explorer.md"
+
+[render_context.mcp_servers.sequential_thinking]
+server = "sequential_thinking"
+
+[render_context.mcp_servers.tavily]
+server = "tavily"
+
+[render_context.mcp_servers.ace_tool]
+server = "ace_tool"
+
+[artifacts.workspace_agents]
+kind = "file"
+source = "templates/AGENTS.md.tera"
+template = true
+validate_as = "none"
+
+[artifacts.agents_dir]
+kind = "dir"
+source = "templates/agents"
+template = true
+
+[artifacts.dotenv]
+kind = "file"
+source = "templates/dotenv.tera"
+template = true
+validate_as = "none"
+
+[targets.workspace_agents_copy]
+artifact = "workspace_agents"
+profile = "base"
+target_path = "demo-targets/codex-lab/AGENTS.md"
+method = "copy"
+
+[targets.agents_dir_primary]
+artifact = "agents_dir"
+profile = "base"
+target_path = "demo-targets/codex-lab/.agents"
+method = "symlink"
+
+[targets.dotenv_primary]
+artifact = "dotenv"
+profile = "base"
+target_path = "demo-targets/codex-lab/.env"
+method = "symlink"
+
+[targets.workspace_agents_symlink]
+artifact = "workspace_agents"
+profile = "base"
+target_path = "demo-targets-2/AGENTS.md"
+method = "symlink"
+
+[targets.agents_dir_symlink]
+artifact = "agents_dir"
+profile = "base"
+target_path = "demo-targets-2/.agents"
+method = "symlink"
+
+[targets.dotenv_symlink]
+artifact = "dotenv"
+profile = "base"
+target_path = "demo-targets-2/.env"
+method = "symlink"
+
+[mcp_servers.sequential_thinking]
+transport = { kind = "stdio", command = "bunx", args = ["-y", "@modelcontextprotocol/server-sequential-thinking"] }
+
+[mcp_servers.tavily]
+transport = { kind = "http", url = "https://mcp.tavily.com/mcp" }
+env = [
+  { key = "TAVILY_API_KEY", binding = { kind = "env", var = "TAVILY_API_KEY" } }
+]
+
+[mcp_servers.ace_tool]
+transport = { kind = "http", url = "https://acemcp.heroman.wtf/relay/" }
+env = [
+  { key = "ACE_TOOL_TOKEN", binding = { kind = "env", var = "ACE_TOOL_TOKEN" } }
+]

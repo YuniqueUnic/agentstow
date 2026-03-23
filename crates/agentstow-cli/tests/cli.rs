@@ -248,6 +248,112 @@ method = "copy"
 }
 
 #[test]
+fn link_status_should_report_symlink_targets_as_healthy() {
+    let temp = assert_fs::TempDir::new().unwrap();
+    temp.child("artifacts").create_dir_all().unwrap();
+    temp.child("artifacts/hello.txt.tera")
+        .write_str("Hello {{ name }}!")
+        .unwrap();
+    temp.child("proj").create_dir_all().unwrap();
+    temp.child("home").create_dir_all().unwrap();
+
+    temp.child("agentstow.toml")
+        .write_str(
+            r#"
+[profiles.base]
+vars = { name = "Symlink" }
+
+[artifacts.hello]
+kind = "file"
+source = "artifacts/hello.txt.tera"
+template = true
+validate_as = "none"
+
+[targets.out]
+artifact = "hello"
+profile = "base"
+target_path = "proj/out.txt"
+method = "symlink"
+"#,
+        )
+        .unwrap();
+
+    let mut link = Command::cargo_bin("agentstow").unwrap();
+    link.arg("--cwd")
+        .arg(temp.path())
+        .env("AGENTSTOW_HOME", temp.child("home").path())
+        .arg("link");
+    link.assert().success();
+
+    let mut status = Command::cargo_bin("agentstow").unwrap();
+    status
+        .arg("--cwd")
+        .arg(temp.path())
+        .env("AGENTSTOW_HOME", temp.child("home").path())
+        .arg("link")
+        .arg("status");
+
+    status
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("[ok]").and(predicate::str::contains("proj/out.txt")));
+}
+
+#[test]
+fn link_should_support_rendered_dir_artifact_as_first_class_symlink() {
+    let temp = assert_fs::TempDir::new().unwrap();
+    temp.child("templates/agents/skills")
+        .create_dir_all()
+        .unwrap();
+    temp.child("templates/agents/worker.toml.tera")
+        .write_str("name = \"{{ workspace }}\"")
+        .unwrap();
+    temp.child("templates/agents/skills/rule.md")
+        .write_str("Keep builds reproducible.")
+        .unwrap();
+    temp.child("proj").create_dir_all().unwrap();
+    temp.child("home").create_dir_all().unwrap();
+
+    temp.child("agentstow.toml")
+        .write_str(
+            r#"
+[profiles.base]
+workspace = "codex-lab"
+
+[artifacts.agents_dir]
+kind = "dir"
+source = "templates/agents"
+template = true
+
+[targets.agents]
+artifact = "agents_dir"
+profile = "base"
+target_path = "proj/.agents"
+method = "symlink"
+"#,
+        )
+        .unwrap();
+
+    let mut link = Command::cargo_bin("agentstow").unwrap();
+    link.arg("--cwd")
+        .arg(temp.path())
+        .env("AGENTSTOW_HOME", temp.child("home").path())
+        .arg("link");
+    link.assert().success();
+
+    let metadata = std::fs::symlink_metadata(temp.child("proj/.agents").path()).unwrap();
+    assert!(metadata.file_type().is_symlink());
+    assert_eq!(
+        std::fs::read_to_string(temp.child("proj/.agents/worker.toml").path()).unwrap(),
+        "name = \"codex-lab\""
+    );
+    assert_eq!(
+        std::fs::read_to_string(temp.child("proj/.agents/skills/rule.md").path()).unwrap(),
+        "Keep builds reproducible."
+    );
+}
+
+#[test]
 fn workspace_init_should_create_manifest_and_sample_artifact() {
     let temp = assert_fs::TempDir::new().unwrap();
     let ws = temp.child("ws");

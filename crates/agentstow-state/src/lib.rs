@@ -132,6 +132,7 @@ COMMIT;
 
     #[instrument(skip_all, fields(workspace_root=%normalize_for_display(&record.workspace_root), target_path=%normalize_for_display(&record.target_path)))]
     pub fn upsert_link_instance(&self, record: &LinkInstanceRecord) -> Result<()> {
+        self.prune_overlapping_link_instances(record)?;
         self.conn
             .execute(
                 r#"
@@ -173,6 +174,29 @@ ON CONFLICT(workspace_root, target_path) DO UPDATE SET
             .map_err(|e| AgentStowError::State {
                 message: format!("写入 link instance 失败：{e}").into(),
             })?;
+        Ok(())
+    }
+
+    fn prune_overlapping_link_instances(&self, record: &LinkInstanceRecord) -> Result<()> {
+        let existing = self.list_link_instances(&record.workspace_root)?;
+        for item in existing {
+            if item.target_path == record.target_path {
+                continue;
+            }
+            if paths_overlap(&item.target_path, &record.target_path) {
+                self.conn
+                    .execute(
+                        "DELETE FROM link_instances WHERE workspace_root = ?1 AND target_path = ?2",
+                        params![
+                            record.workspace_root.to_string_lossy(),
+                            item.target_path.to_string_lossy()
+                        ],
+                    )
+                    .map_err(|e| AgentStowError::State {
+                        message: format!("删除重叠 link instance 失败：{e}").into(),
+                    })?;
+            }
+        }
         Ok(())
     }
 
@@ -239,6 +263,23 @@ fn parse_install_method(s: &str) -> InstallMethod {
         "Junction" => InstallMethod::Junction,
         "Copy" => InstallMethod::Copy,
         _ => InstallMethod::Symlink,
+    }
+}
+
+fn paths_overlap(left: &Path, right: &Path) -> bool {
+    is_prefix_path(left, right) || is_prefix_path(right, left)
+}
+
+fn is_prefix_path(prefix: &Path, path: &Path) -> bool {
+    let mut prefix_components = prefix.components();
+    let mut path_components = path.components();
+    loop {
+        match (prefix_components.next(), path_components.next()) {
+            (None, _) => return true,
+            (Some(_), None) => return false,
+            (Some(left), Some(right)) if left == right => continue,
+            _ => return false,
+        }
     }
 }
 

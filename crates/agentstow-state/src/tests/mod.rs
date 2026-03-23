@@ -153,3 +153,91 @@ INSERT INTO link_instances (
         assert_eq!(listed[0].updated_at, OffsetDateTime::UNIX_EPOCH);
     });
 }
+
+#[test]
+fn upsert_should_remove_ancestor_rows_when_nested_target_replaces_parent_record() {
+    let temp = assert_fs::TempDir::new().unwrap();
+    let home = temp.child("home");
+    home.create_dir_all().unwrap();
+
+    temp_env::with_var("AGENTSTOW_HOME", Some(home.path()), || {
+        let dirs = AgentStowDirs::from_env().unwrap();
+        let db = StateDb::open(&dirs).unwrap();
+        let workspace_root = temp.child("ws").path().to_path_buf();
+
+        db.upsert_link_instance(&LinkInstanceRecord {
+            workspace_root: workspace_root.clone(),
+            artifact_id: ArtifactId::new_unchecked("a"),
+            profile: ProfileName::new_unchecked("base"),
+            target_path: temp.child("proj/.agents").path().to_path_buf(),
+            method: InstallMethod::Symlink,
+            rendered_path: Some(temp.child("cache/rendered").path().to_path_buf()),
+            blake3: None,
+            updated_at: OffsetDateTime::now_utc(),
+        })
+        .unwrap();
+
+        db.upsert_link_instance(&LinkInstanceRecord {
+            workspace_root: workspace_root.clone(),
+            artifact_id: ArtifactId::new_unchecked("b"),
+            profile: ProfileName::new_unchecked("base"),
+            target_path: temp.child("proj/.agents/skills").path().to_path_buf(),
+            method: InstallMethod::Copy,
+            rendered_path: None,
+            blake3: None,
+            updated_at: OffsetDateTime::now_utc(),
+        })
+        .unwrap();
+
+        let listed = db.list_link_instances(&workspace_root).unwrap();
+        assert_eq!(listed.len(), 1);
+        assert_eq!(
+            listed[0].target_path,
+            temp.child("proj/.agents/skills").path().to_path_buf()
+        );
+    });
+}
+
+#[test]
+fn upsert_should_remove_descendant_rows_when_parent_target_takes_ownership() {
+    let temp = assert_fs::TempDir::new().unwrap();
+    let home = temp.child("home");
+    home.create_dir_all().unwrap();
+
+    temp_env::with_var("AGENTSTOW_HOME", Some(home.path()), || {
+        let dirs = AgentStowDirs::from_env().unwrap();
+        let db = StateDb::open(&dirs).unwrap();
+        let workspace_root = temp.child("ws").path().to_path_buf();
+
+        db.upsert_link_instance(&LinkInstanceRecord {
+            workspace_root: workspace_root.clone(),
+            artifact_id: ArtifactId::new_unchecked("a"),
+            profile: ProfileName::new_unchecked("base"),
+            target_path: temp.child("proj/.agents/skills").path().to_path_buf(),
+            method: InstallMethod::Copy,
+            rendered_path: None,
+            blake3: None,
+            updated_at: OffsetDateTime::now_utc(),
+        })
+        .unwrap();
+
+        db.upsert_link_instance(&LinkInstanceRecord {
+            workspace_root: workspace_root.clone(),
+            artifact_id: ArtifactId::new_unchecked("b"),
+            profile: ProfileName::new_unchecked("base"),
+            target_path: temp.child("proj/.agents").path().to_path_buf(),
+            method: InstallMethod::Symlink,
+            rendered_path: Some(temp.child("cache/rendered").path().to_path_buf()),
+            blake3: None,
+            updated_at: OffsetDateTime::now_utc(),
+        })
+        .unwrap();
+
+        let listed = db.list_link_instances(&workspace_root).unwrap();
+        assert_eq!(listed.len(), 1);
+        assert_eq!(
+            listed[0].target_path,
+            temp.child("proj/.agents").path().to_path_buf()
+        );
+    });
+}

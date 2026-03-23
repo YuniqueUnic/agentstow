@@ -1,0 +1,4 @@
+EXAMPLE_OWNER={{ owner }}
+EXAMPLE_WORKSPACE={{ workspace_name }}
+TAVILY_API_KEY={{ env_files.shared.TAVILY_API_KEY }}
+ACE_TOOL_TOKEN={{ env_files.shared.ACE_TOOL_TOKEN }}

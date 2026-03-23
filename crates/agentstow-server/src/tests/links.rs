@@ -81,6 +81,13 @@ fn api_links_plan_apply_and_repair_should_work() {
             resp.assert_status_ok();
             let applied: serde_json::Value = resp.json();
             assert_eq!(applied["items"].as_array().unwrap().len(), 3);
+            assert!(
+                applied["items"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .all(|item| item["action"] == serde_json::json!("applied"))
+            );
             assert!(temp.child("proj/AGENTS.md").path().is_file());
             assert!(temp.child("proj/adhoc.md").path().is_file());
             assert!(temp.child("proj/.agents/skills/rule.md").path().is_file());
@@ -96,6 +103,10 @@ fn api_links_plan_apply_and_repair_should_work() {
             resp.assert_status_ok();
             let repaired: serde_json::Value = resp.json();
             assert_eq!(repaired["items"].as_array().unwrap().len(), 3);
+            assert!(repaired["items"].as_array().unwrap().iter().all(|item| {
+                item["action"] == serde_json::json!("skipped")
+                    && item["message"] == serde_json::json!("already_healthy")
+            }));
         });
     });
 }
@@ -154,6 +165,108 @@ method = "copy"
             assert_eq!(body[0]["ok"], serde_json::json!(true));
             assert_eq!(body[0]["message"], serde_json::json!("healthy"));
             assert_eq!(body[0]["method"], serde_json::json!("copy"));
+        });
+    });
+}
+
+#[test]
+#[serial]
+fn api_link_status_should_use_rendered_dir_for_template_copy_records() {
+    let temp = assert_fs::TempDir::new().unwrap();
+    temp.child("templates/agents").create_dir_all().unwrap();
+    temp.child("templates/agents/worker.toml.tera")
+        .write_str("name = \"{{ workspace }}\"")
+        .unwrap();
+    temp.child("rendered/agents").create_dir_all().unwrap();
+    temp.child("rendered/agents/worker.toml")
+        .write_str("name = \"codex-lab\"")
+        .unwrap();
+    temp.child("proj/.agents").create_dir_all().unwrap();
+    temp.child("proj/.agents/worker.toml")
+        .write_str("name = \"codex-lab\"")
+        .unwrap();
+    temp.child("home").create_dir_all().unwrap();
+    temp.child("agentstow.toml")
+        .write_str(
+            r#"
+[profiles.base]
+workspace = "codex-lab"
+
+[artifacts.agents_dir]
+kind = "dir"
+source = "templates/agents"
+template = true
+
+[targets.agents]
+artifact = "agents_dir"
+profile = "base"
+target_path = "proj/.agents"
+method = "copy"
+"#,
+        )
+        .unwrap();
+
+    temp_env::with_var("AGENTSTOW_HOME", Some(temp.child("home").path()), || {
+        upsert_link_instance(&agentstow_state::LinkInstanceRecord {
+            workspace_root: temp.path().to_path_buf(),
+            artifact_id: agentstow_core::ArtifactId::new_unchecked("agents_dir"),
+            profile: agentstow_core::ProfileName::new_unchecked("base"),
+            target_path: temp.child("proj/.agents").path().to_path_buf(),
+            method: agentstow_core::InstallMethod::Copy,
+            rendered_path: Some(temp.child("rendered/agents").path().to_path_buf()),
+            blake3: None,
+            updated_at: time::OffsetDateTime::now_utc(),
+        });
+
+        block_on(async {
+            let server = test_server(&temp, temp.child("missing-dist").path().to_path_buf());
+            let resp = server.get("/api/link-status").await;
+
+            resp.assert_status_ok();
+            let body: serde_json::Value = resp.json();
+            assert_eq!(body.as_array().unwrap().len(), 1);
+            assert_eq!(body[0]["ok"], serde_json::json!(true));
+            assert_eq!(body[0]["message"], serde_json::json!("healthy"));
+        });
+    });
+}
+
+#[test]
+#[serial]
+fn api_link_status_should_report_artifact_missing_before_shared_health_check() {
+    let temp = assert_fs::TempDir::new().unwrap();
+    temp.child("home").create_dir_all().unwrap();
+    temp.child("proj/ghost.txt").write_str("stale").unwrap();
+    temp.child("agentstow.toml")
+        .write_str(
+            r#"
+[profiles.base]
+vars = {}
+"#,
+        )
+        .unwrap();
+
+    temp_env::with_var("AGENTSTOW_HOME", Some(temp.child("home").path()), || {
+        upsert_link_instance(&agentstow_state::LinkInstanceRecord {
+            workspace_root: temp.path().to_path_buf(),
+            artifact_id: agentstow_core::ArtifactId::new_unchecked("ghost"),
+            profile: agentstow_core::ProfileName::new_unchecked("base"),
+            target_path: temp.child("proj/ghost.txt").path().to_path_buf(),
+            method: agentstow_core::InstallMethod::Symlink,
+            rendered_path: Some(temp.child("proj/ghost.txt").path().to_path_buf()),
+            blake3: None,
+            updated_at: time::OffsetDateTime::now_utc(),
+        });
+
+        block_on(async {
+            let server = test_server(&temp, temp.child("missing-dist").path().to_path_buf());
+            let resp = server.get("/api/link-status").await;
+
+            resp.assert_status_ok();
+            let body: serde_json::Value = resp.json();
+            assert_eq!(body.as_array().unwrap().len(), 1);
+            assert_eq!(body[0]["ok"], serde_json::json!(false));
+            assert_eq!(body[0]["message"], serde_json::json!("artifact_missing"));
         });
     });
 }

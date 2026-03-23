@@ -2,11 +2,12 @@ use agentstow_core::{
     AgentStowDirs, AgentStowError, InstallMethod, ProfileName, Result, TargetName,
     normalize_for_display,
 };
-use agentstow_linker::{ApplyOptions, InstallSource, LinkJob, RenderStore, apply_job, plan_job};
+use agentstow_linker::{
+    ApplyOptions, RenderStore, apply_job, build_link_instance_record, build_link_job_from_manifest,
+    check_link_record_health, plan_job,
+};
 use agentstow_manifest::Manifest;
-use agentstow_render::Renderer;
-use agentstow_state::{LinkInstanceRecord, StateDb};
-use agentstow_validate::Validator;
+use agentstow_state::StateDb;
 use serde::Serialize;
 use time::OffsetDateTime;
 
@@ -91,7 +92,8 @@ async fn link_apply_or_plan(
                 .into(),
             })?;
 
-        let job = build_link_job(manifest, target_name, target, &profile)?;
+        let job =
+            build_link_job_from_manifest(manifest, target_name, target, &profile, &render_store)?;
 
         let item = plan_job(&job, &render_store)?;
         plan_items.push(item);
@@ -127,68 +129,14 @@ async fn link_apply_or_plan(
     Ok(())
 }
 
-fn build_link_job(
-    manifest: &Manifest,
-    target_name: &TargetName,
-    target: &agentstow_manifest::TargetDef,
-    profile: &ProfileName,
-) -> Result<LinkJob> {
-    let artifact = manifest.artifacts.get(&target.artifact).unwrap();
-    let target_path = target.absolute_target_path(&manifest.workspace_root);
-
-    let desired = match artifact.kind {
-        agentstow_core::ArtifactKind::File => {
-            let rendered = Renderer::render_file(manifest, &target.artifact, profile)?;
-            Validator::validate_rendered_file(artifact, &rendered.bytes)?;
-            InstallSource::FileBytes(rendered.bytes)
-        }
-        agentstow_core::ArtifactKind::Dir => {
-            InstallSource::Path(artifact.source_path(&manifest.workspace_root))
-        }
-    };
-
-    Ok(LinkJob {
-        target: target_name.clone(),
-        artifact_id: target.artifact.clone(),
-        profile: profile.clone(),
-        artifact_kind: artifact.kind,
-        method: target.method,
-        target_path,
-        desired,
-    })
-}
-
 fn record_link_instance(
     manifest: &Manifest,
     dirs: &AgentStowDirs,
-    job: &LinkJob,
+    job: &agentstow_linker::LinkJob,
     store: &RenderStore,
 ) -> Result<()> {
     let db = StateDb::open(dirs)?;
-    let (rendered_path, blake3) = match (&job.method, &job.desired) {
-        (InstallMethod::Symlink, InstallSource::FileBytes(bytes)) => (
-            Some(store.rendered_file_path(&job.artifact_id, &job.profile)),
-            Some(blake3::hash(bytes).to_hex().to_string()),
-        ),
-        (InstallMethod::Copy, InstallSource::FileBytes(bytes)) => {
-            (None, Some(blake3::hash(bytes).to_hex().to_string()))
-        }
-        (InstallMethod::Symlink, InstallSource::Path(path))
-        | (InstallMethod::Junction, InstallSource::Path(path)) => (Some(path.clone()), None),
-        (InstallMethod::Copy, InstallSource::Path(_)) => (None, None),
-        _ => (None, None),
-    };
-
-    let record = LinkInstanceRecord {
-        workspace_root: manifest.workspace_root.clone(),
-        artifact_id: job.artifact_id.clone(),
-        profile: job.profile.clone(),
-        target_path: job.target_path.clone(),
-        method: job.method,
-        rendered_path,
-        blake3,
-        updated_at: OffsetDateTime::now_utc(),
-    };
+    let record = build_link_instance_record(manifest, job, store, OffsetDateTime::now_utc())?;
     db.upsert_link_instance(&record)?;
     Ok(())
 }
@@ -208,20 +156,7 @@ fn link_status(manifest: &Manifest, json: bool) -> Result<()> {
 
     let mut output = Vec::new();
     for record in records {
-        let ok =
-            match record.method {
-                InstallMethod::Symlink => match record.rendered_path.as_ref() {
-                    Some(source) => agentstow_linker::check_symlink(&record.target_path, source)
-                        .unwrap_or(false),
-                    None => false,
-                },
-                InstallMethod::Junction => match record.rendered_path.as_ref() {
-                    Some(source) => agentstow_linker::check_junction(&record.target_path, source)
-                        .unwrap_or(false),
-                    None => false,
-                },
-                InstallMethod::Copy => check_copy_target_health(manifest, &record)?,
-            };
+        let ok = check_link_record_health(manifest, &record).unwrap_or(false);
         output.push(LinkStatusItem {
             target_path: normalize_for_display(&record.target_path),
             method: record.method,
@@ -244,27 +179,6 @@ fn link_status(manifest: &Manifest, json: bool) -> Result<()> {
         println!("[{tag}] {} ({:?})", item.target_path, item.method);
     }
     Ok(())
-}
-
-fn check_copy_target_health(manifest: &Manifest, record: &LinkInstanceRecord) -> Result<bool> {
-    let Some(artifact_def) = manifest.artifacts.get(&record.artifact_id) else {
-        return Ok(false);
-    };
-
-    match artifact_def.kind {
-        agentstow_core::ArtifactKind::File => {
-            if !record.target_path.is_file() {
-                return Ok(false);
-            }
-            let existing = fs_err::read(&record.target_path).map_err(AgentStowError::from)?;
-            let desired = Renderer::render_file(manifest, &record.artifact_id, &record.profile)?;
-            Ok(existing == desired.bytes)
-        }
-        agentstow_core::ArtifactKind::Dir => {
-            let source_dir = artifact_def.source_path(&manifest.workspace_root);
-            agentstow_linker::check_copy_dir(&record.target_path, &source_dir)
-        }
-    }
 }
 
 async fn link_repair(

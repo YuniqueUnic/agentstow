@@ -1,11 +1,16 @@
-use std::process::Stdio;
+use std::process::{Output, Stdio};
 use std::time::Duration;
 
 use agentstow_core::{AgentStowError, CwdPolicy, OutputMode, Result, StdinMode};
 use agentstow_manifest::{EnvVarDef, ScriptDef};
 use command_group::AsyncCommandGroup;
+#[cfg(unix)]
+use nix::sys::signal::{Signal, killpg};
+#[cfg(unix)]
+use nix::unistd::Pid;
 use serde::{Deserialize, Serialize};
 use tokio::io::AsyncWriteExt;
+use tokio::task::{JoinError, JoinHandle};
 use tracing::instrument;
 
 #[derive(Debug, Clone)]
@@ -37,14 +42,13 @@ impl ScriptRunner {
 
         apply_env_bindings(&mut cmd, &req.script.env)?;
 
-        match req.script.stdin_mode {
-            StdinMode::None => {
-                cmd.stdin(Stdio::null());
-            }
-            StdinMode::Text | StdinMode::Json => {
-                cmd.stdin(Stdio::piped());
-            }
-        }
+        let pipe_stdin = matches!(req.script.stdin_mode, StdinMode::Text | StdinMode::Json)
+            && req.stdin_text.is_some();
+        cmd.stdin(if pipe_stdin {
+            Stdio::piped()
+        } else {
+            Stdio::null()
+        });
 
         let capture_stdout = matches!(
             req.script.stdout_mode,
@@ -70,71 +74,30 @@ impl ScriptRunner {
             message: format!("spawn 失败：{e}").into(),
         })?;
 
-        if matches!(req.script.stdin_mode, StdinMode::Text | StdinMode::Json)
-            && let Some(mut stdin) = child.inner().stdin.take()
-        {
-            if let Some(stdin_text) = &req.stdin_text {
-                stdin
-                    .write_all(stdin_text.as_bytes())
-                    .await
-                    .map_err(AgentStowError::from)?;
-            }
+        if pipe_stdin && let Some(mut stdin) = child.inner().stdin.take() {
+            stdin
+                .write_all(req.stdin_text.as_deref().unwrap_or_default().as_bytes())
+                .await
+                .map_err(AgentStowError::from)?;
             drop(stdin);
         }
 
-        let mut stdout_buf = Vec::new();
-        let mut stderr_buf = Vec::new();
-
-        let mut stdout = child.inner().stdout.take();
-        let mut stderr = child.inner().stderr.take();
-
-        let read_stdout = async {
-            if let Some(mut out) = stdout.take() {
-                tokio::io::AsyncReadExt::read_to_end(&mut out, &mut stdout_buf)
-                    .await
-                    .map_err(AgentStowError::from)?;
+        let process_group_id = child.id();
+        let mut wait_task = tokio::spawn(async move { child.wait_with_output().await });
+        let output = match req.script.timeout_ms {
+            Some(timeout_ms) => {
+                resolve_wait_task_with_timeout(
+                    &mut wait_task,
+                    process_group_id,
+                    timeout_ms,
+                    &req.script.entry,
+                )
+                .await?
             }
-            Ok::<(), AgentStowError>(())
-        };
-        let read_stderr = async {
-            if let Some(mut out) = stderr.take() {
-                tokio::io::AsyncReadExt::read_to_end(&mut out, &mut stderr_buf)
-                    .await
-                    .map_err(AgentStowError::from)?;
-            }
-            Ok::<(), AgentStowError>(())
+            None => resolve_wait_task(&mut wait_task).await?,
         };
 
-        let wait_fut = async {
-            let status = child.wait().await.map_err(|e| AgentStowError::Script {
-                message: format!("wait 失败：{e}").into(),
-            })?;
-            Ok::<std::process::ExitStatus, AgentStowError>(status)
-        };
-
-        let status = if let Some(ms) = req.script.timeout_ms {
-            match tokio::time::timeout(Duration::from_millis(ms), async {
-                let (status, _, _) = tokio::try_join!(wait_fut, read_stdout, read_stderr)?;
-                Ok::<_, AgentStowError>(status)
-            })
-            .await
-            {
-                Ok(Ok(status)) => status,
-                Ok(Err(e)) => return Err(e),
-                Err(_) => {
-                    // timeout
-                    let _ = child.kill().await;
-                    return Err(AgentStowError::Script {
-                        message: format!("脚本超时（{}ms）: {}", ms, req.script.entry).into(),
-                    });
-                }
-            }
-        } else {
-            let (status, _, _) = tokio::try_join!(wait_fut, read_stdout, read_stderr)?;
-            status
-        };
-
-        let code = status.code().unwrap_or(-1);
+        let code = output.status.code().unwrap_or(-1);
         let expected = if req.script.expected_exit_codes.is_empty() {
             vec![0]
         } else {
@@ -146,21 +109,10 @@ impl ScriptRunner {
             });
         }
 
-        let stdout_s = if capture_stdout {
-            Some(String::from_utf8_lossy(&stdout_buf).to_string())
-        } else {
-            None
-        };
-        let stderr_s = if capture_stderr {
-            Some(String::from_utf8_lossy(&stderr_buf).to_string())
-        } else {
-            None
-        };
-
         Ok(ScriptRunOutput {
             exit_code: code,
-            stdout: stdout_s,
-            stderr: stderr_s,
+            stdout: capture_stdout.then(|| String::from_utf8_lossy(&output.stdout).to_string()),
+            stderr: capture_stderr.then(|| String::from_utf8_lossy(&output.stderr).to_string()),
         })
     }
 }
@@ -172,6 +124,70 @@ fn apply_env_bindings(cmd: &mut tokio::process::Command, envs: &[EnvVarDef]) -> 
     }
     Ok(())
 }
+
+async fn resolve_wait_task(wait_task: &mut JoinHandle<std::io::Result<Output>>) -> Result<Output> {
+    resolve_wait_task_result(wait_task.await).map_err(|message| AgentStowError::Script {
+        message: message.into(),
+    })
+}
+
+async fn resolve_wait_task_with_timeout(
+    wait_task: &mut JoinHandle<std::io::Result<Output>>,
+    process_group_id: Option<u32>,
+    timeout_ms: u64,
+    entry: &str,
+) -> Result<Output> {
+    let timeout = Duration::from_millis(timeout_ms);
+    match tokio::time::timeout(timeout, &mut *wait_task).await {
+        Ok(result) => resolve_wait_task_result(result).map_err(|message| AgentStowError::Script {
+            message: message.into(),
+        }),
+        Err(_) => {
+            terminate_process_group(process_group_id);
+
+            let _ = tokio::time::timeout(Duration::from_secs(1), &mut *wait_task).await;
+            Err(AgentStowError::Script {
+                message: format!("脚本超时（{}ms）: {}", timeout_ms, entry).into(),
+            })
+        }
+    }
+}
+
+fn resolve_wait_task_result(
+    result: std::result::Result<std::io::Result<Output>, JoinError>,
+) -> std::result::Result<Output, String> {
+    match result {
+        Ok(Ok(output)) => Ok(output),
+        Ok(Err(error)) => Err(format!("wait 失败：{error}")),
+        Err(error) => Err(join_task_error(error)),
+    }
+}
+
+fn join_task_error(error: JoinError) -> String {
+    if error.is_cancelled() {
+        "wait task 被取消".to_string()
+    } else if error.is_panic() {
+        format!("wait task panic: {error}")
+    } else {
+        format!("wait task 失败：{error}")
+    }
+}
+
+#[cfg(unix)]
+fn terminate_process_group(process_group_id: Option<u32>) {
+    let Some(process_group_id) = process_group_id else {
+        return;
+    };
+
+    let Ok(raw_pid) = i32::try_from(process_group_id) else {
+        return;
+    };
+
+    let _ = killpg(Pid::from_raw(raw_pid), Signal::SIGKILL);
+}
+
+#[cfg(not(unix))]
+fn terminate_process_group(_process_group_id: Option<u32>) {}
 
 #[cfg(test)]
 mod tests;

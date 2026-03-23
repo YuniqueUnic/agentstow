@@ -1,0 +1,24 @@
+name = "worker"
+description = {{ files.worker_description | json_encode }}
+model = "gpt-5.4"
+model_reasoning_effort = "high"
+tool_output_token_limit = 40000
+developer_instructions = "Owner={{ owner }}; workspace={{ workspace_name }}"
+model_reasoning_summary = "detailed"
+model_verbosity = "medium"
+
+[mcp_servers.sequential-thinking]
+args = {{ mcp_servers.sequential_thinking.mcpServers.sequential_thinking.args | json_encode }}
+command = {{ mcp_servers.sequential_thinking.mcpServers.sequential_thinking.command | json_encode }}
+
+[mcp_servers.tavily]
+url = {{ mcp_servers.tavily.mcpServers.tavily.url | json_encode }}
+
+[mcp_servers.tavily.env]
+TAVILY_API_KEY = {{ mcp_servers.tavily.mcpServers.tavily.env.TAVILY_API_KEY | json_encode }}
+
+[mcp_servers.ace-tool]
+url = {{ mcp_servers.ace_tool.mcpServers.ace_tool.url | json_encode }}
+
+[mcp_servers.ace-tool.env]
+ACE_TOOL_TOKEN = {{ mcp_servers.ace_tool.mcpServers.ace_tool.env.ACE_TOOL_TOKEN | json_encode }}

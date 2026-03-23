@@ -523,6 +523,38 @@ fn validate_manifest(m: &ManifestToml, workspace_root: &Path) -> Result<()> {
         profile.merged_vars(&m.profiles)?;
     }
 
+    let normalized_targets = m
+        .targets
+        .iter()
+        .map(|(target_name, target)| {
+            (
+                target_name,
+                normalize_path_without_following_symlinks(
+                    &target.absolute_target_path(workspace_root),
+                ),
+            )
+        })
+        .collect::<Vec<_>>();
+
+    for (index, (left_name, left_path)) in normalized_targets.iter().enumerate() {
+        for (right_name, right_path) in normalized_targets.iter().skip(index + 1) {
+            if !paths_overlap(left_path, right_path) {
+                continue;
+            }
+
+            return Err(AgentStowError::Manifest {
+                message: format!(
+                    "targets target_path 发生重叠：{}={} <-> {}={}",
+                    left_name,
+                    normalize_for_display(left_path),
+                    right_name,
+                    normalize_for_display(right_path),
+                )
+                .into(),
+            });
+        }
+    }
+
     for (target_name, target) in &m.targets {
         let Some(artifact) = m.artifacts.get(&target.artifact) else {
             return Err(AgentStowError::Manifest {
@@ -560,6 +592,28 @@ fn validate_manifest(m: &ManifestToml, workspace_root: &Path) -> Result<()> {
 
 fn paths_overlap(left: &Path, right: &Path) -> bool {
     left == right || left.starts_with(right) || right.starts_with(left)
+}
+
+fn normalize_path_without_following_symlinks(path: &Path) -> PathBuf {
+    let mut normalized = PathBuf::new();
+
+    for component in path.components() {
+        match component {
+            std::path::Component::Prefix(prefix) => normalized.push(prefix.as_os_str()),
+            std::path::Component::RootDir => {
+                normalized.push(Path::new(std::path::MAIN_SEPARATOR_STR))
+            }
+            std::path::Component::CurDir => {}
+            std::path::Component::ParentDir => {
+                if !normalized.pop() {
+                    normalized.push(component.as_os_str());
+                }
+            }
+            std::path::Component::Normal(part) => normalized.push(part),
+        }
+    }
+
+    normalized
 }
 
 #[cfg(test)]

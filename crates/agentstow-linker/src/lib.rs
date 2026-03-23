@@ -1,12 +1,17 @@
 use std::collections::HashSet;
 use std::ffi::OsString;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 use agentstow_core::{
     AgentStowError, ArtifactId, ArtifactKind, InstallMethod, ProfileName, Result, TargetName,
     ensure_parent_dir, normalize_for_display,
 };
+use agentstow_manifest::{Manifest, TargetDef};
+use agentstow_render::{RenderedDir, RenderedDirEntryKind, Renderer};
+use agentstow_state::LinkInstanceRecord;
+use agentstow_validate::Validator;
 use serde::Serialize;
+use time::OffsetDateTime;
 use tracing::{info, instrument};
 
 #[derive(Debug, Clone, Serialize)]
@@ -64,6 +69,36 @@ impl RenderStore {
         atomic_write_file(&path, bytes, true)?;
         Ok(path)
     }
+
+    pub fn rendered_dir_path(&self, artifact_id: &ArtifactId, profile: &ProfileName) -> PathBuf {
+        self.root
+            .join(&self.workspace_key)
+            .join("rendered")
+            .join(format!("{}__{}", artifact_id.as_str(), profile.as_str()))
+    }
+
+    pub fn write_rendered_dir(
+        &self,
+        artifact_id: &ArtifactId,
+        profile: &ProfileName,
+        rendered: &RenderedDir,
+    ) -> Result<PathBuf> {
+        let path = self.rendered_dir_path(artifact_id, profile);
+        let parent = path.parent().unwrap_or_else(|| Path::new("."));
+        fs_err::create_dir_all(parent).map_err(AgentStowError::from)?;
+
+        let staging = tempfile::Builder::new()
+            .prefix(".agentstow.rendered-dir.")
+            .tempdir_in(parent)
+            .map_err(AgentStowError::from)?;
+        materialize_rendered_dir(staging.path(), rendered)?;
+
+        if path.exists() {
+            remove_existing(&path)?;
+        }
+        fs_err::rename(staging.path(), &path).map_err(AgentStowError::from)?;
+        Ok(path)
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -79,15 +114,204 @@ pub struct LinkJob {
 
 #[derive(Debug, Clone)]
 pub enum InstallSource {
-    /// 适用于 file artifact：写入 bytes（copy），或写入 RenderStore 后再 symlink。
     FileBytes(Vec<u8>),
-    /// 适用于 dir artifact：直接 link/copy 目录。
     Path(PathBuf),
 }
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct ApplyOptions {
     pub force: bool,
+}
+
+pub fn build_link_job_from_manifest(
+    manifest: &Manifest,
+    target_name: &TargetName,
+    target: &TargetDef,
+    profile: &ProfileName,
+    render_store: &RenderStore,
+) -> Result<LinkJob> {
+    let artifact =
+        manifest
+            .artifacts
+            .get(&target.artifact)
+            .ok_or_else(|| AgentStowError::Manifest {
+                message: format!("artifact 不存在：{}", target.artifact.as_str()).into(),
+            })?;
+    let target_path = target.absolute_target_path(&manifest.workspace_root);
+    let desired = build_install_source(manifest, &target.artifact, profile, render_store)?;
+
+    Ok(LinkJob {
+        target: target_name.clone(),
+        artifact_id: target.artifact.clone(),
+        profile: profile.clone(),
+        artifact_kind: artifact.kind,
+        method: target.method,
+        target_path,
+        desired,
+    })
+}
+
+pub fn build_link_instance_record(
+    manifest: &Manifest,
+    job: &LinkJob,
+    store: &RenderStore,
+    updated_at: OffsetDateTime,
+) -> Result<LinkInstanceRecord> {
+    let artifact =
+        manifest
+            .artifacts
+            .get(&job.artifact_id)
+            .ok_or_else(|| AgentStowError::Manifest {
+                message: format!("artifact 不存在：{}", job.artifact_id.as_str()).into(),
+            })?;
+    let (rendered_path, blake3) = match (&job.method, &job.desired) {
+        (InstallMethod::Symlink, InstallSource::FileBytes(bytes)) => (
+            Some(store.rendered_file_path(&job.artifact_id, &job.profile)),
+            Some(blake3::hash(bytes).to_hex().to_string()),
+        ),
+        (InstallMethod::Copy, InstallSource::FileBytes(bytes)) => {
+            (None, Some(blake3::hash(bytes).to_hex().to_string()))
+        }
+        (InstallMethod::Symlink, InstallSource::Path(path))
+        | (InstallMethod::Junction, InstallSource::Path(path)) => (Some(path.clone()), None),
+        (InstallMethod::Copy, InstallSource::Path(path)) if artifact.template => {
+            (Some(path.clone()), None)
+        }
+        (InstallMethod::Copy, InstallSource::Path(_)) => (None, None),
+        _ => (None, None),
+    };
+
+    Ok(LinkInstanceRecord {
+        workspace_root: manifest.workspace_root.clone(),
+        artifact_id: job.artifact_id.clone(),
+        profile: job.profile.clone(),
+        target_path: job.target_path.clone(),
+        method: job.method,
+        rendered_path,
+        blake3,
+        updated_at,
+    })
+}
+
+fn build_install_source(
+    manifest: &Manifest,
+    artifact_id: &ArtifactId,
+    profile: &ProfileName,
+    render_store: &RenderStore,
+) -> Result<InstallSource> {
+    let artifact = manifest
+        .artifacts
+        .get(artifact_id)
+        .ok_or_else(|| AgentStowError::Manifest {
+            message: format!("artifact 不存在：{}", artifact_id.as_str()).into(),
+        })?;
+
+    match artifact.kind {
+        ArtifactKind::File => {
+            let rendered = Renderer::render_file(manifest, artifact_id, profile)?;
+            Validator::validate_rendered_file(artifact, &rendered.bytes)?;
+            Ok(InstallSource::FileBytes(rendered.bytes))
+        }
+        ArtifactKind::Dir => {
+            if artifact.template {
+                let rendered = Renderer::render_dir(manifest, artifact_id, profile)?;
+                let rendered_path =
+                    render_store.write_rendered_dir(artifact_id, profile, &rendered)?;
+                Ok(InstallSource::Path(rendered_path))
+            } else {
+                Ok(InstallSource::Path(
+                    artifact.source_path(&manifest.workspace_root),
+                ))
+            }
+        }
+    }
+}
+
+pub fn check_link_job_health(job: &LinkJob, render_store: &RenderStore) -> Result<bool> {
+    match job.method {
+        InstallMethod::Symlink => match (&job.artifact_kind, &job.desired) {
+            (ArtifactKind::File, InstallSource::FileBytes(_)) => {
+                let desired_source =
+                    render_store.rendered_file_path(&job.artifact_id, &job.profile);
+                check_existing_link_health(&job.target_path, &desired_source, check_symlink)
+            }
+            (ArtifactKind::Dir, InstallSource::Path(path)) => {
+                check_existing_link_health(&job.target_path, path, check_symlink)
+            }
+            _ => Ok(false),
+        },
+        InstallMethod::Junction => match (&job.artifact_kind, &job.desired) {
+            (ArtifactKind::Dir, InstallSource::Path(path)) => {
+                check_junction(&job.target_path, path)
+            }
+            _ => Ok(false),
+        },
+        InstallMethod::Copy => match (&job.artifact_kind, &job.desired) {
+            (ArtifactKind::File, InstallSource::FileBytes(bytes)) => {
+                check_copy_file(&job.target_path, bytes)
+            }
+            (ArtifactKind::Dir, InstallSource::Path(path)) => {
+                check_copy_dir(&job.target_path, path)
+            }
+            _ => Ok(false),
+        },
+    }
+}
+
+pub fn check_link_record_health(manifest: &Manifest, record: &LinkInstanceRecord) -> Result<bool> {
+    let Some(artifact_def) = manifest.artifacts.get(&record.artifact_id) else {
+        return Ok(false);
+    };
+
+    match record.method {
+        InstallMethod::Symlink => match record.rendered_path.as_deref() {
+            Some(source_path) => {
+                check_existing_link_health(&record.target_path, source_path, check_symlink)
+            }
+            None => Ok(false),
+        },
+        InstallMethod::Junction => match record.rendered_path.as_deref() {
+            Some(source_path) => check_junction(&record.target_path, source_path),
+            None => Ok(false),
+        },
+        InstallMethod::Copy => match artifact_def.kind {
+            ArtifactKind::File => {
+                let rendered =
+                    Renderer::render_file(manifest, &record.artifact_id, &record.profile)?;
+                check_copy_file(&record.target_path, &rendered.bytes)
+            }
+            ArtifactKind::Dir => {
+                let desired_source = record
+                    .rendered_path
+                    .as_deref()
+                    .map(Path::to_path_buf)
+                    .unwrap_or_else(|| artifact_def.source_path(&manifest.workspace_root));
+                check_copy_dir(&record.target_path, &desired_source)
+            }
+        },
+    }
+}
+
+fn check_existing_link_health(
+    target: &Path,
+    desired_source: &Path,
+    checker: fn(&Path, &Path) -> Result<bool>,
+) -> Result<bool> {
+    if !desired_source.exists() {
+        return Ok(false);
+    }
+    if fs_err::symlink_metadata(target).is_err() {
+        return Ok(false);
+    }
+    checker(target, desired_source)
+}
+
+fn check_copy_file(target: &Path, desired_bytes: &[u8]) -> Result<bool> {
+    if !target.is_file() {
+        return Ok(false);
+    }
+    let existing = fs_err::read(target).map_err(AgentStowError::from)?;
+    Ok(existing == desired_bytes)
 }
 
 #[instrument(skip_all, fields(target=%job.target, method=?job.method, target_path=%normalize_for_display(&job.target_path)))]
@@ -191,7 +415,7 @@ fn apply_symlink(
     ensure_parent_dir(&job.target_path)?;
 
     if job.target_path.exists() {
-        if is_correct_symlink(&job.target_path, &source_path)? {
+        if is_correct_symlink(&job.target_path, &source_path)? && !opt.force {
             info!(
                 "target 已是正确 symlink，跳过：{}",
                 normalize_for_display(&job.target_path)
@@ -305,6 +529,7 @@ fn apply_junction(job: &LinkJob, opt: ApplyOptions) -> Result<LinkPlanItem> {
 
     #[cfg(not(windows))]
     {
+        let _ = opt;
         Err(AgentStowError::Link {
             message: "junction 仅支持 Windows".into(),
         })
@@ -433,14 +658,44 @@ fn is_correct_symlink(target: &Path, desired_source: &Path) -> Result<bool> {
     if !meta.file_type().is_symlink() {
         return Ok(false);
     }
+    let resolved = resolve_link_path(target)?;
+    let desired_source = normalize_path_without_following_symlinks(desired_source);
+
+    if !resolved.exists() || !desired_source.exists() {
+        return Ok(false);
+    }
+
+    Ok(resolved == desired_source)
+}
+
+fn resolve_link_path(target: &Path) -> Result<PathBuf> {
     let link = fs_err::read_link(target).map_err(AgentStowError::from)?;
-    let resolved = if link.is_absolute() {
+    let candidate = if link.is_absolute() {
         link
     } else {
         target.parent().unwrap_or_else(|| Path::new(".")).join(link)
     };
+    Ok(normalize_path_without_following_symlinks(&candidate))
+}
 
-    Ok(dunce::simplified(&resolved) == dunce::simplified(desired_source))
+fn normalize_path_without_following_symlinks(path: &Path) -> PathBuf {
+    let mut normalized = PathBuf::new();
+
+    for component in path.components() {
+        match component {
+            Component::Prefix(prefix) => normalized.push(prefix.as_os_str()),
+            Component::RootDir => normalized.push(Path::new(std::path::MAIN_SEPARATOR_STR)),
+            Component::CurDir => {}
+            Component::ParentDir => {
+                if !normalized.pop() {
+                    normalized.push(Component::ParentDir.as_os_str());
+                }
+            }
+            Component::Normal(part) => normalized.push(part),
+        }
+    }
+
+    normalized
 }
 
 pub fn check_symlink(target: &Path, desired_source: &Path) -> Result<bool> {
@@ -495,7 +750,6 @@ fn rename_into_place(
     opt: ApplyOptions,
     target_is_dir_like: bool,
 ) -> Result<()> {
-    // Must handle Windows semantics (rename() doesn't overwrite) and directory replacement cases.
     if target_path.exists() {
         if !opt.force {
             return Err(AgentStowError::LinkConflict {
@@ -505,7 +759,6 @@ fn rename_into_place(
 
         #[cfg(unix)]
         {
-            // For file-like targets, we prefer atomic rename-over when possible.
             if !target_is_dir_like && fs_err::rename(tmp_path, target_path).is_ok() {
                 return Ok(());
             }
@@ -569,11 +822,23 @@ fn atomic_write_file(path: &Path, bytes: &[u8], sync: bool) -> Result<()> {
         tmp.as_file().sync_all().map_err(AgentStowError::from)?;
     }
 
-    // Best effort overwrite semantics:
-    // - Unix rename() overwrites atomically.
-    // - Windows：`tempfile::NamedTempFile::persist` 底层使用 MoveFileEx(REPLACE_EXISTING)
-    //   来原子替换已存在目标（详见 tempfile 文档/实现）。
     tmp.persist(path).map_err(|e| AgentStowError::Io(e.error))?;
+    Ok(())
+}
+
+fn materialize_rendered_dir(root: &Path, rendered: &RenderedDir) -> Result<()> {
+    fs_err::create_dir_all(root).map_err(AgentStowError::from)?;
+    for entry in &rendered.entries {
+        let path = root.join(&entry.relative_path);
+        match entry.kind {
+            RenderedDirEntryKind::Dir => {
+                fs_err::create_dir_all(&path).map_err(AgentStowError::from)?;
+            }
+            RenderedDirEntryKind::File => {
+                atomic_write_file(&path, &entry.bytes, true)?;
+            }
+        }
+    }
     Ok(())
 }
 

@@ -6,6 +6,10 @@ version.workspace = true
 
 [dependencies]
 agentstow-core = { path = "../agentstow-core" }
+agentstow-manifest = { path = "../agentstow-manifest" }
+agentstow-render = { path = "../agentstow-render" }
+agentstow-state = { path = "../agentstow-state" }
+agentstow-validate = { path = "../agentstow-validate" }
 anyhow.workspace = true
 blake3.workspace = true
 dunce.workspace = true
@@ -15,6 +19,7 @@ same-file.workspace = true
 serde.workspace = true
 tempfile.workspace = true
 thiserror.workspace = true
+time.workspace = true
 tracing.workspace = true
 
 [target.'cfg(windows)'.dependencies]

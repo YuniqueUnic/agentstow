@@ -350,6 +350,83 @@ method = "copy"
 }
 
 #[test]
+fn load_should_error_when_targets_have_same_target_path() {
+    let temp = assert_fs::TempDir::new().unwrap();
+    temp.child("agentstow.toml")
+        .write_str(
+            r#"
+[profiles.base]
+vars = {}
+
+[artifacts.one]
+kind = "file"
+source = "artifacts/one.txt"
+
+[artifacts.two]
+kind = "file"
+source = "artifacts/two.txt"
+
+[targets.one]
+artifact = "one"
+profile = "base"
+target_path = "proj/shared.txt"
+method = "copy"
+
+[targets.two]
+artifact = "two"
+profile = "base"
+target_path = "proj/shared.txt"
+method = "copy"
+"#,
+        )
+        .unwrap();
+
+    let err = Manifest::load_from_path(temp.child("agentstow.toml").path()).unwrap_err();
+    assert_eq!(err.exit_code(), agentstow_core::ExitCode::InvalidConfig);
+    assert!(err.to_string().contains("targets target_path 发生重叠"));
+    assert!(err.to_string().contains("proj/shared.txt"));
+}
+
+#[test]
+fn load_should_error_when_targets_overlap_after_relative_path_normalization() {
+    let temp = assert_fs::TempDir::new().unwrap();
+    temp.child("agentstow.toml")
+        .write_str(
+            r#"
+[profiles.base]
+vars = {}
+
+[artifacts.one]
+kind = "file"
+source = "artifacts/one.txt"
+
+[artifacts.two]
+kind = "file"
+source = "artifacts/two.txt"
+
+[targets.parent]
+artifact = "one"
+profile = "base"
+target_path = "proj/.agents"
+method = "copy"
+
+[targets.child]
+artifact = "two"
+profile = "base"
+target_path = "proj/tmp/../.agents/skills"
+method = "copy"
+"#,
+        )
+        .unwrap();
+
+    let err = Manifest::load_from_path(temp.child("agentstow.toml").path()).unwrap_err();
+    assert_eq!(err.exit_code(), agentstow_core::ExitCode::InvalidConfig);
+    assert!(err.to_string().contains("targets target_path 发生重叠"));
+    assert!(err.to_string().contains("proj/.agents"));
+    assert!(err.to_string().contains("proj/.agents/skills"));
+}
+
+#[test]
 fn load_should_error_for_invalid_toml_syntax() {
     let temp = assert_fs::TempDir::new().unwrap();
     temp.child("agentstow.toml")
