@@ -1,26 +1,39 @@
 [profiles.base]
 vars = { owner = "platform-team", workspace_name = "codex-lab", default_profile = "base" }
 
-[render_context.env_files.shared]
-path = ".env"
+## Context
 
-[render_context.files.reference_fragment]
+[env.files]     # 这个是能够将文件内容解析为环境变量的功能, 这个键是程序保留的
+paths = [".env"]
+
+[files.reference] # 这里是将这个 reference.md 文件作为可以被引用解析和注入的文件
 path = "reference.md"
 
-[render_context.files.worker_description]
-path = "descriptions/worker.md"
+[files.worker_description]
+path = "agents/descriptions/worker.md"
 
-[render_context.files.explorer_description]
-path = "descriptions/explorer.md"
+[files.explorer_description]
+path = "agents/descriptions/explorer.md"
 
-[render_context.mcp_servers.sequential_thinking]
-server = "sequential_thinking"
+[mcp_servers.file] # 这个是能够将 json 格式的 mcp 配置文件也解析作为 mcp servers, 这个键是程序保留的
+path = "mcps.json" # 这里的 mcps.json 文件内容需要符合 MCP Server 的配置格式, 解析后会将其中的 MCP Server 配置注入到 mcp_servers 中, 以供后续引用和使用
 
-[render_context.mcp_servers.tavily]
-server = "tavily"
+[mcp_servers.sequential_thinking] # 这个就是一个直接声明的 mcp server, 在后续引用的时候需要用到
+transport = { kind = "stdio", command = "bunx", args = ["-y", "@modelcontextprotocol/server-sequential-thinking"] }
 
-[render_context.mcp_servers.ace_tool]
-server = "ace_tool"
+[mcp_servers.tavily]
+transport = { kind = "http", url = "https://mcp.tavily.com/mcp" }
+env = [
+  { key = "TAVILY_API_KEY", binding = { kind = "env", var = "TAVILY_API_KEY" } }
+]
+
+[mcp_servers.ace_tool]
+transport = { kind = "http", url = "https://acemcp.heroman.wtf/relay/" }
+env = [
+  { key = "ACE_TOOL_TOKEN", binding = { kind = "env", var = "ACE_TOOL_TOKEN" } }
+]
+
+#### Artifacts
 
 [artifacts.workspace_agents]
 kind = "file"
@@ -38,6 +51,8 @@ kind = "file"
 source = "templates/dotenv.tera"
 template = true
 validate_as = "none"
+
+#### Targets
 
 [targets.workspace_agents_copy]
 artifact = "workspace_agents"
@@ -75,17 +90,5 @@ profile = "base"
 target_path = "demo-targets-2/.env"
 method = "symlink"
 
-[mcp_servers.sequential_thinking]
-transport = { kind = "stdio", command = "bunx", args = ["-y", "@modelcontextprotocol/server-sequential-thinking"] }
 
-[mcp_servers.tavily]
-transport = { kind = "http", url = "https://mcp.tavily.com/mcp" }
-env = [
-  { key = "TAVILY_API_KEY", binding = { kind = "env", var = "TAVILY_API_KEY" } }
-]
 
-[mcp_servers.ace_tool]
-transport = { kind = "http", url = "https://acemcp.heroman.wtf/relay/" }
-env = [
-  { key = "ACE_TOOL_TOKEN", binding = { kind = "env", var = "ACE_TOOL_TOKEN" } }
-]
