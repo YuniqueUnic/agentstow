@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use agentstow_core::{ArtifactId, ProfileName, normalize_for_display};
+use agentstow_core::{ArtifactId, ProfileName};
 use agentstow_web_types::{
     ArtifactGitRollbackRequest, ArtifactSourceUpdateRequest, ManifestSourceUpdateRequest,
 };

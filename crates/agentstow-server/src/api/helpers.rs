@@ -1,7 +1,7 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use agentstow_core::{AgentStowError, Result, normalize_for_display};
+use agentstow_core::{AgentStowError, normalize_for_display};
 use agentstow_web_types::{ApiError, WorkspaceProbeResponse, WorkspaceSelectResponse};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Json, Response};
@@ -19,7 +19,7 @@ pub(super) fn api_error(status: StatusCode, message: impl ToString) -> Response 
         .into_response()
 }
 
-pub(super) fn handle_result<T: serde::Serialize>(result: Result<T, AgentStowError>) -> Response {
+pub(super) fn handle_result<T: serde::Serialize>(result: agentstow_core::Result<T>) -> Response {
     match result {
         Ok(payload) => Json(payload).into_response(),
         Err(error) => {
@@ -40,14 +40,14 @@ pub(super) fn handle_result<T: serde::Serialize>(result: Result<T, AgentStowErro
 
 pub(super) async fn queries_from_state(
     st: &Arc<ServerState>,
-) -> Result<WorkspaceQueryService, AgentStowError> {
+) -> agentstow_core::Result<WorkspaceQueryService> {
     let workspace_root = selected_workspace_root(st).await?;
     Ok(WorkspaceQueryService::new(workspace_root))
 }
 
 pub(super) async fn selected_workspace_root(
     st: &Arc<ServerState>,
-) -> Result<std::path::PathBuf, AgentStowError> {
+) -> agentstow_core::Result<std::path::PathBuf> {
     st.workspace_root
         .read()
         .await
@@ -83,7 +83,7 @@ pub(super) fn workspace_relative_display(workspace_root: &Path, source_path: &st
 
 pub(super) fn probe_workspace(
     requested_workspace_root: &str,
-) -> Result<agentstow_manifest::WorkspaceProbe, AgentStowError> {
+) -> agentstow_core::Result<agentstow_manifest::WorkspaceProbe> {
     agentstow_manifest::probe_workspace_path(Path::new(requested_workspace_root))
 }
 
@@ -117,7 +117,7 @@ pub(super) fn workspace_select_response(
     }
 }
 
-pub(super) fn pick_workspace_folder() -> Result<Option<std::path::PathBuf>, AgentStowError> {
+pub(super) fn pick_workspace_folder() -> agentstow_core::Result<Option<std::path::PathBuf>> {
     Ok(rfd::FileDialog::new()
         .set_title("Select AgentStow workspace")
         .pick_folder())
