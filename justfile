@@ -69,13 +69,19 @@ test *ARGS="":
 [unix]
 e2e *ARGS="":
     cd "e2e" && uv run -- pytest -v --tb=short {{ ARGS }}
-    # TODO: behave should be included
 
 # e2e tests (pytest)
 [windows]
 e2e *ARGS="":
     Set-Location "e2e"; uv run -- pytest -v --tb=short {{ ARGS }}
-    # TODO: behave should be included
+
+[unix]
+e2e-bdd *ARGS="tests/bdd":
+    cd "e2e" && uv run -- pytest -v --tb=short {{ ARGS }}
+
+[windows]
+e2e-bdd *ARGS="tests/bdd":
+    Set-Location "e2e"; uv run -- pytest -v --tb=short {{ ARGS }}
 
 # build / run
 build *ARGS="--workspace --all-features":

@@ -1,0 +1,13 @@
+[profiles.base]
+vars = { workspace = "dir-copy-demo" }
+
+[artifacts.agents_dir]
+kind = "dir"
+source = "templates/agents"
+template = true
+
+[targets.agents_copy]
+artifact = "agents_dir"
+profile = "base"
+target_path = "proj/.agents"
+method = "copy"

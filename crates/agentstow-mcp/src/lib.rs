@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use agentstow_core::{AgentStowError, Result, SecretBinding};
-use agentstow_manifest::{EnvVarDef, McpServerDef, McpTransport};
+use agentstow_manifest::{EnvVarDef, McpServerDef, McpServerOptions, McpTransport};
 use serde::{Deserialize, Serialize};
 use tracing::instrument;
 
@@ -23,6 +23,22 @@ pub struct CodexMcpJsonFile {
     pub mcp_servers: BTreeMap<String, CodexMcpServer>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct CodexMcpServerOptions {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    startup_timeout_sec: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    tool_timeout_sec: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    enabled: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    required: Option<bool>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    enabled_tools: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    disabled_tools: Vec<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum CodexMcpServer {
@@ -36,6 +52,8 @@ pub enum CodexMcpServer {
         env: BTreeMap<String, String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         cwd: Option<String>,
+        #[serde(flatten)]
+        options: CodexMcpServerOptions,
     },
     Http {
         url: String,
@@ -45,6 +63,8 @@ pub enum CodexMcpServer {
         http_headers: BTreeMap<String, String>,
         #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
         env_http_headers: BTreeMap<String, String>,
+        #[serde(flatten)]
+        options: CodexMcpServerOptions,
     },
 }
 
@@ -74,6 +94,8 @@ struct CodexMcpTomlServer {
     env_http_headers: BTreeMap<String, String>,
     #[serde(default)]
     env: BTreeMap<String, String>,
+    #[serde(flatten)]
+    options: CodexMcpServerOptions,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -97,6 +119,14 @@ struct ClaudeMcpOAuthConfig {
     callback_port: Option<u16>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     auth_server_metadata_url: Option<String>,
+}
+
+impl ClaudeMcpOAuthConfig {
+    fn is_empty(&self) -> bool {
+        self.client_id.is_none()
+            && self.callback_port.is_none()
+            && self.auth_server_metadata_url.is_none()
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -133,8 +163,38 @@ struct GeminiMcpTomlFile {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 struct GeminiMcpOAuthConfig {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    enabled: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    client_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    client_secret: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    authorization_url: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    token_url: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     scopes: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    redirect_uri: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    token_param_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    audiences: Vec<String>,
+}
+
+impl GeminiMcpOAuthConfig {
+    fn is_empty(&self) -> bool {
+        self.enabled.is_none()
+            && self.client_id.is_none()
+            && self.client_secret.is_none()
+            && self.authorization_url.is_none()
+            && self.token_url.is_none()
+            && self.scopes.is_empty()
+            && self.redirect_uri.is_none()
+            && self.token_param_name.is_none()
+            && self.audiences.is_empty()
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -542,6 +602,7 @@ fn validate_generic_server(name: &str, server: &McpServerDef) -> Result<()> {
 }
 
 fn render_codex_server(name: &str, server: &McpServerDef) -> Result<CodexMcpServer> {
+    let options = codex_options_from_generic(&server.options);
     match &server.transport {
         McpTransport::Stdio { command, args, cwd } => {
             let env = split_stdio_env_bindings(name, &server.env)?;
@@ -553,6 +614,7 @@ fn render_codex_server(name: &str, server: &McpServerDef) -> Result<CodexMcpServ
                 cwd: cwd
                     .as_ref()
                     .map(|cwd| cwd.as_os_str().to_string_lossy().to_string()),
+                options,
             })
         }
         McpTransport::Http { url, headers } => {
@@ -562,6 +624,7 @@ fn render_codex_server(name: &str, server: &McpServerDef) -> Result<CodexMcpServ
                 bearer_token_env_var: http.bearer_token_env_var,
                 http_headers: http.http_headers,
                 env_http_headers: http.env_http_headers,
+                options,
             })
         }
     }
@@ -575,6 +638,7 @@ fn codex_server_to_generic_def(server: CodexMcpServer) -> McpServerDef {
             env_vars,
             env,
             cwd,
+            options,
         } => McpServerDef {
             transport: McpTransport::Stdio {
                 command,
@@ -588,12 +652,14 @@ fn codex_server_to_generic_def(server: CodexMcpServer) -> McpServerDef {
                     binding: SecretBinding::Env { var },
                 }))
                 .collect(),
+            options: generic_options_from_codex(options),
         },
         CodexMcpServer::Http {
             url,
             bearer_token_env_var,
             http_headers,
             env_http_headers,
+            options,
         } => McpServerDef {
             transport: McpTransport::Http {
                 url,
@@ -610,17 +676,110 @@ fn codex_server_to_generic_def(server: CodexMcpServer) -> McpServerDef {
                     binding: SecretBinding::Env { var },
                 }))
                 .collect(),
+            options: generic_options_from_codex(options),
         },
     }
 }
 
+fn codex_options_from_generic(options: &McpServerOptions) -> CodexMcpServerOptions {
+    CodexMcpServerOptions {
+        startup_timeout_sec: options.startup_timeout_sec,
+        tool_timeout_sec: options.tool_timeout_sec,
+        enabled: options.enabled,
+        required: options.required,
+        enabled_tools: options.enabled_tools.clone(),
+        disabled_tools: options.disabled_tools.clone(),
+    }
+}
+
+fn generic_options_from_codex(options: CodexMcpServerOptions) -> McpServerOptions {
+    McpServerOptions {
+        startup_timeout_sec: options.startup_timeout_sec,
+        tool_timeout_sec: options.tool_timeout_sec,
+        enabled: options.enabled,
+        required: options.required,
+        enabled_tools: options.enabled_tools,
+        disabled_tools: options.disabled_tools,
+        ..Default::default()
+    }
+}
+
+fn claude_oauth_from_generic(options: &McpServerOptions) -> Option<ClaudeMcpOAuthConfig> {
+    let oauth = options.oauth.as_ref()?;
+    let config = ClaudeMcpOAuthConfig {
+        client_id: oauth.client_id.clone(),
+        callback_port: oauth.callback_port,
+        auth_server_metadata_url: oauth.auth_server_metadata_url.clone(),
+    };
+    (!config.is_empty()).then_some(config)
+}
+
+fn gemini_oauth_from_generic(options: &McpServerOptions) -> Option<GeminiMcpOAuthConfig> {
+    let oauth = options.oauth.as_ref()?;
+    let config = GeminiMcpOAuthConfig {
+        enabled: oauth.enabled,
+        client_id: oauth.client_id.clone(),
+        client_secret: oauth.client_secret.clone(),
+        authorization_url: oauth.authorization_url.clone(),
+        token_url: oauth.token_url.clone(),
+        scopes: oauth.scopes.clone(),
+        redirect_uri: oauth.redirect_uri.clone(),
+        token_param_name: oauth.token_param_name.clone(),
+        audiences: oauth.audiences.clone(),
+    };
+    if config.is_empty() {
+        return None;
+    }
+    Some(config)
+}
+
+fn validate_gemini_provider_options(name: &str, options: &McpServerOptions) -> Result<()> {
+    match options.auth_provider_type.as_deref() {
+        Some("google_credentials") => {
+            let has_scopes = options
+                .oauth
+                .as_ref()
+                .is_some_and(|oauth| !oauth.scopes.is_empty());
+            if !has_scopes {
+                return Err(AgentStowError::Mcp {
+                    message: format!(
+                        "mcp[{name}] Gemini auth_provider_type=google_credentials 需要 options.oauth.scopes"
+                    )
+                    .into(),
+                });
+            }
+        }
+        Some("service_account_impersonation") => {
+            if options.target_audience.is_none() || options.target_service_account.is_none() {
+                return Err(AgentStowError::Mcp {
+                    message: format!(
+                        "mcp[{name}] Gemini auth_provider_type=service_account_impersonation 需要 target_audience 和 target_service_account"
+                    )
+                    .into(),
+                });
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
 fn render_claude_server(name: &str, server: &McpServerDef) -> Result<ClaudeMcpServer> {
+    let oauth = claude_oauth_from_generic(&server.options);
     match &server.transport {
         McpTransport::Stdio { command, args, cwd } => {
             if cwd.is_some() {
                 return Err(AgentStowError::Mcp {
                     message: format!(
                         "mcp[{name}] Claude stdio 当前不支持 cwd；Anthropic 官方 MCP 配置文档未声明该字段"
+                    )
+                    .into(),
+                });
+            }
+            if oauth.is_some() {
+                return Err(AgentStowError::Mcp {
+                    message: format!(
+                        "mcp[{name}] Claude oauth 仅适用于 HTTP/SSE transport，stdio 不能声明 options.oauth"
                     )
                     .into(),
                 });
@@ -640,6 +799,7 @@ fn render_claude_server(name: &str, server: &McpServerDef) -> Result<ClaudeMcpSe
                 transport_type: Some("http".to_string()),
                 url: Some(url.clone()),
                 headers: materialize_http_headers(&http, EnvReferenceStyle::Claude),
+                oauth,
                 ..Default::default()
             })
         }
@@ -647,6 +807,10 @@ fn render_claude_server(name: &str, server: &McpServerDef) -> Result<ClaudeMcpSe
 }
 
 fn render_gemini_server(name: &str, server: &McpServerDef) -> Result<GeminiMcpServer> {
+    validate_gemini_provider_options(name, &server.options)?;
+    let trust = Some(server.options.trust.unwrap_or(false));
+    let oauth = gemini_oauth_from_generic(&server.options);
+
     match &server.transport {
         McpTransport::Stdio { command, args, cwd } => Ok(GeminiMcpServer {
             command: Some(command.clone()),
@@ -655,16 +819,31 @@ fn render_gemini_server(name: &str, server: &McpServerDef) -> Result<GeminiMcpSe
             cwd: cwd
                 .as_ref()
                 .map(|value| value.as_os_str().to_string_lossy().to_string()),
-            trust: Some(false),
+            timeout: server.options.timeout,
+            trust,
+            description: server.options.description.clone(),
+            include_tools: server.options.include_tools.clone(),
+            exclude_tools: server.options.exclude_tools.clone(),
+            oauth,
+            auth_provider_type: server.options.auth_provider_type.clone(),
+            target_audience: server.options.target_audience.clone(),
+            target_service_account: server.options.target_service_account.clone(),
             ..Default::default()
         }),
         McpTransport::Http { url, headers } => {
             let http = split_http_env_bindings(name, headers, &server.env)?;
             Ok(GeminiMcpServer {
-                url: Some(url.clone()),
-                transport_type: Some("http".to_string()),
+                http_url: Some(url.clone()),
                 headers: materialize_http_headers(&http, EnvReferenceStyle::Gemini),
-                trust: Some(false),
+                timeout: server.options.timeout,
+                trust,
+                description: server.options.description.clone(),
+                include_tools: server.options.include_tools.clone(),
+                exclude_tools: server.options.exclude_tools.clone(),
+                oauth,
+                auth_provider_type: server.options.auth_provider_type.clone(),
+                target_audience: server.options.target_audience.clone(),
+                target_service_account: server.options.target_service_account.clone(),
                 ..Default::default()
             })
         }
@@ -704,6 +883,7 @@ fn render_generic_server_toml_payload(name: &str, server: &McpServerDef) -> Resu
     if !server.env.is_empty() {
         lines.push(format!("env = {}", encode_toml_env_defs(&server.env)?));
     }
+    append_generic_options_block(&mut lines, &rendered_name, &server.options)?;
 
     lines.push(String::new());
     lines.push(format!("[mcp_servers.{rendered_name}.transport]"));
@@ -737,6 +917,71 @@ fn render_generic_server_toml_payload(name: &str, server: &McpServerDef) -> Resu
     Ok(lines.join("\n") + "\n")
 }
 
+fn append_generic_options_block(
+    lines: &mut Vec<String>,
+    rendered_name: &str,
+    options: &McpServerOptions,
+) -> Result<()> {
+    if options.is_empty() {
+        return Ok(());
+    }
+
+    lines.push(String::new());
+    lines.push(format!("[mcp_servers.{rendered_name}.options]"));
+    append_optional_u64(lines, "startup_timeout_sec", options.startup_timeout_sec);
+    append_optional_u64(lines, "tool_timeout_sec", options.tool_timeout_sec);
+    append_optional_bool(lines, "enabled", options.enabled);
+    append_optional_bool(lines, "required", options.required);
+    append_optional_string_array(lines, "enabled_tools", &options.enabled_tools)?;
+    append_optional_string_array(lines, "disabled_tools", &options.disabled_tools)?;
+    append_optional_u64(lines, "timeout", options.timeout);
+    append_optional_bool(lines, "trust", options.trust);
+    append_optional_string(lines, "description", options.description.as_deref())?;
+    append_optional_string_array(lines, "include_tools", &options.include_tools)?;
+    append_optional_string_array(lines, "exclude_tools", &options.exclude_tools)?;
+    append_optional_string(
+        lines,
+        "auth_provider_type",
+        options.auth_provider_type.as_deref(),
+    )?;
+    append_optional_string(lines, "target_audience", options.target_audience.as_deref())?;
+    append_optional_string(
+        lines,
+        "target_service_account",
+        options.target_service_account.as_deref(),
+    )?;
+
+    if let Some(oauth) = &options.oauth {
+        if !oauth.is_empty() {
+            lines.push(String::new());
+            lines.push(format!("[mcp_servers.{rendered_name}.options.oauth]"));
+            append_optional_string(lines, "client_id", oauth.client_id.as_deref())?;
+            if let Some(callback_port) = oauth.callback_port {
+                lines.push(format!("callback_port = {callback_port}"));
+            }
+            append_optional_bool(lines, "enabled", oauth.enabled);
+            append_optional_string(lines, "client_secret", oauth.client_secret.as_deref())?;
+            append_optional_string(
+                lines,
+                "authorization_url",
+                oauth.authorization_url.as_deref(),
+            )?;
+            append_optional_string(lines, "token_url", oauth.token_url.as_deref())?;
+            append_optional_string(
+                lines,
+                "auth_server_metadata_url",
+                oauth.auth_server_metadata_url.as_deref(),
+            )?;
+            append_optional_string_array(lines, "scopes", &oauth.scopes)?;
+            append_optional_string(lines, "redirect_uri", oauth.redirect_uri.as_deref())?;
+            append_optional_string(lines, "token_param_name", oauth.token_param_name.as_deref())?;
+            append_optional_string_array(lines, "audiences", &oauth.audiences)?;
+        }
+    }
+
+    Ok(())
+}
+
 fn render_codex_server_payload(
     name: &str,
     server: &CodexMcpServer,
@@ -763,7 +1008,11 @@ fn render_codex_server_toml_payload(name: &str, server: &CodexMcpServer) -> Resu
     let mut lines = vec![format!("[mcp_servers.{rendered_name}]")];
     match server {
         CodexMcpServer::Stdio {
-            command, args, env, ..
+            command,
+            args,
+            env,
+            options,
+            ..
         } => {
             if !args.is_empty() {
                 lines.push(format!("args = {}", encode_toml_string_array(args)?));
@@ -780,6 +1029,7 @@ fn render_codex_server_toml_payload(name: &str, server: &CodexMcpServer) -> Resu
                     lines.push(format!("cwd = {}", encode_toml_string(cwd)?));
                 }
             }
+            append_codex_options_block(&mut lines, options)?;
             append_env_block(&mut lines, &rendered_name, env.clone())?;
         }
         CodexMcpServer::Http {
@@ -787,6 +1037,7 @@ fn render_codex_server_toml_payload(name: &str, server: &CodexMcpServer) -> Resu
             bearer_token_env_var,
             http_headers,
             env_http_headers,
+            options,
         } => {
             lines.push(format!("url = {}", encode_toml_string(url)?));
             if let Some(env_var) = bearer_token_env_var {
@@ -795,6 +1046,7 @@ fn render_codex_server_toml_payload(name: &str, server: &CodexMcpServer) -> Resu
                     encode_toml_string(env_var)?
                 ));
             }
+            append_codex_options_block(&mut lines, options)?;
             if !http_headers.is_empty() {
                 lines.push(String::new());
                 lines.push(format!("[mcp_servers.{rendered_name}.http_headers]"));
@@ -813,6 +1065,19 @@ fn render_codex_server_toml_payload(name: &str, server: &CodexMcpServer) -> Resu
     }
 
     Ok(lines.join("\n") + "\n")
+}
+
+fn append_codex_options_block(
+    lines: &mut Vec<String>,
+    options: &CodexMcpServerOptions,
+) -> Result<()> {
+    append_optional_u64(lines, "startup_timeout_sec", options.startup_timeout_sec);
+    append_optional_u64(lines, "tool_timeout_sec", options.tool_timeout_sec);
+    append_optional_bool(lines, "enabled", options.enabled);
+    append_optional_bool(lines, "required", options.required);
+    append_optional_string_array(lines, "enabled_tools", &options.enabled_tools)?;
+    append_optional_string_array(lines, "disabled_tools", &options.disabled_tools)?;
+    Ok(())
 }
 
 fn render_codex_server_yaml_payload(name: &str, server: &CodexMcpServer) -> Result<String> {
@@ -1164,6 +1429,36 @@ fn append_string_map_table(
     Ok(())
 }
 
+fn append_optional_string(lines: &mut Vec<String>, key: &str, value: Option<&str>) -> Result<()> {
+    if let Some(value) = value {
+        lines.push(format!("{key} = {}", encode_toml_string(value)?));
+    }
+    Ok(())
+}
+
+fn append_optional_string_array(
+    lines: &mut Vec<String>,
+    key: &str,
+    values: &[String],
+) -> Result<()> {
+    if !values.is_empty() {
+        lines.push(format!("{key} = {}", encode_toml_string_array(values)?));
+    }
+    Ok(())
+}
+
+fn append_optional_bool(lines: &mut Vec<String>, key: &str, value: Option<bool>) {
+    if let Some(value) = value {
+        lines.push(format!("{key} = {value}"));
+    }
+}
+
+fn append_optional_u64(lines: &mut Vec<String>, key: &str, value: Option<u64>) {
+    if let Some(value) = value {
+        lines.push(format!("{key} = {value}"));
+    }
+}
+
 fn append_claude_oauth_block(
     lines: &mut Vec<String>,
     rendered_name: &str,
@@ -1193,12 +1488,19 @@ fn append_gemini_oauth_block(
 ) -> Result<()> {
     lines.push(String::new());
     lines.push(format!("[mcp_servers.{rendered_name}.oauth]"));
-    if !oauth.scopes.is_empty() {
-        lines.push(format!(
-            "scopes = {}",
-            encode_toml_string_array(&oauth.scopes)?
-        ));
-    }
+    append_optional_bool(lines, "enabled", oauth.enabled);
+    append_optional_string(lines, "clientId", oauth.client_id.as_deref())?;
+    append_optional_string(lines, "clientSecret", oauth.client_secret.as_deref())?;
+    append_optional_string(
+        lines,
+        "authorizationUrl",
+        oauth.authorization_url.as_deref(),
+    )?;
+    append_optional_string(lines, "tokenUrl", oauth.token_url.as_deref())?;
+    append_optional_string_array(lines, "scopes", &oauth.scopes)?;
+    append_optional_string(lines, "redirectUri", oauth.redirect_uri.as_deref())?;
+    append_optional_string(lines, "tokenParamName", oauth.token_param_name.as_deref())?;
+    append_optional_string_array(lines, "audiences", &oauth.audiences)?;
     Ok(())
 }
 
@@ -1478,6 +1780,7 @@ impl CodexMcpTomlServer {
                 env_vars: self.env_vars,
                 env: self.env,
                 cwd: self.cwd,
+                options: self.options,
             });
         }
         if let Some(url) = self.url {
@@ -1486,6 +1789,7 @@ impl CodexMcpTomlServer {
                 bearer_token_env_var: self.bearer_token_env_var,
                 http_headers: self.http_headers,
                 env_http_headers: self.env_http_headers,
+                options: self.options,
             });
         }
         Err(AgentStowError::Mcp {

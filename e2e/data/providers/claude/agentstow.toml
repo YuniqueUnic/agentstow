@@ -1,0 +1,19 @@
+[profiles.base]
+vars = { workspace_name = "claude-fixture" }
+
+[mcp_servers.remote]
+transport = { kind = "http", url = "https://mcp.example.com/mcp", headers = { Accept = "application/json" } }
+env = [
+  { key = "WEATHER_API_TOKEN", binding = { kind = "env", var = "WEATHER_API_TOKEN" } }
+]
+
+[mcp_servers.remote.options.oauth]
+client_id = "claude-client"
+callback_port = 4317
+auth_server_metadata_url = "https://auth.example.com/.well-known/openid-configuration"
+
+[artifacts.config]
+kind = "file"
+source = "templates/config.json.tera"
+template = true
+validate_as = "json"

@@ -1,0 +1,22 @@
+[profiles.base]
+vars = { workspace_name = "codex-fixture" }
+
+[mcp_servers.remote]
+transport = { kind = "http", url = "https://mcp.example.com/mcp" }
+env = [
+  { key = "WEATHER_API_TOKEN", binding = { kind = "env", var = "WEATHER_API_TOKEN" } }
+]
+
+[mcp_servers.remote.options]
+startup_timeout_sec = 20
+tool_timeout_sec = 45
+enabled = true
+required = true
+enabled_tools = ["forecast"]
+disabled_tools = ["screenshot"]
+
+[artifacts.config]
+kind = "file"
+source = "templates/config.toml.tera"
+template = true
+validate_as = "toml"

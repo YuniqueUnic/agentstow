@@ -88,7 +88,21 @@ fn render_should_include_env_file_inline_env_file_contexts_and_mcp_contexts() {
       },
       "env": [
         { "key": "NODE_ENV", "binding": { "kind": "literal", "value": "production" } }
-      ]
+      ],
+      "options": {
+        "startup_timeout_sec": 20,
+        "tool_timeout_sec": 45,
+        "enabled_tools": ["read", "write"],
+        "timeout": 30000,
+        "trust": true,
+        "include_tools": ["read"],
+        "oauth": {
+          "client_id": "claude-client",
+          "callback_port": 4317,
+          "auth_server_metadata_url": "https://auth.example.com/.well-known/openid-configuration",
+          "scopes": ["https://www.googleapis.com/auth/cloud-platform"]
+        }
+      }
     }
   }
 }"#,
@@ -148,17 +162,22 @@ path = "mcps.json"
     assert!(text.contains("duplicate=from-manifest"));
     assert!(text.contains("ref=reference-fragment"));
     assert!(text.contains("\"transport\": {\n        \"kind\": \"stdio\""));
+    assert!(text.contains("\"options\": {\n        \"startup_timeout_sec\": 20"));
     assert!(text.contains("toml=[mcp_servers.filesystem]"));
+    assert!(text.contains("[mcp_servers.filesystem.options]"));
     assert!(text.contains("[mcp_servers.filesystem.transport]"));
     assert!(text.contains("yaml=mcpServers:"));
     assert!(text.contains(
         "codex_json={\n  \"mcpServers\": {\n    \"filesystem\": {\n      \"command\": \"npx\""
     ));
     assert!(text.contains("codex_toml=[mcp_servers.filesystem]"));
+    assert!(text.contains("startup_timeout_sec = 20"));
     assert!(text.contains(
         "claude_json={\n  \"mcpServers\": {\n    \"filesystem\": {\n      \"type\": \"stdio\""
     ));
+    assert!(text.contains("\"clientId\": \"claude-client\""));
     assert!(text.contains("gemini_toml=[mcp_servers.filesystem]"));
-    assert!(text.contains("trust = false"));
+    assert!(text.contains("timeout = 30000"));
+    assert!(text.contains("trust = true"));
     assert!(!text.contains("env_vars = []"));
 }

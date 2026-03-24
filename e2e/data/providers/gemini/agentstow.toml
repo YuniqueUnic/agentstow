@@ -1,0 +1,27 @@
+[profiles.base]
+vars = { workspace_name = "gemini-fixture" }
+
+[mcp_servers.remote]
+transport = { kind = "http", url = "https://mcp.example.com/mcp", headers = { Accept = "application/json" } }
+env = [
+  { key = "WEATHER_API_TOKEN", binding = { kind = "env", var = "WEATHER_API_TOKEN" } }
+]
+
+[mcp_servers.remote.options]
+timeout = 30000
+trust = true
+description = "Remote toolbox"
+include_tools = ["search", "fetch"]
+exclude_tools = ["delete"]
+auth_provider_type = "google_credentials"
+target_audience = "https://mcp.example.com/mcp"
+target_service_account = "svc@example.iam.gserviceaccount.com"
+
+[mcp_servers.remote.options.oauth]
+scopes = ["https://www.googleapis.com/auth/cloud-platform"]
+
+[artifacts.config]
+kind = "file"
+source = "templates/settings.json.tera"
+template = true
+validate_as = "json"

@@ -305,6 +305,21 @@ path = "reference.md"
 path = "mcps.json"
 
 [mcp_servers.local]
+[mcp_servers.local.options]
+timeout = 30000
+trust = true
+include_tools = ["search", "fetch"]
+exclude_tools = ["delete"]
+auth_provider_type = "google_credentials"
+target_audience = "https://example.com/mcp"
+target_service_account = "svc@example.iam.gserviceaccount.com"
+
+[mcp_servers.local.options.oauth]
+client_id = "claude-client"
+callback_port = 4317
+auth_server_metadata_url = "https://auth.example.com/.well-known/openid-configuration"
+scopes = ["https://www.googleapis.com/auth/cloud-platform"]
+
 [mcp_servers.local.transport]
 kind = "http"
 url = "https://example.com/mcp"
@@ -337,6 +352,37 @@ url = "https://example.com/mcp"
             .unwrap()
             .key,
         "NODE_ENV"
+    );
+    let local = manifest.mcp_servers.get("local").unwrap();
+    assert_eq!(local.options.timeout, Some(30_000));
+    assert_eq!(local.options.trust, Some(true));
+    assert_eq!(
+        local.options.include_tools,
+        vec!["search".to_string(), "fetch".to_string()]
+    );
+    assert_eq!(local.options.exclude_tools, vec!["delete".to_string()]);
+    assert_eq!(
+        local.options.auth_provider_type.as_deref(),
+        Some("google_credentials")
+    );
+    assert_eq!(
+        local.options.target_audience.as_deref(),
+        Some("https://example.com/mcp")
+    );
+    assert_eq!(
+        local.options.target_service_account.as_deref(),
+        Some("svc@example.iam.gserviceaccount.com")
+    );
+    let oauth = local.options.oauth.as_ref().unwrap();
+    assert_eq!(oauth.client_id.as_deref(), Some("claude-client"));
+    assert_eq!(oauth.callback_port, Some(4317));
+    assert_eq!(
+        oauth.auth_server_metadata_url.as_deref(),
+        Some("https://auth.example.com/.well-known/openid-configuration")
+    );
+    assert_eq!(
+        oauth.scopes,
+        vec!["https://www.googleapis.com/auth/cloud-platform".to_string()]
     );
 }
 

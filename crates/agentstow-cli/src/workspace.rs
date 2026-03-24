@@ -1,5 +1,6 @@
 use agentstow_core::{AgentStowError, Result, normalize_for_display};
 use agentstow_git::Git;
+use std::process::Stdio;
 
 use crate::bootstrap::CommandContext;
 use crate::cli::{WorkspaceArgs, WorkspaceSubcommand};
@@ -35,16 +36,21 @@ async fn workspace_init(ctx: &CommandContext, git_init: bool) -> Result<()> {
 
     let mut git_inited = false;
     if git_init && !workspace_root.join(".git").exists() {
-        let status = tokio::process::Command::new("git")
+        let output = tokio::process::Command::new("git")
             .arg("init")
             .current_dir(&workspace_root)
-            .status()
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
             .await
             .map_err(AgentStowError::from)?;
-        if !status.success() {
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
             return Err(AgentStowError::Other(anyhow::anyhow!(
-                "git init 失败（exit={}）",
-                status.code().unwrap_or(-1)
+                "git init 失败（exit={}）{}{}",
+                output.status.code().unwrap_or(-1),
+                if stderr.trim().is_empty() { "" } else { "：" },
+                stderr.trim()
             )));
         }
         git_inited = true;

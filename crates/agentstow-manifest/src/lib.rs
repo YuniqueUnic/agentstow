@@ -319,11 +319,113 @@ pub struct McpServerDef {
     pub transport: McpTransport,
     #[serde(default)]
     pub env: Vec<EnvVarDef>,
+    #[serde(default, skip_serializing_if = "McpServerOptions::is_empty")]
+    pub options: McpServerOptions,
 }
 
 impl McpServerDef {
     pub fn env_binding_defs(&self) -> Vec<EnvVarDef> {
         self.env.clone()
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
+pub struct McpServerOptions {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub startup_timeout_sec: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_timeout_sec: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub enabled: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub required: Option<bool>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub enabled_tools: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub disabled_tools: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timeout: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub trust: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub include_tools: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub exclude_tools: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub oauth: Option<McpOauthDef>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub auth_provider_type: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_audience: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_service_account: Option<String>,
+}
+
+impl McpServerOptions {
+    pub fn is_empty(&self) -> bool {
+        self.startup_timeout_sec.is_none()
+            && self.tool_timeout_sec.is_none()
+            && self.enabled.is_none()
+            && self.required.is_none()
+            && self.enabled_tools.is_empty()
+            && self.disabled_tools.is_empty()
+            && self.timeout.is_none()
+            && self.trust.is_none()
+            && self.description.is_none()
+            && self.include_tools.is_empty()
+            && self.exclude_tools.is_empty()
+            && self
+                .oauth
+                .as_ref()
+                .map(McpOauthDef::is_empty)
+                .unwrap_or(true)
+            && self.auth_provider_type.is_none()
+            && self.target_audience.is_none()
+            && self.target_service_account.is_none()
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
+pub struct McpOauthDef {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub client_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub callback_port: Option<u16>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub auth_server_metadata_url: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub enabled: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub client_secret: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub authorization_url: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub token_url: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub scopes: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub redirect_uri: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub token_param_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub audiences: Vec<String>,
+}
+
+impl McpOauthDef {
+    pub fn is_empty(&self) -> bool {
+        self.client_id.is_none()
+            && self.callback_port.is_none()
+            && self.auth_server_metadata_url.is_none()
+            && self.enabled.is_none()
+            && self.client_secret.is_none()
+            && self.authorization_url.is_none()
+            && self.token_url.is_none()
+            && self.scopes.is_empty()
+            && self.redirect_uri.is_none()
+            && self.token_param_name.is_none()
+            && self.audiences.is_empty()
     }
 }
 
@@ -392,6 +494,8 @@ enum ImportedMcpJsonServer {
         env: BTreeMap<String, String>,
         #[serde(default)]
         cwd: Option<PathBuf>,
+        #[serde(flatten)]
+        options: ImportedMcpServerOptions,
     },
     Http {
         url: String,
@@ -401,7 +505,25 @@ enum ImportedMcpJsonServer {
         http_headers: HashMap<String, String>,
         #[serde(default)]
         env_http_headers: HashMap<String, String>,
+        #[serde(flatten)]
+        options: ImportedMcpServerOptions,
     },
+}
+
+#[derive(Debug, Deserialize, Default)]
+struct ImportedMcpServerOptions {
+    #[serde(default)]
+    startup_timeout_sec: Option<u64>,
+    #[serde(default)]
+    tool_timeout_sec: Option<u64>,
+    #[serde(default)]
+    enabled: Option<bool>,
+    #[serde(default)]
+    required: Option<bool>,
+    #[serde(default)]
+    enabled_tools: Vec<String>,
+    #[serde(default)]
+    disabled_tools: Vec<String>,
 }
 
 impl Manifest {
@@ -554,6 +676,7 @@ fn imported_mcp_server_to_def(server: ImportedMcpJsonServer) -> McpServerDef {
             env_vars,
             env,
             cwd,
+            options,
         } => McpServerDef {
             transport: McpTransport::Stdio { command, args, cwd },
             env: imported_env_map_to_defs(env)
@@ -563,12 +686,14 @@ fn imported_mcp_server_to_def(server: ImportedMcpJsonServer) -> McpServerDef {
                     binding: SecretBinding::Env { var },
                 }))
                 .collect(),
+            options: imported_mcp_server_options_to_def(options),
         },
         ImportedMcpJsonServer::Http {
             url,
             bearer_token_env_var,
             http_headers,
             env_http_headers,
+            options,
         } => McpServerDef {
             transport: McpTransport::Http {
                 url,
@@ -585,7 +710,20 @@ fn imported_mcp_server_to_def(server: ImportedMcpJsonServer) -> McpServerDef {
                     binding: SecretBinding::Env { var },
                 }))
                 .collect(),
+            options: imported_mcp_server_options_to_def(options),
         },
+    }
+}
+
+fn imported_mcp_server_options_to_def(options: ImportedMcpServerOptions) -> McpServerOptions {
+    McpServerOptions {
+        startup_timeout_sec: options.startup_timeout_sec,
+        tool_timeout_sec: options.tool_timeout_sec,
+        enabled: options.enabled,
+        required: options.required,
+        enabled_tools: options.enabled_tools,
+        disabled_tools: options.disabled_tools,
+        ..Default::default()
     }
 }
 
