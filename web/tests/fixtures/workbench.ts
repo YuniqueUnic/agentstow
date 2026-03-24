@@ -12,7 +12,7 @@ export const workspaceSummaryFixture: WorkspaceSummaryResponse = {
     profile_count: 1,
     artifact_count: 2,
     target_count: 1,
-    env_set_count: 1,
+    env_emit_set_count: 1,
     script_count: 1,
     mcp_server_count: 1,
     link_count: 0,
@@ -57,7 +57,7 @@ export const workspaceSummaryFixture: WorkspaceSummaryResponse = {
       method: 'copy'
     }
   ],
-  env_sets: [
+  env_emit_sets: [
     {
       id: 'default',
       vars: [
@@ -71,9 +71,9 @@ export const workspaceSummaryFixture: WorkspaceSummaryResponse = {
           diagnostic: '缺少环境变量：OPENAI_API_KEY',
           referrers: [
             {
-              owner_kind: 'env_set',
+              owner_kind: 'env_emit_set',
               owner_id: 'default',
-              label: 'Env default'
+              label: 'Env emit default'
             },
             {
               owner_kind: 'script',
@@ -203,7 +203,7 @@ export const mcpValidateFixture: McpValidateResponse = {
   ]
 };
 
-export const envSetFixture = workspaceSummaryFixture.env_sets[0];
+export const envEmitSetFixture = workspaceSummaryFixture.env_emit_sets[0];
 
 export const mcpTestFixture: McpTestResponse = {
   server_id: 'local',

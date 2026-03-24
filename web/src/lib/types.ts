@@ -11,7 +11,7 @@ export type {
   ApiError,
   EnvUsageOwnerKindResponse,
   EnvUsageRefResponse,
-  EnvSetSummaryResponse,
+  EnvEmitSetSummaryResponse,
   EnvVarSummaryResponse,
   EnvEmitRequest,
   EnvEmitResponse,

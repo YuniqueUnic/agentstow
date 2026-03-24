@@ -90,6 +90,7 @@
   let railExpanded = $state(false);
   let bottomPanelOpen = $state(false);
   let bottomPanelTab = $state<BottomPanelTab>('problems');
+  let bottomPanelAutoOpen = $state<BottomPanelTab | null>(null);
 
   let workspaceState = $state<WorkspaceStateResponse | null>(null);
   let workspaceInput = $state('');
@@ -122,6 +123,7 @@
   let linkScope = $state<'selected' | 'all'>('selected');
   let linkOp = $state<LinkOperationResponse | null>(null);
   let linkOpTitle = $state<string | null>(null);
+  let linkStatusRequestToken = 0;
 
   let impactMode = $state<ImpactMode>('artifact_profile');
   let impact = $state<ImpactAnalysisResponse | null>(null);
@@ -160,7 +162,7 @@
   const profiles = $derived(summary?.profiles ?? []);
   const fileArtifacts = $derived(artifacts.filter((artifact) => artifact.kind === 'file'));
   const profileIds = $derived(profiles.map((profile) => profile.id));
-  const envSets = $derived(summary?.env_sets ?? []);
+  const envSets = $derived(summary?.env_emit_sets ?? []);
   const scripts = $derived(summary?.scripts ?? []);
   const mcpServers = $derived(summary?.mcp_servers ?? []);
   const targets = $derived(summary?.targets ?? []);
@@ -177,6 +179,43 @@
       ? (linkStatus ?? []).find((item) => item.target_path === activeTarget.target_path) ?? null
       : null
   );
+  const visibleIssues = $derived.by(() => {
+    const workspaceSummary = summary;
+    const issues = workspaceSummary?.issues ?? [];
+    if (issues.length === 0 || !workspaceSummary || !linkStatus || linkStatus.length === 0) {
+      return issues;
+    }
+
+    const okTargetPaths = new Set(
+      linkStatus.filter((item) => item.ok).map((item) => item.target_path)
+    );
+
+    return issues.filter((issue) => {
+      if (issue.scope !== 'link' || issue.code !== 'link_unhealthy') {
+        return true;
+      }
+
+      const target = workspaceSummary.targets.find((item) => item.id === issue.subject_id);
+      if (target) {
+        return !okTargetPaths.has(target.target_path);
+      }
+
+      return !okTargetPaths.has(issue.subject_id);
+    });
+  });
+  const leadProblem = $derived.by(() => {
+    if (errorMessage) {
+      return `runtime · ${errorMessage}`;
+    }
+
+    const issue = visibleIssues[0];
+    if (!issue) {
+      return null;
+    }
+
+    return `${issue.scope} · ${issue.subject_id} · ${issue.message}`;
+  });
+  const statusbarMessage = $derived(leadProblem ?? statusLine);
 
   const watchPill = $derived.by(
     (): { tone: 'neutral' | 'warn' | 'ok'; label: string } => {
@@ -199,7 +238,7 @@
 
   const watchTraceEvents = $derived(watchStatus?.recent_events ?? []);
   const watchTraceCount = $derived(watchTraceEvents.length);
-  const problemCount = $derived((errorMessage ? 1 : 0) + (summary?.issues.length ?? 0));
+  const problemCount = $derived((errorMessage ? 1 : 0) + visibleIssues.length);
 
   function describeWatchRefreshed(): void {
     statusLine =
@@ -207,6 +246,31 @@
         ? `已刷新 watcher trace（${watchTraceCount} events）。`
         : '已刷新 watcher 状态。';
   }
+
+  $effect(() => {
+    if (!manifestPresent) {
+      return;
+    }
+
+    if (errorMessage) {
+      bottomPanelOpen = true;
+      bottomPanelTab = 'problems';
+      bottomPanelAutoOpen = 'problems';
+      return;
+    }
+
+    if (watchStatus?.last_error) {
+      bottomPanelOpen = true;
+      bottomPanelTab = 'trace';
+      bottomPanelAutoOpen = 'trace';
+      return;
+    }
+
+    if (bottomPanelAutoOpen) {
+      bottomPanelOpen = false;
+      bottomPanelAutoOpen = null;
+    }
+  });
 
   const viewLabels: Record<ViewKey, string> = {
     artifacts: 'Artifacts',
@@ -509,6 +573,7 @@
       workspace: workspaceProbe
     };
     bottomPanelOpen = false;
+    bottomPanelAutoOpen = null;
     gitInfo = null;
     editorDocs = [];
     activeDocId = null;
@@ -552,7 +617,7 @@
         selectedProfile = nextSummary.profiles[0]?.id ?? null;
       }
       if (!selectedEnvSet) {
-        selectedEnvSet = nextSummary.env_sets[0]?.id ?? null;
+        selectedEnvSet = nextSummary.env_emit_sets[0]?.id ?? null;
       }
       if (!selectedScript) {
         selectedScript = nextSummary.scripts[0]?.id ?? null;
@@ -575,7 +640,7 @@
       }
 
       const artifactIds = new Set(nextSummary.artifacts.map((artifact) => artifact.id));
-      const envIds = new Set(nextSummary.env_sets.map((envSet) => envSet.id));
+      const envIds = new Set(nextSummary.env_emit_sets.map((envSet) => envSet.id));
       const scriptIds = new Set(nextSummary.scripts.map((script) => script.id));
       const targetIds = new Set(nextSummary.targets.map((target) => target.id));
       const mcpIds = new Set(nextSummary.mcp_servers.map((server) => server.id));
@@ -655,18 +720,29 @@
     statusLine = '已连接到 workspace。';
   }
 
-  async function refreshLinkStatus(): Promise<void> {
+  async function refreshLinkStatus(announce = true): Promise<void> {
+    const requestToken = ++linkStatusRequestToken;
     busy.links = true;
     errorMessage = null;
     try {
       const items = await getLinkStatus();
+      if (requestToken !== linkStatusRequestToken) {
+        return;
+      }
       linkStatus = items;
-      statusLine = '已刷新 link status。';
+      if (announce) {
+        statusLine = '已刷新 link status。';
+      }
     } catch (error) {
+      if (requestToken !== linkStatusRequestToken) {
+        return;
+      }
       linkStatus = null;
       errorMessage = describeError(error, '无法读取 link status。');
     } finally {
-      busy.links = false;
+      if (requestToken === linkStatusRequestToken) {
+        busy.links = false;
+      }
     }
   }
 
@@ -699,8 +775,9 @@
           force: linkForce
         });
         linkOpTitle = 'apply';
+        await refreshLinkStatus(false);
+        await refreshSummary();
         statusLine = `apply 完成（${linkOp.items.length} items）。`;
-        await refreshLinkStatus();
         return;
       }
 
@@ -710,8 +787,9 @@
         force: linkForce
       });
       linkOpTitle = 'repair';
+      await refreshLinkStatus(false);
+      await refreshSummary();
       statusLine = `repair 完成（${linkOp.items.length} items）。`;
-      await refreshLinkStatus();
     } catch (error) {
       linkOp = null;
       linkOpTitle = null;
@@ -905,16 +983,25 @@
     errorMessage = null;
     try {
       envScript = await emitEnv({
-        env_set_id: selectedEnvSet,
+        set: selectedEnvSet,
         shell: selectedShell
       });
-      statusLine = '已生成 env 激活脚本。';
+      statusLine = '已生成环境导出脚本。';
     } catch (error) {
       envScript = null;
       errorMessage = describeError(error, '生成 env 激活脚本失败。');
     } finally {
       busy.env_emit = false;
     }
+  }
+
+  function handleShellSelect(shell: ShellKindResponse): void {
+    if (selectedShell === shell) {
+      return;
+    }
+    selectedShell = shell;
+    envScript = null;
+    statusLine = `已切换 shell：${shell}`;
   }
 
   async function handleScriptRun(): Promise<void> {
@@ -957,7 +1044,7 @@
   function selectEnvSet(id: string): void {
     selectedEnvSet = id;
     envScript = null;
-    statusLine = `已选择 env set：${id}`;
+    statusLine = `已选择环境导出集：${id}`;
   }
 
   function selectScript(id: string): void {
@@ -1005,7 +1092,7 @@
   }
 
   function openEnvUsageRef(ref: EnvUsageRefResponse): void {
-    if (ref.owner_kind === 'env_set') {
+    if (ref.owner_kind === 'env_emit_set') {
       openEnvDocument(ref.owner_id);
       return;
     }
@@ -1035,6 +1122,16 @@
     manifestInsertRequest = kind;
   }
 
+  $effect(() => {
+    if (view !== 'env') {
+      return;
+    }
+    if (!selectedEnvSet || busy.env_emit || envScript !== null) {
+      return;
+    }
+    void handleEnvEmit();
+  });
+
   function setThemePreference(next: ThemePreference): void {
     themePreference = next;
     writeThemePreference(next);
@@ -1049,6 +1146,8 @@
     if (!manifestPresent) {
       return;
     }
+
+    bottomPanelAutoOpen = null;
 
     if (!bottomPanelOpen) {
       bottomPanelOpen = true;
@@ -1454,16 +1553,6 @@
     }
   });
 
-  $effect(() => {
-    if (!manifestPresent) {
-      return;
-    }
-    if (!errorMessage && (summary?.issues.length ?? 0) === 0) {
-      return;
-    }
-    bottomPanelOpen = true;
-    bottomPanelTab = 'problems';
-  });
 </script>
 
 <div class="frame">
@@ -1581,7 +1670,7 @@
               errorMessage={errorMessage}
               statusLine={statusLine}
               onSelectEnvSet={openEnvDocument}
-              onSelectShell={(shell) => (selectedShell = shell)}
+              onSelectShell={handleShellSelect}
               onEnvEmit={handleEnvEmit}
               onCopyToClipboard={copyToClipboard}
               onOpenUsageRef={openEnvUsageRef}
@@ -1641,7 +1730,7 @@
           <SplitView
             autoSaveId="workbench:main-bottom"
             direction="vertical"
-            initialLeftPct={76}
+            initialLeftPct={82}
             minLeftPx={280}
             minRightPx={180}
           >
@@ -1655,17 +1744,21 @@
               <WorkbenchBottomPanel
                 activeTab={bottomPanelTab}
                 errorMessage={errorMessage}
-                issues={summary?.issues ?? []}
+                issues={visibleIssues}
                 watchStatus={watchStatus}
                 busyWatch={busy.watch}
                 onSelectTab={(tab) => {
+                  bottomPanelAutoOpen = null;
                   bottomPanelTab = tab;
                   if (tab === 'trace') {
                     void refreshTracePanel();
                   }
                 }}
                 onRefreshTrace={refreshTracePanel}
-                onClose={() => (bottomPanelOpen = false)}
+                onClose={() => {
+                  bottomPanelAutoOpen = null;
+                  bottomPanelOpen = false;
+                }}
               />
             {/snippet}
           </SplitView>
@@ -1692,8 +1785,8 @@
           >
             {problemCount > 0 ? '问题' : viewLabels[view]}
           </span>
-          <span class="statusbar__text" title={errorMessage ?? statusLine}>
-            {truncateMiddle(errorMessage ?? statusLine, 120)}
+          <span class="statusbar__text" title={statusbarMessage}>
+            {truncateMiddle(statusbarMessage, 120)}
           </span>
         </div>
 

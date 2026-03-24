@@ -61,6 +61,73 @@
     }
     return '当前路径不可用';
   });
+
+  const primaryAction = $derived.by<
+    { label: string; hint: string; disabled: boolean; run: 'probe' | 'open' | 'init' | 'none' }
+  >(() => {
+    if (!hasInput) {
+      return {
+        label: '先输入路径',
+        hint: '输入绝对路径后，工作台才能判断是打开已有 workspace，还是直接初始化。',
+        disabled: true,
+        run: 'none'
+      };
+    }
+
+    if (!workspaceProbe) {
+      return {
+        label: '检查并继续',
+        hint: '先 probe 路径，再决定下一步动作。',
+        disabled: busy || pickerBusy,
+        run: 'probe'
+      };
+    }
+
+    if (workspaceProbe.selectable && workspaceProbe.manifest_present) {
+      return {
+        label: '打开 workspace',
+        hint: '路径已经包含 agentstow.toml，可以直接进入工作台。',
+        disabled: busy || pickerBusy,
+        run: 'open'
+      };
+    }
+
+    if (workspaceProbe.initializable) {
+      return {
+        label: '创建并初始化',
+        hint: workspaceProbe.exists
+          ? '目录已存在但还没有 agentstow.toml，可以直接初始化成新 workspace。'
+          : '路径不存在，AgentStow 会先创建目录，再初始化 workspace。',
+        disabled: busy || pickerBusy,
+        run: 'init'
+      };
+    }
+
+    return {
+      label: '重新检查路径',
+      hint: workspaceProbe.reason ?? '当前路径不可直接打开，请先修正路径或重新探测。',
+      disabled: busy || pickerBusy,
+      run: 'probe'
+    };
+  });
+
+  function runPrimaryAction(): void {
+    if (primaryAction.disabled) {
+      return;
+    }
+
+    if (primaryAction.run === 'probe') {
+      void onProbeWorkspace();
+      return;
+    }
+    if (primaryAction.run === 'open') {
+      void onOpenWorkspace();
+      return;
+    }
+    if (primaryAction.run === 'init') {
+      void onInitWorkspace();
+    }
+  }
 </script>
 
 <div class="boot">
@@ -95,6 +162,23 @@
         </span>
       </label>
 
+      <div class="boot__decision surface">
+        <div class="boot__decision-copy">
+          <p class="boot__decision-label">下一步</p>
+          <strong>{primaryAction.label}</strong>
+          <p>{primaryAction.hint}</p>
+        </div>
+        <button
+          class="ui-button ui-button--primary boot__decision-action"
+          data-testid="workspace-primary-action"
+          disabled={primaryAction.disabled}
+          type="button"
+          onclick={runPrimaryAction}
+        >
+          {busy && primaryAction.run !== 'none' ? '处理中…' : primaryAction.label}
+        </button>
+      </div>
+
       <div class="compound-action compound-action--boot">
         <button
           class="ui-button"
@@ -111,22 +195,6 @@
           onclick={() => void onProbeWorkspace()}
         >
           检查路径
-        </button>
-        <button
-          class="ui-button ui-button--ghost"
-          disabled={busy || pickerBusy || !hasInput}
-          type="button"
-          onclick={() => void onOpenWorkspace()}
-        >
-          打开 workspace
-        </button>
-        <button
-          class="ui-button ui-button--primary"
-          disabled={busy || pickerBusy || !hasInput}
-          type="button"
-          onclick={() => void onInitWorkspace()}
-        >
-          {busy ? '处理中…' : '创建并初始化'}
         </button>
       </div>
 
@@ -155,37 +223,37 @@
       {#if workspaceProbe}
         <div class="inspector-table">
           <div class="inspector-row">
-            <span class="inspector-row__label">Exists</span>
+            <span class="inspector-row__label">目录状态</span>
             <span class="inspector-row__value inspector-row__value--mono">
-              {workspaceProbe.exists ? 'yes' : 'no'}
+              {workspaceProbe.exists ? '已存在' : '尚不存在'}
             </span>
           </div>
           <div class="inspector-row">
             <span class="inspector-row__label">Manifest</span>
             <span class="inspector-row__value inspector-row__value--mono">
-              {workspaceProbe.manifest_present ? 'ready' : 'missing'}
+              {workspaceProbe.manifest_present ? 'agentstow.toml 已就绪' : 'agentstow.toml 缺失'}
             </span>
           </div>
           <div class="inspector-row">
-            <span class="inspector-row__label">Selectable</span>
+            <span class="inspector-row__label">可直接打开</span>
             <span class="inspector-row__value inspector-row__value--mono">
-              {workspaceProbe.selectable ? 'yes' : 'no'}
+              {workspaceProbe.selectable ? '可以' : '不可以'}
             </span>
           </div>
           <div class="inspector-row">
-            <span class="inspector-row__label">Initializable</span>
+            <span class="inspector-row__label">可初始化</span>
             <span class="inspector-row__value inspector-row__value--mono">
-              {workspaceProbe.initializable ? 'yes' : 'no'}
+              {workspaceProbe.initializable ? '可以' : '不可以'}
             </span>
           </div>
           <div class="inspector-row">
-            <span class="inspector-row__label">Git</span>
+            <span class="inspector-row__label">Git 仓库</span>
             <span class="inspector-row__value inspector-row__value--mono">
-              {workspaceProbe.git_present ? 'present' : 'absent'}
+              {workspaceProbe.git_present ? '已存在' : '尚未初始化'}
             </span>
           </div>
           <div class="inspector-row">
-            <span class="inspector-row__label">Manifest Path</span>
+            <span class="inspector-row__label">Manifest 路径</span>
             <span class="inspector-row__value inspector-row__value--mono">
               {workspaceProbe.manifest_path}
             </span>
@@ -208,6 +276,47 @@
 </div>
 
 <style>
+  .boot__decision {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 18px;
+    align-items: center;
+    padding: 16px 18px;
+    border-radius: 8px;
+    border: 1px solid color-mix(in oklch, var(--line) 72%, transparent);
+    background: color-mix(in oklch, var(--primary-soft) 42%, var(--panel-bg));
+  }
+
+  .boot__decision-copy {
+    display: grid;
+    gap: 4px;
+    min-width: 0;
+  }
+
+  .boot__decision-label {
+    margin: 0;
+    text-transform: uppercase;
+    letter-spacing: 0.16em;
+    font-size: 11px;
+    color: var(--ink-muted);
+  }
+
+  .boot__decision-copy strong {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 20px;
+    line-height: 1;
+    letter-spacing: -0.03em;
+  }
+
+  .boot__decision-copy p {
+    margin: 0;
+    color: var(--ink-soft);
+  }
+
+  .boot__decision-action {
+    min-width: 180px;
+  }
+
   .boot__probe {
     display: grid;
     gap: 12px;
@@ -219,18 +328,22 @@
   }
 
   .compound-action--boot {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   @media (max-width: 900px) {
-    .compound-action--boot {
-      grid-template-columns: repeat(2, minmax(0, 1fr));
+    .boot__decision {
+      grid-template-columns: 1fr;
     }
   }
 
   @media (max-width: 640px) {
     .compound-action--boot {
       grid-template-columns: 1fr;
+    }
+
+    .boot__decision-action {
+      width: 100%;
     }
   }
 </style>

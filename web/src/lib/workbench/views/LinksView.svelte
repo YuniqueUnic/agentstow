@@ -445,18 +445,18 @@
           </div>
 
           <div class="region__body">
-            <div class="subject-summary">
-              <div class="summary-row">
-                <span class="summary-row__label">Selected</span>
-                <span class="summary-row__value mono">{selectedTargets.length}</span>
+            <div class="ops-metrics" aria-label="Links 概览">
+              <div class="ops-metric">
+                <span class="ops-metric__label">Selected</span>
+                <strong class="mono">{selectedTargets.length}</strong>
               </div>
-              <div class="summary-row">
-                <span class="summary-row__label">Profile</span>
-                <span class="summary-row__value mono">{selectedProfile ?? '（空）'}</span>
+              <div class="ops-metric">
+                <span class="ops-metric__label">Profile</span>
+                <strong class="mono">{selectedProfile ?? 'auto'}</strong>
               </div>
-              <div class="summary-row">
-                <span class="summary-row__label">Force</span>
-                <span class="summary-row__value mono">{linkForce ? 'on' : 'off'}</span>
+              <div class="ops-metric">
+                <span class="ops-metric__label">Force</span>
+                <strong class="mono">{linkForce ? 'on' : 'off'}</strong>
               </div>
             </div>
 
@@ -517,11 +517,11 @@
               </button>
             </div>
 
-            <p class="stack-note">
-              `selected` 只作用于当前选择的 targets，`all` 则面向整个 manifest。结果会写入左侧底部 panel。
+            <p class="stack-note stack-note--compact">
+              `selected` 仅处理当前选择；`all` 会对整个 manifest 生效。
             </p>
 
-            {#if selectedTargets.length > 0}
+            {#if selectedTargets.length > 1}
               <div class="token-list" aria-label="selected targets">
                 {#each selectedTargets as id (id)}
                   <span class="token">{id}</span>

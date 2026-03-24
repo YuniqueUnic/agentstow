@@ -168,6 +168,8 @@
   padding: 0 14px;
   background: color-mix(in oklch, var(--topbar-bg) 86%, var(--canvas-deep));
   border-bottom: 1px solid color-mix(in oklch, var(--line) 88%, transparent);
+  position: relative;
+  z-index: 3;
 }
 
 .workbench-view {
@@ -547,6 +549,8 @@
   padding: 10px 6px;
   background: color-mix(in oklch, var(--rail-bg) 94%, var(--canvas-deep));
   border-right: 1px solid color-mix(in oklch, var(--line) 88%, transparent);
+  position: relative;
+  z-index: 1;
 }
 
 .rail__toggle {
@@ -682,6 +686,7 @@
 .explorer__section {
   display: grid;
   gap: 10px;
+  flex-shrink: 0;
   min-height: 0;
   padding: 0 12px;
 }
@@ -710,6 +715,8 @@
   overflow: hidden;
   background: color-mix(in oklch, var(--panel-bg) 92%, var(--canvas-deep));
   border-bottom: 1px solid color-mix(in oklch, var(--line) 84%, transparent);
+  position: relative;
+  z-index: 2;
 }
 
 .workbench-tabs .editor-tabs {
@@ -1728,6 +1735,28 @@ summary.tree__row::-webkit-details-marker {
   padding: 14px;
 }
 
+.ops-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.ops-metric {
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in oklch, var(--line) 70%, transparent);
+  border-radius: 6px;
+  background: color-mix(in oklch, var(--surface-strong) 46%, transparent);
+}
+
+.ops-metric__label {
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+}
+
 .region__body--flush,
 .panel__body--flush {
   padding: 0;
@@ -2029,6 +2058,11 @@ summary.tree__row::-webkit-details-marker {
   font-size: 12px;
   line-height: 1.5;
   border-top: 1px solid color-mix(in oklch, var(--line) 58%, transparent);
+}
+
+.stack-note--compact {
+  padding: 10px 0 0;
+  border-top: 0;
 }
 
 .field--textarea .field__input {
@@ -2606,12 +2640,23 @@ summary.tree__row::-webkit-details-marker {
     padding: 8px 12px;
   }
 
+  .topbar__actions {
+    flex-wrap: wrap;
+    justify-content: flex-start;
+  }
+
   .rail {
     grid-column: 1;
     grid-row: 2;
     flex-direction: row;
-    justify-content: space-between;
+    justify-content: flex-start;
+    overflow-x: auto;
+    scrollbar-width: none;
     padding: 6px;
+  }
+
+  .rail::-webkit-scrollbar {
+    display: none;
   }
 
   .rail__label {
@@ -2622,11 +2667,17 @@ summary.tree__row::-webkit-details-marker {
     grid-column: 1;
     grid-row: 3;
     padding-right: 0;
+    overflow-x: auto;
   }
 
   .workbench-view {
     grid-column: 1;
     grid-row: 4;
+  }
+
+  .workbench-view__content,
+  .canvas {
+    overflow: auto;
   }
 
   .bottom-panel__body--trace {
@@ -2643,6 +2694,7 @@ summary.tree__row::-webkit-details-marker {
     grid-template-columns: 1fr;
     min-height: 42px;
     padding-block: 4px;
+    overflow-x: auto;
   }
 
   .statusbar__group--telemetry {

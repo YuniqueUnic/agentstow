@@ -33,7 +33,7 @@ export function manifestInsertLabel(kind: ManifestInsertKind): string {
     case 'target':
       return 'target';
     case 'env_set':
-      return 'env set';
+      return 'env export set';
     case 'script':
       return 'script';
     case 'mcp_server':
@@ -48,13 +48,13 @@ export function buildManifestSnippet(
   const profileIds = summary?.profiles.map((profile) => profile.id) ?? [];
   const artifactIds = summary?.artifacts.map((artifact) => artifact.id) ?? [];
   const targetIds = summary?.targets.map((target) => target.id) ?? [];
-  const envSetIds = summary?.env_sets.map((envSet) => envSet.id) ?? [];
+  const envSetIds = summary?.env_emit_sets.map((envSet) => envSet.id) ?? [];
   const scriptIds = summary?.scripts.map((script) => script.id) ?? [];
   const mcpIds = summary?.mcp_servers.map((server) => server.id) ?? [];
 
   const firstProfile = profileIds[0] ?? 'base';
   const firstArtifact = artifactIds[0] ?? 'hello';
-  const firstEnvKey = summary?.env_sets[0]?.vars[0]?.key ?? 'OPENAI_API_KEY';
+  const firstEnvKey = summary?.env_emit_sets[0]?.vars[0]?.key ?? 'OPENAI_API_KEY';
 
   switch (kind) {
     case 'profile': {
@@ -88,7 +88,7 @@ method = "copy"
     case 'env_set': {
       const id = nextId('default', envSetIds);
       return section(`
-[env_sets.${id}]
+[env.emit.${id}]
 # kind = "env" 会读取 agentstow serve 进程当前继承到的宿主环境；修改后需要重启服务重新探测。
 # 开发期如果想直接写值，可改成：{ key = "INLINE_EXAMPLE", binding = { kind = "literal", value = "replace-me" } }
 vars = [

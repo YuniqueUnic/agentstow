@@ -1,10 +1,5 @@
 import { expect, test } from '@playwright/test';
-
-async function openWorkspace(page: import('@playwright/test').Page): Promise<void> {
-  await page.goto('/');
-  await expect(page.getByTestId('artifact-tree-item:hello')).toBeVisible();
-  await expect(page.getByTestId('artifact-source-editor').locator('.cm-content')).toBeVisible();
-}
+import { openWorkspace } from './helpers';
 
 test('source editor content syncs when switching artifact files', async ({ page }) => {
   await openWorkspace(page);
@@ -81,7 +76,9 @@ test('inserting a new artifact snippet updates the editor and opens the bootstra
 }) => {
   await openWorkspace(page);
 
-  await page.getByRole('button', { name: /agentstow\.toml/ }).click();
+  const manifestEntry = page.getByTestId('artifact-tree-item:$manifest');
+  await manifestEntry.scrollIntoViewIfNeeded();
+  await manifestEntry.click();
   await page.locator('select').first().selectOption('artifact');
   await page.getByRole('button', { name: '插入模板', exact: true }).click();
 

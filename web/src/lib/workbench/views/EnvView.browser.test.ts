@@ -1,7 +1,7 @@
 import { render } from 'vitest-browser-svelte';
 import { expect, test, vi } from 'vitest';
 
-import { envSetFixture } from '../../../../tests/fixtures/workbench';
+import { envEmitSetFixture } from '../../../../tests/fixtures/workbench';
 
 import EnvView from './EnvView.svelte';
 
@@ -9,9 +9,9 @@ test('renders env object preview and opens usage referrers from the inspector', 
   const onOpenUsageRef = vi.fn();
 
   const screen = await render(EnvView, {
-    envSets: [envSetFixture],
-    selectedEnvSet: envSetFixture.id,
-    activeEnvSet: envSetFixture,
+    envSets: [envEmitSetFixture],
+    selectedEnvSet: envEmitSetFixture.id,
+    activeEnvSet: envEmitSetFixture,
     selectedShell: 'bash',
     shellChoices: ['bash', 'zsh'],
     envScript: { text: "export OPENAI_API_KEY='token'" },
@@ -31,6 +31,7 @@ test('renders env object preview and opens usage referrers from the inspector', 
     '"OPENAI_API_KEY": "${OPENAI_API_KEY}"'
   );
   await expect.element(screen.getByTestId('env-object-preview')).toHaveAttribute('data-language', 'json');
+  await expect.element(screen.getByTestId('env-binding-guide')).toHaveTextContent('[env.emit.default]');
   await expect.element(screen.getByTestId('env-binding-guide')).toHaveTextContent('kind = "literal"');
   await expect.element(screen.getByTestId('env-referrer-list')).toHaveTextContent('MCP local');
 

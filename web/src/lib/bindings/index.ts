@@ -10,7 +10,7 @@ export type { ArtifactSourceUpdateRequest } from './ArtifactSourceUpdateRequest'
 export type { ArtifactSummaryResponse } from './ArtifactSummaryResponse';
 export type { EnvEmitRequest } from './EnvEmitRequest';
 export type { EnvEmitResponse } from './EnvEmitResponse';
-export type { EnvSetSummaryResponse } from './EnvSetSummaryResponse';
+export type { EnvEmitSetSummaryResponse } from './EnvEmitSetSummaryResponse';
 export type { EnvUsageOwnerKindResponse } from './EnvUsageOwnerKindResponse';
 export type { EnvUsageRefResponse } from './EnvUsageRefResponse';
 export type { EnvVarSummaryResponse } from './EnvVarSummaryResponse';

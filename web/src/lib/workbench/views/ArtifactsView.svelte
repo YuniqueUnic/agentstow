@@ -609,7 +609,7 @@ Hello {{ name }}.
 
       if (documentId === MANIFEST_DOC_ID) {
         st.previewText =
-          'Manifest editor\n\n在这里直接编辑 workspace 的 profiles / artifacts / targets / env_sets / scripts / mcp_servers。\n保存后刷新左侧资源树，即可看到新增或变更的对象。';
+          'Manifest editor\n\n在这里直接编辑 workspace 的 profiles / artifacts / targets / env.emit / scripts / mcp_servers。\n保存后刷新左侧资源树，即可看到新增或变更的对象。';
         if (announce) {
           setStatusLine('已刷新 manifest 说明面板。');
         }
@@ -1089,6 +1089,7 @@ Hello {{ name }}.
         </div>
         <button
           class={['list__item', activeTab === MANIFEST_DOC_ID ? 'list__item--active' : ''].join(' ')}
+          data-testid="artifact-tree-item:$manifest"
           onclick={() => openDocument(MANIFEST_DOC_ID)}
           type="button"
           title="agentstow.toml"
@@ -1437,8 +1438,8 @@ Hello {{ name }}.
                         <span class="inspector-row__value inspector-row__value--mono">{summary?.targets.length ?? 0}</span>
                       </div>
                       <div class="inspector-row">
-                        <span class="inspector-row__label">Env Sets</span>
-                        <span class="inspector-row__value inspector-row__value--mono">{summary?.env_sets.length ?? 0}</span>
+                        <span class="inspector-row__label">Export Sets</span>
+                        <span class="inspector-row__value inspector-row__value--mono">{summary?.env_emit_sets.length ?? 0}</span>
                       </div>
                       <div class="inspector-row">
                         <span class="inspector-row__label">Scripts</span>

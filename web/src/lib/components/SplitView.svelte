@@ -33,11 +33,33 @@
 
   let host: HTMLDivElement | null = null;
   let dragging = $state(false);
-  let groupExtentPx = $state(0);
+  let hostWidthPx = $state(0);
+  let hostHeightPx = $state(0);
 
   function clamp(value: number, min: number, max: number): number {
     return Math.min(max, Math.max(min, value));
   }
+
+  const activeDirection = $derived.by<Direction>(() => {
+    if (direction !== 'horizontal') {
+      return direction;
+    }
+
+    const collapseThresholdPx = minLeftPx + minRightPx + 72;
+    if (hostWidthPx > 0 && hostWidthPx <= collapseThresholdPx) {
+      return 'vertical';
+    }
+
+    return direction;
+  });
+
+  const effectiveMinLeftPx = $derived.by(() =>
+    activeDirection === 'vertical' && direction === 'horizontal' ? Math.min(minLeftPx, 220) : minLeftPx
+  );
+  const effectiveMinRightPx = $derived.by(() =>
+    activeDirection === 'vertical' && direction === 'horizontal' ? Math.min(minRightPx, 260) : minRightPx
+  );
+  const groupExtentPx = $derived(activeDirection === 'horizontal' ? hostWidthPx : hostHeightPx);
 
   function pxToPct(px: number): number {
     if (groupExtentPx <= 0) {
@@ -46,8 +68,8 @@
     return (px / groupExtentPx) * 100;
   }
 
-  const minFirstPct = $derived.by(() => clamp(pxToPct(minLeftPx), 0, 100));
-  const minSecondPct = $derived.by(() => clamp(pxToPct(minRightPx), 0, 100));
+  const minFirstPct = $derived.by(() => clamp(pxToPct(effectiveMinLeftPx), 0, 100));
+  const minSecondPct = $derived.by(() => clamp(pxToPct(effectiveMinRightPx), 0, 100));
   const maxFirstPct = $derived.by(() => Math.max(minFirstPct, 100 - minSecondPct));
   const defaultFirstPct = $derived.by(() =>
     clamp(initialLeftPct, minFirstPct, maxFirstPct)
@@ -63,7 +85,8 @@
         return;
       }
       const rect = host.getBoundingClientRect();
-      groupExtentPx = direction === 'horizontal' ? rect.width : rect.height;
+      hostWidthPx = rect.width;
+      hostHeightPx = rect.height;
     };
 
     updateExtent();
@@ -82,12 +105,13 @@
 
 <div
   class="splitview"
-  data-direction={direction}
+  data-direction={activeDirection}
   data-dragging={dragging ? 'true' : 'false'}
+  data-stacked={activeDirection === 'vertical' && direction === 'horizontal' ? 'true' : 'false'}
   bind:this={host}
 >
   <PaneGroup
-    {direction}
+    direction={activeDirection}
     {autoSaveId}
     {keyboardResizeBy}
     onLayoutChange={onLayoutChange ?? undefined}

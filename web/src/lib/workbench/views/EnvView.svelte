@@ -3,16 +3,16 @@
   import SplitView from '$lib/components/SplitView.svelte';
   import type {
     EnvEmitResponse,
-    EnvSetSummaryResponse,
+    EnvEmitSetSummaryResponse,
     EnvUsageRefResponse,
     ShellKindResponse
   } from '$lib/types';
   import type { ManifestInsertKind } from '$lib/workbench/manifest_snippets';
 
   type Props = {
-    envSets: EnvSetSummaryResponse[];
+    envSets: EnvEmitSetSummaryResponse[];
     selectedEnvSet: string | null;
-    activeEnvSet: EnvSetSummaryResponse | null;
+    activeEnvSet: EnvEmitSetSummaryResponse | null;
     selectedShell: ShellKindResponse;
     shellChoices: ShellKindResponse[];
     envScript: EnvEmitResponse | null;
@@ -61,7 +61,7 @@
     const envSetId = activeEnvSet?.id ?? 'default';
     const key = activeEnvSet?.vars[0]?.key ?? 'OPENAI_API_KEY';
 
-    return `[env_sets.${envSetId}]
+    return `[env.emit.${envSetId}]
 vars = [
   { key = "${key}", binding = { kind = "env", var = "${key}" } },
   { key = "INLINE_EXAMPLE", binding = { kind = "literal", value = "replace-me" } }
@@ -69,7 +69,7 @@ vars = [
   });
 
   function refKindLabel(ref: EnvUsageRefResponse): string {
-    if (ref.owner_kind === 'env_set') {
+    if (ref.owner_kind === 'env_emit_set') {
       return 'env';
     }
     if (ref.owner_kind === 'script') {
@@ -84,17 +84,17 @@ vars = [
     <aside class="explorer surface" aria-label="资源面板">
       <div class="explorer__head">
         <p class="explorer__eyebrow">ENV</p>
-        <p class="explorer__hint">环境变量是工作台对象，不是独立后台页。</p>
+        <p class="explorer__hint">环境导出集会把绑定后的变量渲染成 shell 可执行脚本。</p>
       </div>
 
   <div class="explorer__section">
     <div class="section__title">
-      <span>Env Sets</span>
+      <span>Export Sets</span>
       <strong>{envSets.length}</strong>
     </div>
-    <div class="chips chips--tight" aria-label="Env set actions">
+    <div class="chips chips--tight" aria-label="Env export set actions">
       <button class="chip" onclick={() => onCreateManifestObject('env_set')} type="button">
-        新建 env set
+        新建导出集
       </button>
       <button class="chip" onclick={onOpenManifestEditor} type="button">
         编辑 manifest
@@ -103,8 +103,8 @@ vars = [
     <ul class="list">
       {#if envSets.length === 0}
         <li class="list__static">
-          <span class="muted">（未声明 env sets）</span>
-          <span class="mono">env_sets</span>
+          <span class="muted">（未声明环境导出集）</span>
+          <span class="mono">env.emit</span>
         </li>
       {:else}
         {#each envSets as envSet (envSet.id)}
@@ -135,7 +135,7 @@ vars = [
     <main class="canvas" aria-label="工作区画布">
   <div class="canvas__head">
     <div class="title">
-      <strong>{activeEnvSet?.id ?? '未选择 env set'}</strong>
+      <strong>{activeEnvSet?.id ?? '未选择环境导出集'}</strong>
       <span class="muted">· shell preview</span>
     </div>
 
@@ -182,7 +182,7 @@ vars = [
 
           <div class="region__body region__body--stack">
             <p class="stack-note">
-              当前 env set 会按所选 shell 渲染激活脚本，便于直接复制或在终端中执行。
+              当前导出集会按所选 shell 渲染激活脚本，便于直接复制或在终端中执行。
             </p>
             {#if errorMessage}
               <p class="notice notice--error">{errorMessage}</p>
@@ -191,7 +191,7 @@ vars = [
             {/if}
             <div class="panel__body panel__body--flush">
               {#if !activeEnvSet}
-                <p class="empty empty--flush">（暂无 env set，可先在 manifest 中声明）</p>
+                <p class="empty empty--flush">（暂无环境导出集，可先在 manifest 中声明）</p>
               {:else}
                 {#key envScript?.text ?? ''}
                   <CodeEditor value={envScript?.text ?? ''} readonly={true} documentLanguage="shell" />
@@ -213,9 +213,9 @@ vars = [
 
           <div class="region__body">
             {#if !activeEnvSet}
-              <p class="empty empty--flush">（选择 env set 后可查看变量绑定）</p>
+              <p class="empty empty--flush">（选择环境导出集后可查看变量绑定）</p>
             {:else if activeEnvSet.vars.length === 0}
-              <p class="empty empty--flush">（该 env set 暂无变量）</p>
+              <p class="empty empty--flush">（该环境导出集暂无变量）</p>
             {:else}
               <div class="inspector-section">
                 <div class="section__title">
@@ -341,7 +341,7 @@ vars = [
                   <strong>{activeEnvSet.referrers.length}</strong>
                 </div>
                 {#if activeEnvSet.referrers.length === 0}
-                  <p class="empty empty--flush">（当前 env set 尚未被 script 或 MCP 引用）</p>
+                  <p class="empty empty--flush">（当前导出集尚未被 script 或 MCP 引用）</p>
                 {:else}
                   <div class="token-action-list" data-testid="env-referrer-list">
                     {#each activeEnvSet.referrers as ref (`${ref.owner_kind}:${ref.owner_id}`)}

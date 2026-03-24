@@ -121,7 +121,7 @@
     { label: '[profiles.base]', detail: 'profile section', type: 'class' },
     { label: '[artifacts.hello]', detail: 'artifact section', type: 'class' },
     { label: '[targets.out]', detail: 'target section', type: 'class' },
-    { label: '[env_sets.default]', detail: 'env set section', type: 'class' },
+    { label: '[env.emit.default]', detail: 'env export set section', type: 'class' },
     { label: '[scripts.sync]', detail: 'script section', type: 'class' },
     { label: '[mcp_servers.local]', detail: 'MCP server section', type: 'class' },
     { label: 'method = "copy"', detail: 'install method', type: 'enum' },

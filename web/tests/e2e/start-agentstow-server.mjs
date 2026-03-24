@@ -53,7 +53,13 @@ source = "artifacts/bye.txt.tera"
 template = false
 validate_as = "none"
 
-[env_sets.default]
+[targets.hello_copy]
+artifact = "hello"
+profile = "base"
+target_path = "linked/hello.txt"
+method = "copy"
+
+[env.emit.default]
 vars = [
   { key = "OPENAI_API_KEY", binding = { kind = "env", var = "OPENAI_API_KEY" } }
 ]
@@ -95,7 +101,7 @@ await prepareWorkspace();
 
 const server = spawn(
   'cargo',
-  ['run', '-p', 'agentstow-cli', '--', '--workspace', workspaceRoot, 'serve', '--addr', `127.0.0.1:${port}`],
+  ['run', '-p', 'agentstow-cli', '--', 'serve', '--addr', `127.0.0.1:${port}`],
   {
     cwd: repoRoot,
     stdio: 'inherit',

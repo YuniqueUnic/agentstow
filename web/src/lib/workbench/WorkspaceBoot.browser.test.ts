@@ -35,13 +35,12 @@ test('accepts workspace input and fires boot actions', async () => {
 
   await screen.getByRole('button', { name: '选择文件夹' }).click();
   await screen.getByRole('button', { name: '检查路径' }).click();
-  await screen.getByRole('button', { name: '打开 workspace' }).click();
-  await screen.getByRole('button', { name: '创建并初始化' }).click();
+  await screen.getByTestId('workspace-primary-action').click();
 
   expect(onPickWorkspace).toHaveBeenCalledTimes(1);
-  expect(onProbeWorkspace).toHaveBeenCalledTimes(1);
-  expect(onOpenWorkspace).toHaveBeenCalledTimes(1);
-  expect(onInitWorkspace).toHaveBeenCalledTimes(1);
+  expect(onProbeWorkspace).toHaveBeenCalledTimes(2);
+  expect(onOpenWorkspace).toHaveBeenCalledTimes(0);
+  expect(onInitWorkspace).toHaveBeenCalledTimes(0);
 });
 
 test('renders probe details for missing workspace paths', async () => {
@@ -78,4 +77,44 @@ test('renders probe details for missing workspace paths', async () => {
   await expect.element(screen.getByTestId('workspace-probe-summary')).toHaveTextContent(
     'agentstow.toml'
   );
+  await expect.element(screen.getByTestId('workspace-primary-action')).toHaveTextContent(
+    '创建并初始化'
+  );
+});
+
+test('renders a direct open action for selectable workspaces', async () => {
+  const onOpenWorkspace = vi.fn();
+
+  const screen = await render(WorkspaceBoot, {
+    workspaceInput: '/tmp/existing-workspace',
+    workspaceProbe: {
+      requested_workspace_root: '/tmp/existing-workspace',
+      resolved_workspace_root: '/tmp/existing-workspace',
+      exists: true,
+      is_directory: true,
+      manifest_present: true,
+      manifest_path: '/tmp/existing-workspace/agentstow.toml',
+      git_present: true,
+      selectable: true,
+      initializable: false,
+      reason: null
+    },
+    initGit: false,
+    busy: false,
+    pickerBusy: false,
+    errorMessage: null,
+    statusLine: '已确认路径可直接打开。',
+    onWorkspaceInput: vi.fn(),
+    onInitGit: vi.fn(),
+    onProbeWorkspace: vi.fn(),
+    onPickWorkspace: vi.fn(),
+    onOpenWorkspace,
+    onInitWorkspace: vi.fn()
+  });
+
+  await expect.element(screen.getByTestId('workspace-primary-action')).toHaveTextContent(
+    '打开 workspace'
+  );
+  await screen.getByTestId('workspace-primary-action').click();
+  expect(onOpenWorkspace).toHaveBeenCalledTimes(1);
 });
