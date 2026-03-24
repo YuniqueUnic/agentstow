@@ -1,21 +1,22 @@
-use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use agentstow_core::{ArtifactKind, normalize_for_display};
 use agentstow_manifest::{ArtifactDef, DEFAULT_MANIFEST_FILE, Manifest};
-use notify::{Config, PollWatcher, RecursiveMode, Watcher};
-use notify_debouncer_full::{
-    DebounceEventResult, Debouncer, FileIdMap, RecommendedCache, new_debouncer, new_debouncer_opt,
-};
-use time::OffsetDateTime;
-use time::format_description::well_known::Rfc3339;
-
+use notify::{PollWatcher, RecursiveMode};
+use notify_debouncer_full::{DebounceEventResult, Debouncer, FileIdMap, RecommendedCache};
 const DEFAULT_POLL_INTERVAL: Duration = Duration::from_secs(2);
 const DEBOUNCE_TIMEOUT: Duration = Duration::from_millis(900);
 const DEBOUNCE_TICK: Duration = Duration::from_millis(225);
 const MAX_RECENT_EVENTS: usize = 24;
+
+mod events;
+mod runtime;
+
+pub(crate) use events::summarize_events;
+use events::{now_rfc3339, push_recent_event};
+use runtime::{attach_watch_specs, start_native_debouncer, start_poll_debouncer};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum WatchMode {
@@ -301,13 +302,6 @@ impl WatchStatusHandle {
     }
 }
 
-fn push_recent_event(events: &mut Vec<WatchTraceEvent>, event: WatchTraceEvent) {
-    events.insert(0, event);
-    if events.len() > MAX_RECENT_EVENTS {
-        events.truncate(MAX_RECENT_EVENTS);
-    }
-}
-
 impl WatchPlan {
     pub(crate) fn discover(workspace_root: &Path) -> Self {
         let manifest_path = workspace_root.join(DEFAULT_MANIFEST_FILE);
@@ -400,33 +394,6 @@ impl WatchPlan {
                 .iter()
                 .any(|ignored| path == ignored || path.starts_with(ignored))
     }
-}
-
-fn start_native_debouncer(
-    handle: WatchStatusHandle,
-    plan: &WatchPlan,
-) -> notify::Result<Debouncer<notify::RecommendedWatcher, RecommendedCache>> {
-    let plan = plan.clone();
-    new_debouncer(DEBOUNCE_TIMEOUT, Some(DEBOUNCE_TICK), move |result| {
-        handle.record_debounced(&plan, result);
-    })
-}
-
-fn start_poll_debouncer(
-    handle: WatchStatusHandle,
-    plan: &WatchPlan,
-) -> notify::Result<Debouncer<PollWatcher, FileIdMap>> {
-    let plan = plan.clone();
-    let config = Config::default().with_poll_interval(DEFAULT_POLL_INTERVAL);
-    new_debouncer_opt::<_, PollWatcher, FileIdMap>(
-        DEBOUNCE_TIMEOUT,
-        Some(DEBOUNCE_TICK),
-        move |result| {
-            handle.record_debounced(&plan, result);
-        },
-        FileIdMap::new(),
-        config,
-    )
 }
 
 fn add_artifact_sources(
@@ -548,70 +515,4 @@ fn nearest_existing_ancestor(path: &Path, fallback: &Path) -> PathBuf {
     }
 
     fallback.to_path_buf()
-}
-
-fn attach_watch_specs<T, C>(
-    debouncer: &mut Debouncer<T, C>,
-    specs: &[WatchSpec],
-) -> notify::Result<()>
-where
-    T: Watcher,
-    C: notify_debouncer_full::FileIdCache,
-{
-    for spec in specs {
-        debouncer.watch(&spec.path, spec.recursive_mode)?;
-    }
-
-    Ok(())
-}
-
-pub(crate) fn summarize_events(
-    plan: &WatchPlan,
-    events: &[notify_debouncer_full::DebouncedEvent],
-) -> Option<String> {
-    let mut count = 0usize;
-    let mut last_kind = None;
-    let mut paths = BTreeSet::new();
-
-    for event in events {
-        if event.kind.is_access() {
-            continue;
-        }
-
-        let matched_paths: Vec<_> = event
-            .paths
-            .iter()
-            .filter(|path| plan.matches_path(path))
-            .map(|path| normalize_for_display(path))
-            .collect();
-
-        if matched_paths.is_empty() {
-            continue;
-        }
-
-        count = count.saturating_add(1);
-        last_kind = Some(format!("{:?}", event.kind));
-        for path in matched_paths {
-            paths.insert(path);
-        }
-    }
-
-    if count == 0 {
-        return None;
-    }
-
-    let kind = last_kind.unwrap_or_else(|| "Change".to_string());
-    let path_summary = match paths.len() {
-        0 => "source-of-truth".to_string(),
-        1 => paths.iter().next().cloned().unwrap_or_default(),
-        total => format!("{total} 个源路径"),
-    };
-
-    Some(format!("{} 条事件 · {} · {}", count, kind, path_summary))
-}
-
-fn now_rfc3339() -> String {
-    OffsetDateTime::now_utc()
-        .format(&Rfc3339)
-        .unwrap_or_else(|_| OffsetDateTime::now_utc().unix_timestamp().to_string())
 }
