@@ -12,7 +12,7 @@
 ### 当前覆盖
 
 - `render --dry-run`
-- provider-specific `codex / claude / gemini` 模板渲染
+- provider-specific `codex / claude / gemini` 模板渲染与 provider-only MCP 选项映射
 - `mcp render --stdout`
 - `link --plan --json`
 - `link` 的 copy / symlink / repair / force / status
@@ -71,7 +71,7 @@ e2e/
 ### 结构说明
 
 - `e2e/data/real-example/`：完整 workspace fixture，覆盖真实 render/link/status/repair 链路。
-- `e2e/data/providers/`：按 provider 分类的原生模板 fixture，用来验证 `codex / claude / gemini` filter 和默认格式推断。
+- `e2e/data/providers/`：按 provider 分类的原生模板 fixture，用来验证 `codex / claude / gemini` filter、默认格式推断与 provider-only 选项映射。
 - `e2e/data/targets/`：专门覆盖 target 安装行为的 fixture，例如目录 copy。
 - `e2e/tests/bdd/features/`：业务场景。
 - `e2e/tests/bdd/steps/`：step definitions。

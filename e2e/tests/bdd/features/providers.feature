@@ -11,4 +11,4 @@ Feature: Provider MCP Template Rendering
       | provider | expected                                         | format_hint           |
       | codex    | enabled_tools = ["forecast"]                    | startup_timeout_sec = 20 |
       | claude   | "clientId": "claude-client"                     | "callbackPort": 4317  |
-      | gemini   | "authProviderType": "google_credentials"        | "trust": true         |
+      | gemini   | "authProviderType": "google_credentials"        | "httpUrl": "https://mcp.example.com/mcp" |

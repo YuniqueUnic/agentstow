@@ -110,7 +110,7 @@ fn render_should_include_env_file_inline_env_file_contexts_and_mcp_contexts() {
         .unwrap();
     temp.child("artifacts/hello.txt.tera")
         .write_str(
-            "owner={{ env.OWNER }}\ndirect={{ env.DIRECT_ENV }}\nduplicate={{ env.DUPLICATE_ENV }}\nref={{ file.reference }}\njson={{ mcp_servers.filesystem | trim }}\ntoml={{ mcp_servers.filesystem | trim | toml }}\nyaml={{ mcp_servers.filesystem | trim | yaml }}\ncodex_json={{ mcp_servers.filesystem | trim | codex | json }}\ncodex_toml={{ mcp_servers.filesystem | trim | codex | toml }}\nclaude_json={{ mcp_servers.filesystem | trim | claude | json }}\ngemini_toml={{ mcp_servers.filesystem | trim | gemini | toml }}\n",
+            "owner={{ env.OWNER }}\ndirect={{ env.DIRECT_ENV }}\nduplicate={{ env.DUPLICATE_ENV }}\nref={{ file.reference }}\njson={{ mcp_servers.filesystem | trim }}\ntoml={{ mcp_servers.filesystem | trim | toml }}\nyaml={{ mcp_servers.filesystem | trim | yaml }}\ncodex_json={{ mcp_servers.remote | trim | codex | json }}\ncodex_toml={{ mcp_servers.remote | trim | codex | toml }}\nclaude_json={{ mcp_servers.remote | trim | claude | json }}\ngemini_toml={{ mcp_servers.remote | trim | gemini | toml }}\n",
         )
         .unwrap();
     temp.child(".env")
@@ -144,6 +144,25 @@ path = "reference.md"
 
 [mcp_servers.file]
 path = "mcps.json"
+
+[mcp_servers.remote]
+transport = { kind = "http", url = "https://example.com/mcp", headers = { Accept = "application/json" } }
+env = [
+  { key = "X-Workspace-Token", binding = { kind = "env", var = "WORKSPACE_TOKEN" } }
+]
+
+[mcp_servers.remote.options]
+startup_timeout_sec = 20
+tool_timeout_sec = 45
+timeout = 30000
+trust = true
+include_tools = ["read"]
+
+[mcp_servers.remote.options.oauth]
+client_id = "claude-client"
+callback_port = 4317
+auth_server_metadata_url = "https://auth.example.com/.well-known/openid-configuration"
+scopes = ["https://www.googleapis.com/auth/cloud-platform"]
 "#,
         )
         .unwrap();
@@ -168,15 +187,15 @@ path = "mcps.json"
     assert!(text.contains("[mcp_servers.filesystem.transport]"));
     assert!(text.contains("yaml=mcpServers:"));
     assert!(text.contains(
-        "codex_json={\n  \"mcpServers\": {\n    \"filesystem\": {\n      \"command\": \"npx\""
+        "codex_json={\n  \"mcpServers\": {\n    \"remote\": {\n      \"url\": \"https://example.com/mcp\""
     ));
-    assert!(text.contains("codex_toml=[mcp_servers.filesystem]"));
+    assert!(text.contains("codex_toml=[mcp_servers.remote]"));
     assert!(text.contains("startup_timeout_sec = 20"));
     assert!(text.contains(
-        "claude_json={\n  \"mcpServers\": {\n    \"filesystem\": {\n      \"type\": \"stdio\""
+        "claude_json={\n  \"mcpServers\": {\n    \"remote\": {\n      \"type\": \"http\""
     ));
     assert!(text.contains("\"clientId\": \"claude-client\""));
-    assert!(text.contains("gemini_toml=[mcp_servers.filesystem]"));
+    assert!(text.contains("gemini_toml=[mcp_servers.remote]"));
     assert!(text.contains("timeout = 30000"));
     assert!(text.contains("trust = true"));
     assert!(!text.contains("env_vars = []"));

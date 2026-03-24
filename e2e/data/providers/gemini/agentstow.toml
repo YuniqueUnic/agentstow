@@ -18,7 +18,11 @@ target_audience = "https://mcp.example.com/mcp"
 target_service_account = "svc@example.iam.gserviceaccount.com"
 
 [mcp_servers.remote.options.oauth]
+enabled = true
+client_id = "gemini-client"
 scopes = ["https://www.googleapis.com/auth/cloud-platform"]
+audiences = ["https://mcp.example.com/mcp"]
+redirect_uri = "http://127.0.0.1:4317/callback"
 
 [artifacts.config]
 kind = "file"

@@ -5,9 +5,9 @@
 ### 目录约定
 
 - `providers/`
-  - `codex/`：Codex 原生格式 fixture，验证 `| codex` filter 与默认 TOML 输出。
-  - `claude/`：Claude Code 原生格式 fixture，验证 `| claude` filter 与 JSON 输出。
-  - `gemini/`：Gemini CLI 原生格式 fixture，验证 `| gemini` filter、`trust = false` 和 JSON 输出。
+  - `codex/`：Codex 原生格式 fixture，验证 `| codex` filter、timeout/tool allowlist 等 provider-only 选项。
+  - `claude/`：Claude Code 原生格式 fixture，验证 `| claude` filter 与 `options.oauth` 映射。
+  - `gemini/`：Gemini CLI 原生格式 fixture，验证 `| gemini` filter、`httpUrl`、tool filtering 与 OAuth/auth provider 选项。
 - `real-example/`
   - 完整 workspace fixture，覆盖 `env/file/mcp_servers/artifacts/targets` 的黑盒链路。
 - `targets/`

@@ -98,6 +98,46 @@ agentstow env emit --shell bash
 agentstow env emit --set runtime --shell bash
 ```
 
+### 2.2) MCP provider-only 选项
+
+`mcp_servers.<name>` 仍然保持通用 transport/env 语义，provider-only 字段统一收口到
+`options`，再通过模板 filter 适配到目标 provider：
+
+```toml
+[mcp_servers.remote]
+transport = { kind = "http", url = "https://mcp.example.com/mcp" }
+env = [
+  { key = "WEATHER_API_TOKEN", binding = { kind = "env", var = "WEATHER_API_TOKEN" } }
+]
+
+[mcp_servers.remote.options]
+startup_timeout_sec = 20
+enabled_tools = ["forecast"]
+timeout = 30000
+trust = true
+include_tools = ["search"]
+auth_provider_type = "google_credentials"
+
+[mcp_servers.remote.options.oauth]
+client_id = "demo-client"
+callback_port = 4317
+scopes = ["https://www.googleapis.com/auth/cloud-platform"]
+```
+
+模板里可以直接写：
+
+```tera
+{{ mcp_servers.remote | trim | codex }}
+{{ mcp_servers.remote | trim | claude | json }}
+{{ mcp_servers.remote | trim | gemini | json }}
+```
+
+程序会只把目标 provider 认得的字段渲染出去：
+
+- Codex：`startup_timeout_sec / tool_timeout_sec / enabled / required / enabled_tools / disabled_tools`
+- Claude：`oauth.clientId / callbackPort / authServerMetadataUrl`
+- Gemini：`timeout / trust / description / includeTools / excludeTools / oauth / authProviderType / targetAudience / targetServiceAccount`
+
 ### 3) 本地 Web（Material3 风格最小 UI）
 
 ```bash
