@@ -7,6 +7,6 @@ developer_instructions = "Owner={{ owner }}; workspace={{ workspace_name }}"
 model_reasoning_summary = "detailed"
 model_verbosity = "medium"
 
-{{ mcp_servers.sequential_thinking }}
-{{ mcp_servers.tavily }}
-{{ mcp_servers.ace_tool }}
+{{ mcp_servers.sequential_thinking | codex }}
+{{ mcp_servers.tavily | codex }}
+{{ mcp_servers.ace_tool | codex }}

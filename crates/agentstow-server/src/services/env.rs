@@ -68,7 +68,7 @@ pub(crate) fn build_env_usage_index(
     }
 
     for (server_id, server) in &manifest.mcp_servers {
-        for env_var in &server.env {
+        for env_var in server.env_binding_defs() {
             usage
                 .entry(env_var.key.clone())
                 .or_default()

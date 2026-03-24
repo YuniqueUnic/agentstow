@@ -23,6 +23,15 @@
 {{ mcp_servers.filesystem | trim | yaml }}
 ```
 
+## Codex MCP Example
+```json
+{{ mcp_servers.filesystem | trim | codex | json }}
+```
+
+```toml
+{{ mcp_servers.filesystem | trim | codex | toml }}
+```
+
 ## Working Rules
 - Prefer `cargo fmt --all` before finishing Rust changes.
 - Treat generated MCP config as reviewable artifacts.

@@ -89,7 +89,7 @@ fn api_workspace_summary_should_expose_http_mcp_headers() {
             assert_eq!(
                 body["mcp_servers"][0]["headers"],
                 serde_json::json!([
-                    { "key": "Authorization", "value": "Bearer demo-token" },
+                    { "key": "Authorization", "value": "Bearer ${OPENAI_API_KEY}" },
                     { "key": "X-Workspace", "value": "agentstow" }
                 ])
             );

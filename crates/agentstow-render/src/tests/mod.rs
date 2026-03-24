@@ -81,8 +81,14 @@ fn render_should_include_env_file_inline_env_file_contexts_and_mcp_contexts() {
             r#"{
   "mcpServers": {
     "filesystem": {
-      "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-filesystem", "."]
+      "transport": {
+        "kind": "stdio",
+        "command": "npx",
+        "args": ["-y", "@modelcontextprotocol/server-filesystem", "."]
+      },
+      "env": [
+        { "key": "NODE_ENV", "binding": { "kind": "literal", "value": "production" } }
+      ]
     }
   }
 }"#,
@@ -90,7 +96,7 @@ fn render_should_include_env_file_inline_env_file_contexts_and_mcp_contexts() {
         .unwrap();
     temp.child("artifacts/hello.txt.tera")
         .write_str(
-            "owner={{ env.OWNER }}\ndirect={{ env.DIRECT_ENV }}\nduplicate={{ env.DUPLICATE_ENV }}\nref={{ file.reference }}\njson={{ mcp_servers.filesystem | trim }}\ntoml={{ mcp_servers.filesystem | trim | toml }}\nyaml={{ mcp_servers.filesystem | trim | yaml }}\n",
+            "owner={{ env.OWNER }}\ndirect={{ env.DIRECT_ENV }}\nduplicate={{ env.DUPLICATE_ENV }}\nref={{ file.reference }}\njson={{ mcp_servers.filesystem | trim }}\ntoml={{ mcp_servers.filesystem | trim | toml }}\nyaml={{ mcp_servers.filesystem | trim | yaml }}\ncodex_json={{ mcp_servers.filesystem | trim | codex | json }}\ncodex_toml={{ mcp_servers.filesystem | trim | codex | toml }}\n",
         )
         .unwrap();
     temp.child(".env")
@@ -141,8 +147,13 @@ path = "mcps.json"
     assert!(text.contains("direct=from-inline"));
     assert!(text.contains("duplicate=from-manifest"));
     assert!(text.contains("ref=reference-fragment"));
-    assert!(text.contains("json={\n  \"mcpServers\": {"));
+    assert!(text.contains("\"transport\": {\n        \"kind\": \"stdio\""));
     assert!(text.contains("toml=[mcp_servers.filesystem]"));
-    assert!(text.contains("command = \"npx\""));
+    assert!(text.contains("[mcp_servers.filesystem.transport]"));
     assert!(text.contains("yaml=mcpServers:"));
+    assert!(text.contains(
+        "codex_json={\n  \"mcpServers\": {\n    \"filesystem\": {\n      \"command\": \"npx\""
+    ));
+    assert!(text.contains("codex_toml=[mcp_servers.filesystem]"));
+    assert!(!text.contains("env_vars = []"));
 }

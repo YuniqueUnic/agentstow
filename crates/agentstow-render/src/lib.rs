@@ -6,7 +6,7 @@ use agentstow_core::{
     normalize_for_display,
 };
 use agentstow_manifest::Manifest;
-use agentstow_mcp::{Mcp, McpSnippetFormat};
+use agentstow_mcp::{Mcp, McpSnippetFormat, McpTargetAdapter};
 use tera::{Context, Filter, Tera, Value};
 use tracing::instrument;
 
@@ -203,7 +203,7 @@ fn load_file_contexts(manifest: &Manifest) -> Result<serde_json::Value> {
 fn load_mcp_contexts(manifest: &Manifest, format: McpContextFormat) -> Result<serde_json::Value> {
     let mut out = serde_json::Map::new();
     for (name, server) in &manifest.mcp_servers {
-        let rendered = Mcp::render_server_snippet(name, server, format.into())?;
+        let rendered = Mcp::render_generic_server_snippet(name, server, format.into())?;
         out.insert(name.clone(), serde_json::Value::String(rendered));
     }
     Ok(serde_json::Value::Object(out))
@@ -308,6 +308,7 @@ fn render_tera_template_file(path: &Path, ctx: &Context) -> Result<Vec<u8>> {
     tera.register_filter("toml", McpSnippetFilter::new(McpSnippetFormat::Toml));
     tera.register_filter("json", McpSnippetFilter::new(McpSnippetFormat::Json));
     tera.register_filter("yaml", McpSnippetFilter::new(McpSnippetFormat::Yaml));
+    tera.register_filter("codex", McpAdapterFilter::new(McpTargetAdapter::Codex));
     tera.add_raw_template("inline", &template)
         .map_err(|e| AgentStowError::Render {
             message: format!(
@@ -372,6 +373,42 @@ impl Filter for McpSnippetFilter {
         let rendered = Mcp::convert_server_snippet(input, self.format)
             .map_err(|e| tera::Error::msg(e.to_string()))?;
         Ok(Value::String(rendered))
+    }
+}
+
+struct McpAdapterFilter {
+    adapter: McpTargetAdapter,
+}
+
+impl McpAdapterFilter {
+    fn new(adapter: McpTargetAdapter) -> Self {
+        Self { adapter }
+    }
+}
+
+impl Filter for McpAdapterFilter {
+    fn filter(&self, value: &Value, args: &HashMap<String, Value>) -> tera::Result<Value> {
+        let input = value
+            .as_str()
+            .ok_or_else(|| tera::Error::msg("mcp adapter 过滤器只接受字符串输入"))?;
+        let format = args.get("format").map(parse_snippet_format).transpose()?;
+        let rendered = Mcp::adapt_server_snippet(input, self.adapter, format)
+            .map_err(|e| tera::Error::msg(e.to_string()))?;
+        Ok(Value::String(rendered))
+    }
+}
+
+fn parse_snippet_format(value: &Value) -> tera::Result<McpSnippetFormat> {
+    let value = value
+        .as_str()
+        .ok_or_else(|| tera::Error::msg("format 参数必须是字符串"))?;
+    match value {
+        "json" => Ok(McpSnippetFormat::Json),
+        "toml" => Ok(McpSnippetFormat::Toml),
+        "yaml" | "yml" => Ok(McpSnippetFormat::Yaml),
+        other => Err(tera::Error::msg(format!(
+            "不支持的 mcp format: {other}；可选 json/toml/yaml"
+        ))),
     }
 }
 

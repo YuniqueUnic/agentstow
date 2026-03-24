@@ -177,16 +177,22 @@ fn link_status(manifest: &Manifest, json: bool) -> Result<()> {
 
     let mut output = Vec::new();
     for record in records {
-        let ok = check_link_record_health(manifest, &record).unwrap_or(false);
+        let (ok, message) = match check_link_record_health(manifest, &record) {
+            Ok(ok) => (
+                ok,
+                if ok {
+                    "healthy".to_string()
+                } else {
+                    "unhealthy".to_string()
+                },
+            ),
+            Err(error) => (false, error.to_string()),
+        };
         output.push(LinkStatusItem {
             target_path: normalize_for_display(&record.target_path),
             method: record.method,
             ok,
-            message: if ok {
-                "healthy".to_string()
-            } else {
-                "unhealthy".to_string()
-            },
+            message,
         });
     }
 
@@ -197,7 +203,10 @@ fn link_status(manifest: &Manifest, json: bool) -> Result<()> {
 
     for item in &output {
         let tag = if item.ok { "ok" } else { "bad" };
-        println!("[{tag}] {} ({:?})", item.target_path, item.method);
+        println!(
+            "[{tag}] {} ({:?}) {}",
+            item.target_path, item.method, item.message
+        );
     }
     Ok(())
 }

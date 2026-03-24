@@ -22,7 +22,8 @@ impl WorkspaceQueryService {
                 .ok_or_else(|| AgentStowError::Manifest {
                     message: format!("mcp server 不存在：{server_id}").into(),
                 })?;
-        let env_bindings = build_env_var_summaries(&server.env, &env_usage);
+        let env_binding_defs = server.env_binding_defs();
+        let env_bindings = build_env_var_summaries(&env_binding_defs, &env_usage);
         let mut issues = Vec::new();
 
         if let Err(error) = Mcp::validate_server(server_id, server) {
@@ -64,15 +65,16 @@ impl WorkspaceQueryService {
                 .ok_or_else(|| AgentStowError::Manifest {
                     message: format!("mcp server 不存在：{server_id}").into(),
                 })?;
-        let env_bindings = build_env_var_summaries(&server.env, &env_usage);
+        let env_binding_defs = server.env_binding_defs();
+        let env_bindings = build_env_var_summaries(&env_binding_defs, &env_usage);
 
         Ok(McpRenderResponse {
             server_id: server_id.to_string(),
-            transport_kind: match server.transport {
+            transport_kind: match &server.transport {
                 McpTransport::Stdio { .. } => McpTransportKindResponse::Stdio,
                 McpTransport::Http { .. } => McpTransportKindResponse::Http,
             },
-            launcher_preview: Mcp::launcher_preview(server),
+            launcher_preview: Mcp::launcher_preview(server_id, server),
             config_json: Mcp::render_server_json(server_id, server)?,
             env_bindings,
         })
@@ -88,7 +90,8 @@ impl WorkspaceQueryService {
                 .ok_or_else(|| AgentStowError::Manifest {
                     message: format!("mcp server 不存在：{server_id}").into(),
                 })?;
-        let env_bindings = build_env_var_summaries(&server.env, &env_usage);
+        let env_binding_defs = server.env_binding_defs();
+        let env_bindings = build_env_var_summaries(&env_binding_defs, &env_usage);
         let mut checks: Vec<McpCheckResponse> = Mcp::test_server_dry_run(server_id, server)
             .into_iter()
             .map(|check| McpCheckResponse {

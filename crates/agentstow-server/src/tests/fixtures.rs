@@ -132,7 +132,7 @@ pub(super) fn write_http_mcp_workspace(temp: &assert_fs::TempDir) {
         .write_str(
             r#"
 [mcp_servers.remote]
-transport = { kind = "http", url = "https://example.com/mcp", headers = { Authorization = "Bearer demo-token", X-Workspace = "agentstow" } }
+transport = { kind = "http", url = "https://example.com/mcp", headers = { X-Workspace = "agentstow" } }
 env = [
   { key = "OPENAI_API_KEY", binding = { kind = "env", var = "OPENAI_API_KEY" } }
 ]

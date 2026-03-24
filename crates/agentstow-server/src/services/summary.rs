@@ -2,6 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use agentstow_core::{ProfileName, Result, normalize_for_display};
 use agentstow_manifest::{Manifest, McpTransport, Profile, ProfileVarSyntaxMode};
+use agentstow_mcp::Mcp;
 use agentstow_web_types::{
     ArtifactSummaryResponse, EnvEmitSetSummaryResponse, EnvUsageRefResponse, McpHeaderResponse,
     McpServerSummaryResponse, McpTransportKindResponse, ProfileSummaryResponse, ProfileVarResponse,
@@ -195,7 +196,7 @@ pub(crate) fn build_mcp_server_summaries(
         .iter()
         .map(|(name, server)| {
             let (transport_kind, location, command, args, url, headers) = match &server.transport {
-                McpTransport::Stdio { command, args } => (
+                McpTransport::Stdio { command, args, .. } => (
                     McpTransportKindResponse::Stdio,
                     command.clone(),
                     Some(command.clone()),
@@ -207,15 +208,17 @@ pub(crate) fn build_mcp_server_summaries(
                     url,
                     headers: header_map,
                 } => {
-                    let mut headers: Vec<_> = header_map
-                        .iter()
-                        .map(|(key, value)| McpHeaderResponse {
-                            key: key.clone(),
-                            value: value.clone(),
+                    let mut headers: Vec<_> = Mcp::codex_http_header_preview(name, server)
+                        .unwrap_or_else(|_| {
+                            header_map
+                                .iter()
+                                .map(|(key, value)| (key.clone(), value.clone()))
+                                .collect()
                         })
+                        .into_iter()
+                        .map(|(key, value)| McpHeaderResponse { key, value })
                         .collect();
                     headers.sort_by(|left, right| left.key.cmp(&right.key));
-
                     (
                         McpTransportKindResponse::Http,
                         url.clone(),
@@ -226,7 +229,8 @@ pub(crate) fn build_mcp_server_summaries(
                     )
                 }
             };
-            let env_bindings = build_env_var_summaries(&server.env, usage);
+            let env_binding_defs = server.env_binding_defs();
+            let env_bindings = build_env_var_summaries(&env_binding_defs, usage);
 
             McpServerSummaryResponse {
                 id: name.clone(),

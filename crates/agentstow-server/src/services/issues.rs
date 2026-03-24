@@ -118,18 +118,18 @@ fn collect_mcp_issues(manifest: &Manifest) -> Vec<ValidationIssueResponse> {
         }
     }
 
-    issues.extend(collect_binding_issues(
-        manifest.mcp_servers.iter().flat_map(|(server_id, server)| {
-            server.env.iter().map(move |env_var| {
+    for (server_id, server) in &manifest.mcp_servers {
+        issues.extend(collect_binding_issues(
+            server.env_binding_defs().iter().map(|env_var| {
                 (
                     "mcp_server",
                     server_id.as_str(),
                     "mcp_env_unavailable",
                     env_var,
                 )
-            })
-        }),
-    ));
+            }),
+        ));
+    }
 
     issues
 }

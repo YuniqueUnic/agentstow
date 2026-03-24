@@ -1,45 +1,68 @@
 {
   "mcpServers": {
     "filesystem": {
-      "transport": "stdio",
-      "command": "npx",
-      "args": [
-        "-y",
-        "@modelcontextprotocol/server-filesystem",
-        "."
-      ],
-      "env": {
-        "NODE_ENV": "production",
-        "DEBUG": "mcp:*"
-      }
-    },
-
-    "fetch": {
-      "transport": "stdio",
-      "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-fetch"],
-      "env": {
-        "HTTP_PROXY": "http://127.0.0.1:7890"
-      }
-    },
-
-    "weather-http": {
-      "transport": "http",
-      "url": "https://api.example.com/mcp",
-      "headers": {
-        "Authorization": "Bearer demo-key"
+      "transport": {
+        "kind": "stdio",
+        "command": "npx",
+        "args": [
+          "-y",
+          "@modelcontextprotocol/server-filesystem",
+          "."
+        ]
       },
-      "env": {
-        "TIMEOUT": "10000"
-      }
+      "env": [
+        {
+          "key": "NODE_ENV",
+          "binding": {
+            "kind": "literal",
+            "value": "production"
+          }
+        },
+        {
+          "key": "DEBUG",
+          "binding": {
+            "kind": "literal",
+            "value": "mcp:*"
+          }
+        }
+      ]
     },
-
-    "streaming-ai": {
-      "transport": "sse",
-      "url": "https://api.example.com/mcp/sse",
-      "headers": {
-        "Authorization": "Bearer demo-key"
-      }
+    "fetch": {
+      "transport": {
+        "kind": "stdio",
+        "command": "npx",
+        "args": [
+          "-y",
+          "@modelcontextprotocol/server-fetch"
+        ]
+      },
+      "env": [
+        {
+          "key": "HTTP_PROXY",
+          "binding": {
+            "kind": "literal",
+            "value": "http://127.0.0.1:7890"
+          }
+        }
+      ]
+    },
+    "weather_http": {
+      "transport": {
+        "kind": "http",
+        "url": "https://api.example.com/mcp",
+        "headers": {
+          "X-Workspace": "agentstow-demo"
+        }
+      },
+      "env": [
+        {
+          "key": "WEATHER_API_TOKEN",
+          "binding": {
+            "kind": "env",
+            "var": "WEATHER_API_TOKEN"
+          }
+        }
+      ]
     }
   }
 }

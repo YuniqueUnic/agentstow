@@ -7,6 +7,6 @@ developer_instructions = "Read-only analysis for {{ workspace_name }}"
 model_reasoning_summary = "concise"
 model_verbosity = "low"
 
-{{ mcp_servers.sequential_thinking }}
-{{ mcp_servers.tavily }}
-{{ mcp_servers.filesystem }}
+{{ mcp_servers.sequential_thinking | codex }}
+{{ mcp_servers.tavily | codex }}
+{{ mcp_servers.filesystem | codex }}

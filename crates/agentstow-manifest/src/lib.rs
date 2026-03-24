@@ -321,6 +321,12 @@ pub struct McpServerDef {
     pub env: Vec<EnvVarDef>,
 }
 
+impl McpServerDef {
+    pub fn env_binding_defs(&self) -> Vec<EnvVarDef> {
+        self.env.clone()
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum McpTransport {
@@ -328,6 +334,8 @@ pub enum McpTransport {
         command: String,
         #[serde(default)]
         args: Vec<String>,
+        #[serde(default)]
+        cwd: Option<PathBuf>,
     },
     Http {
         url: String,
@@ -360,6 +368,12 @@ struct McpServerImportDef {
 }
 
 #[derive(Debug, Deserialize)]
+struct ImportedGenericMcpJsonFile {
+    #[serde(rename = "mcpServers", default)]
+    mcp_servers: BTreeMap<String, McpServerDef>,
+}
+
+#[derive(Debug, Deserialize)]
 struct ImportedMcpJsonFile {
     #[serde(rename = "mcpServers", default)]
     mcp_servers: BTreeMap<String, ImportedMcpJsonServer>,
@@ -373,16 +387,20 @@ enum ImportedMcpJsonServer {
         #[serde(default)]
         args: Vec<String>,
         #[serde(default)]
+        env_vars: Vec<String>,
+        #[serde(default)]
         env: BTreeMap<String, String>,
+        #[serde(default)]
+        cwd: Option<PathBuf>,
     },
     Http {
-        #[serde(rename = "type")]
-        _type: Option<String>,
         url: String,
         #[serde(default)]
-        headers: HashMap<String, String>,
+        bearer_token_env_var: Option<String>,
         #[serde(default)]
-        env: BTreeMap<String, String>,
+        http_headers: HashMap<String, String>,
+        #[serde(default)]
+        env_http_headers: HashMap<String, String>,
     },
 }
 
@@ -496,6 +514,17 @@ fn import_mcp_servers_from_file(
 ) -> Result<()> {
     let absolute_path = absolutize(workspace_root, path);
     let content = std::fs::read_to_string(&absolute_path).map_err(AgentStowError::from)?;
+    if let Ok(imported) = serde_json::from_str::<ImportedGenericMcpJsonFile>(&content) {
+        for (name, server) in imported.mcp_servers {
+            if servers.insert(name.clone(), server).is_some() {
+                return Err(AgentStowError::Manifest {
+                    message: format!("导入的 mcp server 与现有名称冲突：{name}").into(),
+                });
+            }
+        }
+        return Ok(());
+    }
+
     let imported: ImportedMcpJsonFile =
         serde_json::from_str(&content).map_err(|error| AgentStowError::Manifest {
             message: format!(
@@ -519,15 +548,43 @@ fn import_mcp_servers_from_file(
 
 fn imported_mcp_server_to_def(server: ImportedMcpJsonServer) -> McpServerDef {
     match server {
-        ImportedMcpJsonServer::Stdio { command, args, env } => McpServerDef {
-            transport: McpTransport::Stdio { command, args },
-            env: imported_env_map_to_defs(env),
+        ImportedMcpJsonServer::Stdio {
+            command,
+            args,
+            env_vars,
+            env,
+            cwd,
+        } => McpServerDef {
+            transport: McpTransport::Stdio { command, args, cwd },
+            env: imported_env_map_to_defs(env)
+                .into_iter()
+                .chain(env_vars.into_iter().map(|var| EnvVarDef {
+                    key: var.clone(),
+                    binding: SecretBinding::Env { var },
+                }))
+                .collect(),
         },
         ImportedMcpJsonServer::Http {
-            url, headers, env, ..
+            url,
+            bearer_token_env_var,
+            http_headers,
+            env_http_headers,
         } => McpServerDef {
-            transport: McpTransport::Http { url, headers },
-            env: imported_env_map_to_defs(env),
+            transport: McpTransport::Http {
+                url,
+                headers: http_headers,
+            },
+            env: bearer_token_env_var
+                .into_iter()
+                .map(|var| EnvVarDef {
+                    key: var.clone(),
+                    binding: SecretBinding::Env { var },
+                })
+                .chain(env_http_headers.into_iter().map(|(key, var)| EnvVarDef {
+                    key,
+                    binding: SecretBinding::Env { var },
+                }))
+                .collect(),
         },
     }
 }

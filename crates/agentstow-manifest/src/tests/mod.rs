@@ -267,8 +267,14 @@ fn load_should_parse_env_file_inline_vars_file_contexts_and_mcp_imports() {
             r#"{
   "mcpServers": {
     "filesystem": {
-      "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-filesystem", "."]
+      "transport": {
+        "kind": "stdio",
+        "command": "npx",
+        "args": ["-y", "@modelcontextprotocol/server-filesystem", "."]
+      },
+      "env": [
+        { "key": "NODE_ENV", "binding": { "kind": "literal", "value": "production" } }
+      ]
     }
   }
 }"#,
@@ -321,6 +327,17 @@ url = "https://example.com/mcp"
     );
     assert!(manifest.mcp_servers.contains_key("filesystem"));
     assert!(manifest.mcp_servers.contains_key("local"));
+    assert_eq!(
+        manifest
+            .mcp_servers
+            .get("filesystem")
+            .unwrap()
+            .env
+            .first()
+            .unwrap()
+            .key,
+        "NODE_ENV"
+    );
 }
 
 #[test]

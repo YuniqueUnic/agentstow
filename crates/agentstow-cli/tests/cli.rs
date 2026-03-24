@@ -94,7 +94,7 @@ fn render_should_support_real_example_style_contexts() {
     temp.child("artifacts").create_dir_all().unwrap();
     temp.child("artifacts/hello.txt.tera")
         .write_str(
-            "owner={{ env.OWNER }}\ndirect={{ env.DIRECT_ENV }}\nduplicate={{ env.DUPLICATE_ENV }}\nref={{ file.reference }}\njson={{ mcp_servers.filesystem | trim }}\ntoml={{ mcp_servers.filesystem | trim | toml }}\nyaml={{ mcp_servers.filesystem | trim | yaml }}\n",
+            "owner={{ env.OWNER }}\ndirect={{ env.DIRECT_ENV }}\nduplicate={{ env.DUPLICATE_ENV }}\nref={{ file.reference }}\njson={{ mcp_servers.filesystem | trim }}\ntoml={{ mcp_servers.filesystem | trim | toml }}\nyaml={{ mcp_servers.filesystem | trim | yaml }}\ncodex_json={{ mcp_servers.filesystem | trim | codex | json }}\n",
         )
         .unwrap();
     temp.child(".env")
@@ -108,8 +108,14 @@ fn render_should_support_real_example_style_contexts() {
             r#"{
   "mcpServers": {
     "filesystem": {
-      "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-filesystem", "."]
+      "transport": {
+        "kind": "stdio",
+        "command": "npx",
+        "args": ["-y", "@modelcontextprotocol/server-filesystem", "."]
+      },
+      "env": [
+        { "key": "NODE_ENV", "binding": { "kind": "literal", "value": "production" } }
+      ]
     }
   }
 }"#,
@@ -155,7 +161,7 @@ validate_as = "none"
         .arg("--dry-run");
 
     cmd.assert().success().stdout(predicate::str::contains(
-        "owner=platform-team\ndirect=from-inline\nduplicate=from-manifest\nref=reference-fragment\njson={\n  \"mcpServers\": {\n    \"filesystem\": {\n      \"command\": \"npx\"",
+        "owner=platform-team\ndirect=from-inline\nduplicate=from-manifest\nref=reference-fragment\njson={\n  \"mcpServers\": {\n    \"filesystem\": {\n      \"transport\": {\n        \"kind\": \"stdio\"",
     ));
 }
 
