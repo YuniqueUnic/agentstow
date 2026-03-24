@@ -1,0 +1,17 @@
+# {{ workspace_name }}
+
+This Gemini provider fixture renders:
+
+- `GEMINI.md`
+- `.gemini/settings.json`
+- `.gemini/.env`
+- `.gemini/commands/review-readme.toml`
+- `.gemini/extensions/cloud-tools/`
+
+Gemini commands consume this README through `@{README.md}`.
+
+## Imported Filesystem MCP Preview
+
+```json
+{{ mcp_servers.filesystem | trim | gemini | json }}
+```

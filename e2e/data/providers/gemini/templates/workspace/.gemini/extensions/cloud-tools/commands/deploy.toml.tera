@@ -1,0 +1,6 @@
+name = "deploy"
+description = "Deploy with cloud tools"
+prompt = """
+Deploy after checking:
+@{README.md}
+"""

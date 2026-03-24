@@ -1,0 +1,31 @@
+{
+  "mcpServers": {
+    "filesystem": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-filesystem",
+        "./docs",
+        "./notes"
+      ],
+      "env": {
+        "LOG_LEVEL": "info",
+        "FIXTURE_NAME": "{{ workspace_name }}"
+      }
+    },
+    "release_notes": {
+      "type": "http",
+      "url": "https://mcp.example.com/claude",
+      "headers": {
+        "Accept": "application/json",
+        "Authorization": "Bearer ${CLAUDE_API_TOKEN}"
+      },
+      "oauth": {
+        "clientId": "claude-client",
+        "callbackPort": 4317,
+        "authServerMetadataUrl": "https://auth.example.com/.well-known/openid-configuration"
+      }
+    }
+  }
+}

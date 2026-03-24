@@ -1,0 +1,36 @@
+{
+  "mcpServers": {
+    "filesystem": {
+      "transport": {
+        "kind": "stdio",
+        "command": "npx",
+        "args": [
+          "-y",
+          "@modelcontextprotocol/server-filesystem",
+          "./docs",
+          "./specs"
+        ],
+        "cwd": "."
+      },
+      "env": [
+        {
+          "key": "GITHUB_TOKEN",
+          "binding": {
+            "kind": "env",
+            "var": "GITHUB_TOKEN"
+          }
+        }
+      ],
+      "options": {
+        "startup_timeout_sec": 20,
+        "tool_timeout_sec": 45,
+        "enabled": true,
+        "required": false,
+        "enabled_tools": [
+          "read_file",
+          "list_dir"
+        ]
+      }
+    }
+  }
+}

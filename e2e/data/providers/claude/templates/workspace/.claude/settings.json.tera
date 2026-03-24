@@ -1,0 +1,7 @@
+{
+  "env": {
+    "CLAUDE_FIXTURE": "{{ env.PROVIDER_NAME }}",
+    "DUPLICATE_ENV": "{{ env.DUPLICATE_ENV }}",
+    "CLAUDE_SETTINGS_MODE": "{{ env.CLAUDE_SETTINGS_MODE }}"
+  }
+}

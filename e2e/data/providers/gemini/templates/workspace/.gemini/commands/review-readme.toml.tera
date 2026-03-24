@@ -1,0 +1,6 @@
+name = "review-readme"
+description = "Review the rendered README"
+prompt = """
+Review the project overview from:
+{{ env.README_PROMPT_REF }}
+"""

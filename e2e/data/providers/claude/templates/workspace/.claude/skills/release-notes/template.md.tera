@@ -1,0 +1,4 @@
+# Release Notes Template
+
+- Workspace: {{ workspace_name }}
+- Provider: {{ env.PROVIDER_NAME }}

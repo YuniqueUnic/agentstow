@@ -1,0 +1,12 @@
+---
+name: repo-guide
+description: Repository-specific Codex workflow for {{ workspace_name }}.
+---
+
+# Repo Guide
+
+- Root instructions: `AGENTS.md`
+- Extra fallback guide: `TEAM_GUIDE.md`
+- Provider: `{{ env.PROVIDER_NAME }}`
+- MCP config path: `.codex/config.toml`
+- Read `references/mcp.md` before editing server definitions.

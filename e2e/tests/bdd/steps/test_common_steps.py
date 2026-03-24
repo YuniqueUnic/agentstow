@@ -6,6 +6,14 @@ from pathlib import Path
 import pytest
 from pytest_bdd import parsers, then
 
+from ..support.fs import (
+    get_nested_value,
+    list_relative_files,
+    parse_expected_scalar,
+    read_json,
+    read_toml,
+)
+
 
 def _path_root(request: pytest.FixtureRequest) -> Path:
     for fixture_name in ("workspace", "working_root", "scenario_root"):
@@ -58,6 +66,12 @@ def then_stdout_json_bool_field_equals(result, field: str, value: str) -> None:
     assert payload[field] is expected
 
 
+@then(parsers.parse('stdout json nested field "{field}" equals "{value}"'))
+def then_stdout_json_nested_field_equals(result, field: str, value: str) -> None:
+    payload = json.loads(result.stdout)
+    assert get_nested_value(payload, field) == parse_expected_scalar(value)
+
+
 @then(parsers.parse('the path "{relative_path}" exists'))
 def then_path_exists(request: pytest.FixtureRequest, relative_path: str) -> None:
     assert (_path_root(request) / relative_path).exists()
@@ -85,6 +99,64 @@ def then_file_contains_exactly(
     text: str,
 ) -> None:
     assert (_path_root(request) / relative_path).read_text() == _expected_text(text)
+
+
+@then(parsers.parse('the json file "{relative_path}" has field "{field}" equal to "{value}"'))
+def then_json_file_field_equals(
+    request: pytest.FixtureRequest,
+    relative_path: str,
+    field: str,
+    value: str,
+) -> None:
+    payload = read_json(_path_root(request) / relative_path)
+    assert get_nested_value(payload, field) == parse_expected_scalar(value)
+
+
+@then(parsers.parse('the json file "{relative_path}" array field "{field}" contains "{value}"'))
+def then_json_file_array_contains(
+    request: pytest.FixtureRequest,
+    relative_path: str,
+    field: str,
+    value: str,
+) -> None:
+    payload = read_json(_path_root(request) / relative_path)
+    actual = get_nested_value(payload, field)
+    assert isinstance(actual, list)
+    assert parse_expected_scalar(value) in actual
+
+
+@then(parsers.parse('the toml file "{relative_path}" has field "{field}" equal to "{value}"'))
+def then_toml_file_field_equals(
+    request: pytest.FixtureRequest,
+    relative_path: str,
+    field: str,
+    value: str,
+) -> None:
+    payload = read_toml(_path_root(request) / relative_path)
+    assert get_nested_value(payload, field) == parse_expected_scalar(value)
+
+
+@then(parsers.parse('the toml file "{relative_path}" array field "{field}" contains "{value}"'))
+def then_toml_file_array_contains(
+    request: pytest.FixtureRequest,
+    relative_path: str,
+    field: str,
+    value: str,
+) -> None:
+    payload = read_toml(_path_root(request) / relative_path)
+    actual = get_nested_value(payload, field)
+    assert isinstance(actual, list)
+    assert parse_expected_scalar(value) in actual
+
+
+@then(parsers.parse('the directory "{relative_path}" contains file "{child_path}"'))
+def then_directory_contains_file(
+    request: pytest.FixtureRequest,
+    relative_path: str,
+    child_path: str,
+) -> None:
+    root = _path_root(request) / relative_path
+    assert child_path in list_relative_files(root)
 
 
 @then("the state database exists")

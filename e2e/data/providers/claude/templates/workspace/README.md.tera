@@ -1,0 +1,18 @@
+# {{ workspace_name }}
+
+This Claude provider fixture renders:
+
+- `CLAUDE.md`
+- `.mcp.json`
+- `.env.rendered`
+- `.claude/settings.json`
+- `.claude/rules/testing.md`
+- `.claude/skills/release-notes/`
+
+Claude reads this README through `@README.md` from `CLAUDE.md`.
+
+## Imported Filesystem MCP Preview
+
+```json
+{{ mcp_servers.filesystem | trim | claude | json }}
+```

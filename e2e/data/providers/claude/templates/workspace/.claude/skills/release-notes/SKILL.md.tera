@@ -1,0 +1,13 @@
+---
+name: release-notes
+description: Draft repository release notes for {{ workspace_name }}.
+---
+
+# Release Notes Skill
+
+- MCP config source: `.mcp.json`
+- Imported stdio server: `filesystem`
+- HTTP server: `release_notes`
+- Reference:
+
+{{ file.reference }}

@@ -1,22 +1,91 @@
 [profiles.base]
-vars = { workspace_name = "codex-fixture" }
+vars = { workspace_name = "codex-provider-fixture", provider_name = "codex", service_name = "payments" }
 
-[mcp_servers.remote]
-transport = { kind = "http", url = "https://mcp.example.com/mcp" }
-env = [
-  { key = "WEATHER_API_TOKEN", binding = { kind = "env", var = "WEATHER_API_TOKEN" } }
+[env.files]
+paths = [".env"]
+
+[env]
+PROVIDER_NAME = "codex"
+README_RENDER_MODE = "manifest-overrides-dotenv"
+DUPLICATE_ENV = "from-inline-codex"
+INSTRUCTION_NOTE = "README.md stays documentation content unless configured as a fallback."
+
+[env.emit.runtime]
+vars = [
+  { key = "FIXTURE_PROVIDER", binding = { kind = "literal", value = "codex" } },
+  { key = "FIXTURE_CONFIG_PATH", binding = { kind = "literal", value = ".codex/config.toml" } }
 ]
 
-[mcp_servers.remote.options]
+[file.reference]
+path = "reference.md"
+
+[mcp_servers.file]
+path = "mcps.json"
+
+[mcp_servers.tavily]
+transport = { kind = "http", url = "https://mcp.tavily.com/mcp", headers = { X-Agent = "agentstow-e2e" } }
+env = [
+  { key = "TAVILY_API_KEY", binding = { kind = "env", var = "TAVILY_API_KEY" } },
+  { key = "X-Tenant", binding = { kind = "env", var = "AGENTSTOW_TENANT" } }
+]
+
+[mcp_servers.tavily.options]
 startup_timeout_sec = 20
 tool_timeout_sec = 45
 enabled = true
-required = true
-enabled_tools = ["forecast"]
-disabled_tools = ["screenshot"]
+required = false
+enabled_tools = ["search", "extract"]
+disabled_tools = ["crawl"]
 
-[artifacts.config]
+[artifacts.instruction_doc]
 kind = "file"
-source = "templates/config.toml.tera"
+source = "templates/workspace/AGENTS.md.tera"
+template = true
+validate_as = "none"
+
+[artifacts.service_instruction_doc]
+kind = "file"
+source = "templates/workspace/services/payments/AGENTS.md.tera"
+template = true
+validate_as = "none"
+
+[artifacts.provider_config]
+kind = "file"
+source = "templates/workspace/.codex/config.toml.tera"
 template = true
 validate_as = "toml"
+
+[artifacts.workspace_bundle]
+kind = "dir"
+source = "templates/workspace"
+template = true
+
+[artifacts.readme_doc]
+kind = "file"
+source = "templates/workspace/README.md.tera"
+template = true
+validate_as = "none"
+
+[targets.bundle_copy]
+artifact = "workspace_bundle"
+profile = "base"
+target_path = "demo-targets/bundles/codex-workspace"
+method = "copy"
+
+[targets.instruction_symlink]
+artifact = "instruction_doc"
+profile = "base"
+target_path = "demo-targets/codex-project/AGENTS.md"
+method = "symlink"
+
+[targets.config_copy]
+artifact = "provider_config"
+profile = "base"
+target_path = "demo-targets/codex-project/.codex/config.toml"
+method = "copy"
+
+[targets.readme_copy]
+artifact = "readme_doc"
+profile = "base"
+target_path = "demo-targets/docs/README.md"
+method = "copy"

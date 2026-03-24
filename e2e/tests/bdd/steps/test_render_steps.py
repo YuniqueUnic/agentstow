@@ -76,3 +76,8 @@ def when_render_artifact_to_output(
 @when("I run mcp render to stdout", target_fixture="result")
 def when_run_mcp_render_to_stdout(workspace: Path, run_cli):
     return run_cli("--cwd", str(workspace), "mcp", "render", "--stdout")
+
+
+@when(parsers.parse('I run env emit with shell "{shell}"'), target_fixture="result")
+def when_run_env_emit(workspace: Path, run_cli, shell: str):
+    return run_cli("--cwd", str(workspace), "env", "emit", "--shell", shell, "--stdout")

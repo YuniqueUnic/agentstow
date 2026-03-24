@@ -1,0 +1,3 @@
+# Sample Release Notes
+
+- Validate `release_notes` server before publishing.

@@ -1,0 +1,6 @@
+name = "git-commit"
+description = "Prepare a commit message"
+prompt = """
+Draft a commit message after reading:
+@{README.md}
+"""

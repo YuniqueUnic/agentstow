@@ -1,0 +1,61 @@
+{
+  "context": {
+    "fileName": [
+      "GEMINI.md",
+      "GUIDE.md"
+    ],
+    "includeDirectories": [
+      "docs/prompts",
+      "operations"
+    ],
+    "loadFromIncludeDirectories": true
+  },
+  "mcpServers": {
+    "filesystem": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-filesystem",
+        "./docs",
+        "./specs"
+      ],
+      "env": {
+        "LOG_LEVEL": "info",
+        "FIXTURE_NAME": "{{ workspace_name }}"
+      },
+      "cwd": ".",
+      "trust": false
+    },
+    "cloud_tools": {
+      "httpUrl": "https://mcp.example.com/gemini",
+      "headers": {
+        "Accept": "application/json",
+        "X-Workspace-Token": "$GEMINI_WORKSPACE_TOKEN"
+      },
+      "timeout": 30000,
+      "trust": false,
+      "description": "Cloud toolbox",
+      "includeTools": [
+        "search",
+        "fetch"
+      ],
+      "excludeTools": [
+        "delete"
+      ],
+      "oauth": {
+        "enabled": true,
+        "clientId": "gemini-client",
+        "scopes": [
+          "https://www.googleapis.com/auth/cloud-platform"
+        ],
+        "audiences": [
+          "https://mcp.example.com/gemini"
+        ],
+        "redirectUri": "http://127.0.0.1:4317/callback"
+      },
+      "authProviderType": "google_credentials",
+      "targetAudience": "https://mcp.example.com/gemini",
+      "targetServiceAccount": "svc@example.iam.gserviceaccount.com"
+    }
+  }
+}

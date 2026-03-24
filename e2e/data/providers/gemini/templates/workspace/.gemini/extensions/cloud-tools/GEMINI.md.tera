@@ -1,0 +1,6 @@
+# Cloud Tools Extension
+
+- Uses `cloud_tools` HTTP server.
+- Reads project context from `GEMINI.md`.
+
+{{ file.reference }}

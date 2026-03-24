@@ -1,0 +1,8 @@
+# Team Guide
+
+- Primary project doc fallback order starts with `AGENTS.md`.
+- `TEAM_GUIDE.md` exists as an additional fallback file configured in `.codex/config.toml`.
+- Keep README as ordinary content unless `project_doc_fallback_filenames` is changed.
+- HTTP MCP auth should be derived from env bindings, not hard-coded secrets.
+- The imported stdio server name is fixed to `filesystem`.
+- The explicit HTTP server name is fixed to `tavily`.

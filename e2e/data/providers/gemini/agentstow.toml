@@ -1,31 +1,86 @@
 [profiles.base]
-vars = { workspace_name = "gemini-fixture" }
+vars = { workspace_name = "gemini-provider-fixture", provider_name = "gemini" }
 
-[mcp_servers.remote]
-transport = { kind = "http", url = "https://mcp.example.com/mcp", headers = { Accept = "application/json" } }
+[env.files]
+paths = [".env"]
+
+[env]
+PROVIDER_NAME = "gemini"
+DUPLICATE_ENV = "from-inline-gemini"
+README_PROMPT_REF = "@{README.md}"
+
+[file.reference]
+path = "reference.md"
+
+[mcp_servers.file]
+path = "mcps.json"
+
+[mcp_servers.cloud_tools]
+transport = { kind = "http", url = "https://mcp.example.com/gemini", headers = { Accept = "application/json" } }
 env = [
-  { key = "WEATHER_API_TOKEN", binding = { kind = "env", var = "WEATHER_API_TOKEN" } }
+  { key = "X-Workspace-Token", binding = { kind = "env", var = "GEMINI_WORKSPACE_TOKEN" } }
 ]
 
-[mcp_servers.remote.options]
+[mcp_servers.cloud_tools.options]
 timeout = 30000
-trust = true
-description = "Remote toolbox"
+trust = false
+description = "Cloud toolbox"
 include_tools = ["search", "fetch"]
 exclude_tools = ["delete"]
 auth_provider_type = "google_credentials"
-target_audience = "https://mcp.example.com/mcp"
+target_audience = "https://mcp.example.com/gemini"
 target_service_account = "svc@example.iam.gserviceaccount.com"
 
-[mcp_servers.remote.options.oauth]
+[mcp_servers.cloud_tools.options.oauth]
 enabled = true
 client_id = "gemini-client"
 scopes = ["https://www.googleapis.com/auth/cloud-platform"]
-audiences = ["https://mcp.example.com/mcp"]
+audiences = ["https://mcp.example.com/gemini"]
 redirect_uri = "http://127.0.0.1:4317/callback"
 
-[artifacts.config]
+[artifacts.instruction_doc]
 kind = "file"
-source = "templates/settings.json.tera"
+source = "templates/workspace/GEMINI.md.tera"
+template = true
+validate_as = "none"
+
+[artifacts.provider_config]
+kind = "file"
+source = "templates/workspace/.gemini/settings.json.tera"
 template = true
 validate_as = "json"
+
+[artifacts.workspace_bundle]
+kind = "dir"
+source = "templates/workspace"
+template = true
+
+[artifacts.readme_doc]
+kind = "file"
+source = "templates/workspace/README.md.tera"
+template = true
+validate_as = "none"
+
+[targets.bundle_copy]
+artifact = "workspace_bundle"
+profile = "base"
+target_path = "demo-targets/gemini-project"
+method = "copy"
+
+[targets.instruction_symlink]
+artifact = "instruction_doc"
+profile = "base"
+target_path = "demo-targets/gemini-linked/GEMINI.md"
+method = "symlink"
+
+[targets.config_copy]
+artifact = "provider_config"
+profile = "base"
+target_path = "demo-targets/gemini-config/.gemini/settings.json"
+method = "copy"
+
+[targets.readme_copy]
+artifact = "readme_doc"
+profile = "base"
+target_path = "demo-targets/docs/gemini/README.md"
+method = "copy"

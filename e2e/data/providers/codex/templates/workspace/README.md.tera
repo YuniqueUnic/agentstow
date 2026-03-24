@@ -1,0 +1,24 @@
+# {{ workspace_name }}
+
+This Codex provider fixture renders:
+
+- `AGENTS.md`
+- `TEAM_GUIDE.md`
+- `services/{{ service_name }}/AGENTS.md`
+- `.codex/config.toml`
+- `.agents/skills/repo-guide/`
+- `.env.rendered`
+
+`README.md` is normal content. Instruction discovery is configured separately in `.codex/config.toml`.
+
+## Generic Filesystem MCP Snippet
+
+```json
+{{ mcp_servers.filesystem | trim }}
+```
+
+## Generic Filesystem MCP Snippet In YAML
+
+```yaml
+{{ mcp_servers.filesystem | trim | yaml }}
+```

@@ -1,0 +1,24 @@
+# {{ workspace_name }}
+
+## Repo Rules
+
+- Codex config lives in `.codex/config.toml`.
+- Repository skills live in `.agents/skills/repo-guide/`.
+- Nested service guidance lives in `services/{{ service_name }}/AGENTS.md`.
+- `README.md` is documentation content, not a default instruction file.
+
+## Render Context
+
+- Provider: {{ env.PROVIDER_NAME }}
+- Duplicate env winner: {{ env.DUPLICATE_ENV }}
+- Readme mode: {{ env.README_RENDER_MODE }}
+
+## Reference
+
+{{ file.reference }}
+
+## Imported Filesystem MCP Preview
+
+```toml
+{{ mcp_servers.filesystem | trim | codex | toml }}
+```

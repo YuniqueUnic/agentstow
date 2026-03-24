@@ -1,0 +1,5 @@
+# MCP Notes
+
+- Imported stdio server: `filesystem`
+- Explicit HTTP server: `tavily`
+- HTTP auth is rendered from env bindings, never from inline secrets.

@@ -1,19 +1,75 @@
 [profiles.base]
-vars = { workspace_name = "claude-fixture" }
+vars = { workspace_name = "claude-provider-fixture", provider_name = "claude" }
 
-[mcp_servers.remote]
-transport = { kind = "http", url = "https://mcp.example.com/mcp", headers = { Accept = "application/json" } }
+[env.files]
+paths = [".env"]
+
+[env]
+PROVIDER_NAME = "claude"
+DUPLICATE_ENV = "from-inline-claude"
+README_IMPORT = "@README.md"
+RULE_IMPORT = "@.claude/rules/testing.md"
+
+[file.reference]
+path = "reference.md"
+
+[mcp_servers.file]
+path = "mcps.json"
+
+[mcp_servers.release_notes]
+transport = { kind = "http", url = "https://mcp.example.com/claude", headers = { Accept = "application/json" } }
 env = [
-  { key = "WEATHER_API_TOKEN", binding = { kind = "env", var = "WEATHER_API_TOKEN" } }
+  { key = "CLAUDE_API_TOKEN", binding = { kind = "env", var = "CLAUDE_API_TOKEN" } }
 ]
 
-[mcp_servers.remote.options.oauth]
+[mcp_servers.release_notes.options.oauth]
 client_id = "claude-client"
 callback_port = 4317
 auth_server_metadata_url = "https://auth.example.com/.well-known/openid-configuration"
 
-[artifacts.config]
+[artifacts.instruction_doc]
 kind = "file"
-source = "templates/config.json.tera"
+source = "templates/workspace/CLAUDE.md.tera"
+template = true
+validate_as = "none"
+
+[artifacts.provider_config]
+kind = "file"
+source = "templates/workspace/.mcp.json.tera"
 template = true
 validate_as = "json"
+
+[artifacts.workspace_bundle]
+kind = "dir"
+source = "templates/workspace"
+template = true
+
+[artifacts.readme_doc]
+kind = "file"
+source = "templates/workspace/README.md.tera"
+template = true
+validate_as = "none"
+
+[targets.bundle_copy]
+artifact = "workspace_bundle"
+profile = "base"
+target_path = "demo-targets/claude-project"
+method = "copy"
+
+[targets.instruction_symlink]
+artifact = "instruction_doc"
+profile = "base"
+target_path = "demo-targets/claude-linked/CLAUDE.md"
+method = "symlink"
+
+[targets.config_copy]
+artifact = "provider_config"
+profile = "base"
+target_path = "demo-targets/claude-config/.mcp.json"
+method = "copy"
+
+[targets.readme_copy]
+artifact = "readme_doc"
+profile = "base"
+target_path = "demo-targets/docs/claude/README.md"
+method = "copy"

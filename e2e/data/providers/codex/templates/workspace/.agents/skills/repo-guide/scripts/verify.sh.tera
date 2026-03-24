@@ -1,0 +1,3 @@
+#!/usr/bin/env sh
+set -eu
+echo "verify {{ workspace_name }} via .codex/config.toml"

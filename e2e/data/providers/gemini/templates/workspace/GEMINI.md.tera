@@ -1,0 +1,17 @@
+# {{ workspace_name }}
+
+- Context file priority starts with `GEMINI.md`.
+- Provider config path: `.gemini/settings.json`
+- Imported stdio server: `filesystem`
+- Explicit HTTP server: `cloud_tools`
+- Duplicate env winner: {{ env.DUPLICATE_ENV }}
+
+## Reference
+
+{{ file.reference }}
+
+## Gemini MCP Preview
+
+```json
+{{ mcp_servers.cloud_tools | trim | gemini | json }}
+```

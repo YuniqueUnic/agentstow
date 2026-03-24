@@ -1,0 +1,6 @@
+# Payments Service Rules
+
+- Scope: `{{ env.SERVICE_PATH }}`
+- Use the `repo-guide` skill before changing `.codex/config.toml`.
+- Preserve `.codex/config.toml` as the single source of truth for Codex MCP configuration.
+- Root instructions remain in `AGENTS.md`; README stays documentation content.

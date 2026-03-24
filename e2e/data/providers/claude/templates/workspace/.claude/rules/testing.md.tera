@@ -1,0 +1,5 @@
+# Testing Rule
+
+- Keep `CLAUDE.md` as the root instruction file.
+- Validate `.mcp.json` whenever `release_notes` changes.
+- Use `release-notes` skill before writing release summaries.

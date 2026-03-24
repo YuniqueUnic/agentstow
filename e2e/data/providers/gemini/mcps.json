@@ -1,0 +1,33 @@
+{
+  "mcpServers": {
+    "filesystem": {
+      "transport": {
+        "kind": "stdio",
+        "command": "npx",
+        "args": [
+          "-y",
+          "@modelcontextprotocol/server-filesystem",
+          "./docs",
+          "./specs"
+        ],
+        "cwd": "."
+      },
+      "env": [
+        {
+          "key": "LOG_LEVEL",
+          "binding": {
+            "kind": "literal",
+            "value": "info"
+          }
+        },
+        {
+          "key": "FIXTURE_NAME",
+          "binding": {
+            "kind": "literal",
+            "value": "gemini-provider-fixture"
+          }
+        }
+      ]
+    }
+  }
+}

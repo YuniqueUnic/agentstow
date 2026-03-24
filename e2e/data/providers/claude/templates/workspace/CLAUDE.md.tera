@@ -1,0 +1,22 @@
+# {{ workspace_name }}
+
+{{ env.README_IMPORT }}
+{{ env.RULE_IMPORT }}
+
+## Provider Notes
+
+- Provider: {{ env.PROVIDER_NAME }}
+- Duplicate env winner: {{ env.DUPLICATE_ENV }}
+- Project MCP config: `.mcp.json`
+- Imported stdio server: `filesystem`
+- Explicit HTTP server: `release_notes`
+
+## Reference
+
+{{ file.reference }}
+
+## Claude MCP Preview
+
+```json
+{{ mcp_servers.release_notes | trim | claude | json }}
+```
