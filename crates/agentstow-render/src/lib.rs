@@ -309,6 +309,8 @@ fn render_tera_template_file(path: &Path, ctx: &Context) -> Result<Vec<u8>> {
     tera.register_filter("json", McpSnippetFilter::new(McpSnippetFormat::Json));
     tera.register_filter("yaml", McpSnippetFilter::new(McpSnippetFormat::Yaml));
     tera.register_filter("codex", McpAdapterFilter::new(McpTargetAdapter::Codex));
+    tera.register_filter("claude", McpAdapterFilter::new(McpTargetAdapter::Claude));
+    tera.register_filter("gemini", McpAdapterFilter::new(McpTargetAdapter::Gemini));
     tera.add_raw_template("inline", &template)
         .map_err(|e| AgentStowError::Render {
             message: format!(

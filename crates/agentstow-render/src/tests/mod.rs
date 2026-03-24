@@ -96,7 +96,7 @@ fn render_should_include_env_file_inline_env_file_contexts_and_mcp_contexts() {
         .unwrap();
     temp.child("artifacts/hello.txt.tera")
         .write_str(
-            "owner={{ env.OWNER }}\ndirect={{ env.DIRECT_ENV }}\nduplicate={{ env.DUPLICATE_ENV }}\nref={{ file.reference }}\njson={{ mcp_servers.filesystem | trim }}\ntoml={{ mcp_servers.filesystem | trim | toml }}\nyaml={{ mcp_servers.filesystem | trim | yaml }}\ncodex_json={{ mcp_servers.filesystem | trim | codex | json }}\ncodex_toml={{ mcp_servers.filesystem | trim | codex | toml }}\n",
+            "owner={{ env.OWNER }}\ndirect={{ env.DIRECT_ENV }}\nduplicate={{ env.DUPLICATE_ENV }}\nref={{ file.reference }}\njson={{ mcp_servers.filesystem | trim }}\ntoml={{ mcp_servers.filesystem | trim | toml }}\nyaml={{ mcp_servers.filesystem | trim | yaml }}\ncodex_json={{ mcp_servers.filesystem | trim | codex | json }}\ncodex_toml={{ mcp_servers.filesystem | trim | codex | toml }}\nclaude_json={{ mcp_servers.filesystem | trim | claude | json }}\ngemini_toml={{ mcp_servers.filesystem | trim | gemini | toml }}\n",
         )
         .unwrap();
     temp.child(".env")
@@ -155,5 +155,10 @@ path = "mcps.json"
         "codex_json={\n  \"mcpServers\": {\n    \"filesystem\": {\n      \"command\": \"npx\""
     ));
     assert!(text.contains("codex_toml=[mcp_servers.filesystem]"));
+    assert!(text.contains(
+        "claude_json={\n  \"mcpServers\": {\n    \"filesystem\": {\n      \"type\": \"stdio\""
+    ));
+    assert!(text.contains("gemini_toml=[mcp_servers.filesystem]"));
+    assert!(text.contains("trust = false"));
     assert!(!text.contains("env_vars = []"));
 }

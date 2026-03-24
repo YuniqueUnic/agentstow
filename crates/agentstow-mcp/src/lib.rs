@@ -76,6 +76,106 @@ struct CodexMcpTomlServer {
     env: BTreeMap<String, String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct ClaudeMcpJsonFile {
+    #[serde(rename = "mcpServers")]
+    mcp_servers: BTreeMap<String, ClaudeMcpServer>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct ClaudeMcpTomlFile {
+    #[serde(rename = "mcp_servers", default)]
+    mcp_servers: BTreeMap<String, ClaudeMcpServer>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct ClaudeMcpOAuthConfig {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    client_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    callback_port: Option<u16>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    auth_server_metadata_url: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct ClaudeMcpServer {
+    #[serde(rename = "type", default, skip_serializing_if = "Option::is_none")]
+    transport_type: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    command: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    args: Vec<String>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    env: BTreeMap<String, String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    url: Option<String>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    headers: BTreeMap<String, String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    oauth: Option<ClaudeMcpOAuthConfig>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct GeminiMcpJsonFile {
+    #[serde(rename = "mcpServers")]
+    mcp_servers: BTreeMap<String, GeminiMcpServer>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct GeminiMcpTomlFile {
+    #[serde(rename = "mcp_servers", default)]
+    mcp_servers: BTreeMap<String, GeminiMcpServer>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct GeminiMcpOAuthConfig {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    scopes: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct GeminiMcpServer {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    command: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    args: Vec<String>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    env: BTreeMap<String, String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    cwd: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    url: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    http_url: Option<String>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    headers: BTreeMap<String, String>,
+    #[serde(rename = "type", default, skip_serializing_if = "Option::is_none")]
+    transport_type: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    timeout: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    trust: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    description: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    include_tools: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    exclude_tools: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    oauth: Option<GeminiMcpOAuthConfig>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    auth_provider_type: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    target_audience: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    target_service_account: Option<String>,
+}
+
 #[derive(Debug, Clone)]
 struct StdioEnvRender {
     env: BTreeMap<String, String>,
@@ -83,7 +183,7 @@ struct StdioEnvRender {
 }
 
 #[derive(Debug, Clone)]
-struct HttpCodexRender {
+struct HttpBindingRender {
     bearer_token_env_var: Option<String>,
     http_headers: BTreeMap<String, String>,
     env_http_headers: BTreeMap<String, String>,
@@ -99,6 +199,14 @@ enum ParsedServerSnippet {
         name: String,
         server: CodexMcpServer,
     },
+    Claude {
+        name: String,
+        server: ClaudeMcpServer,
+    },
+    Gemini {
+        name: String,
+        server: GeminiMcpServer,
+    },
 }
 
 impl ParsedServerSnippet {
@@ -106,6 +214,8 @@ impl ParsedServerSnippet {
         match self {
             Self::Generic { name, server } => render_generic_server_payload(name, server, format),
             Self::Codex { name, server } => render_codex_server_payload(name, server, format),
+            Self::Claude { name, server } => render_claude_server_payload(name, server, format),
+            Self::Gemini { name, server } => render_gemini_server_payload(name, server, format),
         }
     }
 
@@ -113,14 +223,41 @@ impl ParsedServerSnippet {
         match (self, target) {
             (snippet @ Self::Generic { .. }, McpTargetAdapter::Generic) => Ok(snippet),
             (snippet @ Self::Codex { .. }, McpTargetAdapter::Codex) => Ok(snippet),
+            (snippet @ Self::Claude { .. }, McpTargetAdapter::Claude) => Ok(snippet),
+            (snippet @ Self::Gemini { .. }, McpTargetAdapter::Gemini) => Ok(snippet),
             (Self::Generic { name, server }, McpTargetAdapter::Codex) => Ok(Self::Codex {
                 name: name.clone(),
                 server: render_codex_server(name.as_str(), &server)?,
+            }),
+            (Self::Generic { name, server }, McpTargetAdapter::Claude) => Ok(Self::Claude {
+                name: name.clone(),
+                server: render_claude_server(name.as_str(), &server)?,
+            }),
+            (Self::Generic { name, server }, McpTargetAdapter::Gemini) => Ok(Self::Gemini {
+                name: name.clone(),
+                server: render_gemini_server(name.as_str(), &server)?,
             }),
             (Self::Codex { name, server }, McpTargetAdapter::Generic) => Ok(Self::Generic {
                 name,
                 server: codex_server_to_generic_def(server),
             }),
+            (snippet, target) => Err(AgentStowError::Mcp {
+                message: format!(
+                    "无法把 {} MCP 片段直接适配为 {}；请改用通用 mcp_servers.<name> 片段作为输入",
+                    snippet.kind_name(),
+                    target.as_str()
+                )
+                .into(),
+            }),
+        }
+    }
+
+    fn kind_name(&self) -> &'static str {
+        match self {
+            Self::Generic { .. } => "通用",
+            Self::Codex { .. } => "Codex",
+            Self::Claude { .. } => "Claude",
+            Self::Gemini { .. } => "Gemini",
         }
     }
 }
@@ -136,6 +273,19 @@ pub enum McpSnippetFormat {
 pub enum McpTargetAdapter {
     Generic,
     Codex,
+    Claude,
+    Gemini,
+}
+
+impl McpTargetAdapter {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Generic => "通用",
+            Self::Codex => "Codex",
+            Self::Claude => "Claude",
+            Self::Gemini => "Gemini",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -164,7 +314,7 @@ impl Mcp {
                 split_stdio_env_bindings(name, &server.env)?;
             }
             McpTransport::Http { headers, .. } => {
-                split_http_codex_bindings(name, headers, &server.env)?;
+                split_http_env_bindings(name, headers, &server.env)?;
             }
         }
         Ok(())
@@ -406,7 +556,7 @@ fn render_codex_server(name: &str, server: &McpServerDef) -> Result<CodexMcpServ
             })
         }
         McpTransport::Http { url, headers } => {
-            let http = split_http_codex_bindings(name, headers, &server.env)?;
+            let http = split_http_env_bindings(name, headers, &server.env)?;
             Ok(CodexMcpServer::Http {
                 url: url.clone(),
                 bearer_token_env_var: http.bearer_token_env_var,
@@ -461,6 +611,63 @@ fn codex_server_to_generic_def(server: CodexMcpServer) -> McpServerDef {
                 }))
                 .collect(),
         },
+    }
+}
+
+fn render_claude_server(name: &str, server: &McpServerDef) -> Result<ClaudeMcpServer> {
+    match &server.transport {
+        McpTransport::Stdio { command, args, cwd } => {
+            if cwd.is_some() {
+                return Err(AgentStowError::Mcp {
+                    message: format!(
+                        "mcp[{name}] Claude stdio 当前不支持 cwd；Anthropic 官方 MCP 配置文档未声明该字段"
+                    )
+                    .into(),
+                });
+            }
+
+            Ok(ClaudeMcpServer {
+                transport_type: Some("stdio".to_string()),
+                command: Some(command.clone()),
+                args: args.clone(),
+                env: render_bound_env_map(name, &server.env, EnvReferenceStyle::Claude)?,
+                ..Default::default()
+            })
+        }
+        McpTransport::Http { url, headers } => {
+            let http = split_http_env_bindings(name, headers, &server.env)?;
+            Ok(ClaudeMcpServer {
+                transport_type: Some("http".to_string()),
+                url: Some(url.clone()),
+                headers: materialize_http_headers(&http, EnvReferenceStyle::Claude),
+                ..Default::default()
+            })
+        }
+    }
+}
+
+fn render_gemini_server(name: &str, server: &McpServerDef) -> Result<GeminiMcpServer> {
+    match &server.transport {
+        McpTransport::Stdio { command, args, cwd } => Ok(GeminiMcpServer {
+            command: Some(command.clone()),
+            args: args.clone(),
+            env: render_bound_env_map(name, &server.env, EnvReferenceStyle::Gemini)?,
+            cwd: cwd
+                .as_ref()
+                .map(|value| value.as_os_str().to_string_lossy().to_string()),
+            trust: Some(false),
+            ..Default::default()
+        }),
+        McpTransport::Http { url, headers } => {
+            let http = split_http_env_bindings(name, headers, &server.env)?;
+            Ok(GeminiMcpServer {
+                url: Some(url.clone()),
+                transport_type: Some("http".to_string()),
+                headers: materialize_http_headers(&http, EnvReferenceStyle::Gemini),
+                trust: Some(false),
+                ..Default::default()
+            })
+        }
     }
 }
 
@@ -617,21 +824,222 @@ fn render_codex_server_yaml_payload(name: &str, server: &CodexMcpServer) -> Resu
     })
 }
 
+fn render_claude_server_payload(
+    name: &str,
+    server: &ClaudeMcpServer,
+    format: McpSnippetFormat,
+) -> Result<String> {
+    match format {
+        McpSnippetFormat::Json => render_claude_server_json_payload(name, server),
+        McpSnippetFormat::Toml => render_claude_server_toml_payload(name, server),
+        McpSnippetFormat::Yaml => render_claude_server_yaml_payload(name, server),
+    }
+}
+
+fn render_claude_server_json_payload(name: &str, server: &ClaudeMcpServer) -> Result<String> {
+    let file = ClaudeMcpJsonFile {
+        mcp_servers: BTreeMap::from([(name.to_string(), server.clone())]),
+    };
+    serde_json::to_string_pretty(&file).map_err(|e| AgentStowError::Mcp {
+        message: format!("序列化 Claude MCP JSON 失败：{e}").into(),
+    })
+}
+
+fn render_claude_server_toml_payload(name: &str, server: &ClaudeMcpServer) -> Result<String> {
+    let rendered_name = render_server_name(name);
+    let mut lines = vec![format!("[mcp_servers.{rendered_name}]")];
+
+    if let Some(transport_type) = &server.transport_type {
+        lines.push(format!("type = {}", encode_toml_string(transport_type)?));
+    }
+    if let Some(command) = &server.command {
+        lines.push(format!("command = {}", encode_toml_string(command)?));
+    }
+    if !server.args.is_empty() {
+        lines.push(format!(
+            "args = {}",
+            encode_toml_string_array(&server.args)?
+        ));
+    }
+    if let Some(url) = &server.url {
+        lines.push(format!("url = {}", encode_toml_string(url)?));
+    }
+    append_env_block(&mut lines, &rendered_name, server.env.clone())?;
+    append_string_map_table(&mut lines, &rendered_name, "headers", &server.headers)?;
+    if let Some(oauth) = &server.oauth {
+        append_claude_oauth_block(&mut lines, &rendered_name, oauth)?;
+    }
+
+    Ok(lines.join("\n") + "\n")
+}
+
+fn render_claude_server_yaml_payload(name: &str, server: &ClaudeMcpServer) -> Result<String> {
+    let file = ClaudeMcpJsonFile {
+        mcp_servers: BTreeMap::from([(name.to_string(), server.clone())]),
+    };
+    serde_yaml::to_string(&file).map_err(|e| AgentStowError::Mcp {
+        message: format!("序列化 Claude MCP YAML 失败：{e}").into(),
+    })
+}
+
+fn render_gemini_server_payload(
+    name: &str,
+    server: &GeminiMcpServer,
+    format: McpSnippetFormat,
+) -> Result<String> {
+    match format {
+        McpSnippetFormat::Json => render_gemini_server_json_payload(name, server),
+        McpSnippetFormat::Toml => render_gemini_server_toml_payload(name, server),
+        McpSnippetFormat::Yaml => render_gemini_server_yaml_payload(name, server),
+    }
+}
+
+fn render_gemini_server_json_payload(name: &str, server: &GeminiMcpServer) -> Result<String> {
+    let file = GeminiMcpJsonFile {
+        mcp_servers: BTreeMap::from([(name.to_string(), server.clone())]),
+    };
+    serde_json::to_string_pretty(&file).map_err(|e| AgentStowError::Mcp {
+        message: format!("序列化 Gemini MCP JSON 失败：{e}").into(),
+    })
+}
+
+fn render_gemini_server_toml_payload(name: &str, server: &GeminiMcpServer) -> Result<String> {
+    let rendered_name = render_server_name(name);
+    let mut lines = vec![format!("[mcp_servers.{rendered_name}]")];
+
+    if let Some(command) = &server.command {
+        lines.push(format!("command = {}", encode_toml_string(command)?));
+    }
+    if !server.args.is_empty() {
+        lines.push(format!(
+            "args = {}",
+            encode_toml_string_array(&server.args)?
+        ));
+    }
+    if let Some(cwd) = &server.cwd {
+        lines.push(format!("cwd = {}", encode_toml_string(cwd)?));
+    }
+    if let Some(url) = &server.url {
+        lines.push(format!("url = {}", encode_toml_string(url)?));
+    }
+    if let Some(http_url) = &server.http_url {
+        lines.push(format!("httpUrl = {}", encode_toml_string(http_url)?));
+    }
+    if let Some(transport_type) = &server.transport_type {
+        lines.push(format!("type = {}", encode_toml_string(transport_type)?));
+    }
+    if let Some(timeout) = server.timeout {
+        lines.push(format!("timeout = {timeout}"));
+    }
+    if let Some(trust) = server.trust {
+        lines.push(format!("trust = {trust}"));
+    }
+    if let Some(description) = &server.description {
+        lines.push(format!(
+            "description = {}",
+            encode_toml_string(description)?
+        ));
+    }
+    if !server.include_tools.is_empty() {
+        lines.push(format!(
+            "includeTools = {}",
+            encode_toml_string_array(&server.include_tools)?
+        ));
+    }
+    if !server.exclude_tools.is_empty() {
+        lines.push(format!(
+            "excludeTools = {}",
+            encode_toml_string_array(&server.exclude_tools)?
+        ));
+    }
+    if let Some(auth_provider_type) = &server.auth_provider_type {
+        lines.push(format!(
+            "authProviderType = {}",
+            encode_toml_string(auth_provider_type)?
+        ));
+    }
+    if let Some(target_audience) = &server.target_audience {
+        lines.push(format!(
+            "targetAudience = {}",
+            encode_toml_string(target_audience)?
+        ));
+    }
+    if let Some(target_service_account) = &server.target_service_account {
+        lines.push(format!(
+            "targetServiceAccount = {}",
+            encode_toml_string(target_service_account)?
+        ));
+    }
+
+    append_env_block(&mut lines, &rendered_name, server.env.clone())?;
+    append_string_map_table(&mut lines, &rendered_name, "headers", &server.headers)?;
+    if let Some(oauth) = &server.oauth {
+        append_gemini_oauth_block(&mut lines, &rendered_name, oauth)?;
+    }
+
+    Ok(lines.join("\n") + "\n")
+}
+
+fn render_gemini_server_yaml_payload(name: &str, server: &GeminiMcpServer) -> Result<String> {
+    let file = GeminiMcpJsonFile {
+        mcp_servers: BTreeMap::from([(name.to_string(), server.clone())]),
+    };
+    serde_yaml::to_string(&file).map_err(|e| AgentStowError::Mcp {
+        message: format!("序列化 Gemini MCP YAML 失败：{e}").into(),
+    })
+}
+
 fn parse_rendered_server(rendered: &str) -> Result<ParsedServerSnippet> {
     if let Ok(file) = serde_json::from_str::<GenericMcpJsonFile>(rendered) {
         return extract_single_generic_server(file.mcp_servers);
     }
+    if looks_like_gemini_snippet(rendered)
+        && let Ok(file) = serde_json::from_str::<GeminiMcpJsonFile>(rendered)
+    {
+        return extract_single_gemini_server(file.mcp_servers);
+    }
+    if looks_like_claude_snippet(rendered)
+        && let Ok(file) = serde_json::from_str::<ClaudeMcpJsonFile>(rendered)
+    {
+        return extract_single_claude_server(file.mcp_servers);
+    }
     if let Ok(file) = serde_json::from_str::<CodexMcpJsonFile>(rendered) {
         return extract_single_codex_server(file.mcp_servers);
+    }
+    if let Ok(file) = serde_json::from_str::<ClaudeMcpJsonFile>(rendered) {
+        return extract_single_claude_server(file.mcp_servers);
     }
     if let Ok(file) = serde_yaml::from_str::<GenericMcpJsonFile>(rendered) {
         return extract_single_generic_server(file.mcp_servers);
     }
+    if looks_like_gemini_snippet(rendered)
+        && let Ok(file) = serde_yaml::from_str::<GeminiMcpJsonFile>(rendered)
+    {
+        return extract_single_gemini_server(file.mcp_servers);
+    }
+    if looks_like_claude_snippet(rendered)
+        && let Ok(file) = serde_yaml::from_str::<ClaudeMcpJsonFile>(rendered)
+    {
+        return extract_single_claude_server(file.mcp_servers);
+    }
     if let Ok(file) = serde_yaml::from_str::<CodexMcpJsonFile>(rendered) {
         return extract_single_codex_server(file.mcp_servers);
     }
+    if let Ok(file) = serde_yaml::from_str::<ClaudeMcpJsonFile>(rendered) {
+        return extract_single_claude_server(file.mcp_servers);
+    }
     if let Ok(file) = toml::from_str::<GenericMcpTomlFile>(rendered) {
         return extract_single_generic_server(file.mcp_servers);
+    }
+    if looks_like_gemini_snippet(rendered)
+        && let Ok(file) = toml::from_str::<GeminiMcpTomlFile>(rendered)
+    {
+        return extract_single_gemini_server(file.mcp_servers);
+    }
+    if looks_like_claude_snippet(rendered)
+        && let Ok(file) = toml::from_str::<ClaudeMcpTomlFile>(rendered)
+    {
+        return extract_single_claude_server(file.mcp_servers);
     }
     if let Ok(file) = toml::from_str::<CodexMcpTomlFile>(rendered) {
         let servers = file
@@ -641,9 +1049,12 @@ fn parse_rendered_server(rendered: &str) -> Result<ParsedServerSnippet> {
             .collect::<Result<BTreeMap<_, _>>>()?;
         return extract_single_codex_server(servers);
     }
+    if let Ok(file) = toml::from_str::<ClaudeMcpTomlFile>(rendered) {
+        return extract_single_claude_server(file.mcp_servers);
+    }
 
     Err(AgentStowError::Mcp {
-        message: "无法解析 MCP 片段：既不是通用片段，也不是 Codex 片段".into(),
+        message: "无法解析 MCP 片段：既不是通用片段，也不是 Codex/Claude/Gemini 片段".into(),
     })
 }
 
@@ -677,6 +1088,36 @@ fn extract_single_codex_server(
     Ok(ParsedServerSnippet::Codex { name, server })
 }
 
+fn extract_single_claude_server(
+    servers: BTreeMap<String, ClaudeMcpServer>,
+) -> Result<ParsedServerSnippet> {
+    let mut iter = servers.into_iter();
+    let (name, server) = iter.next().ok_or_else(|| AgentStowError::Mcp {
+        message: "MCP 片段里没有 server".into(),
+    })?;
+    if iter.next().is_some() {
+        return Err(AgentStowError::Mcp {
+            message: "MCP 片段一次只能转换一个 server".into(),
+        });
+    }
+    Ok(ParsedServerSnippet::Claude { name, server })
+}
+
+fn extract_single_gemini_server(
+    servers: BTreeMap<String, GeminiMcpServer>,
+) -> Result<ParsedServerSnippet> {
+    let mut iter = servers.into_iter();
+    let (name, server) = iter.next().ok_or_else(|| AgentStowError::Mcp {
+        message: "MCP 片段里没有 server".into(),
+    })?;
+    if iter.next().is_some() {
+        return Err(AgentStowError::Mcp {
+            message: "MCP 片段一次只能转换一个 server".into(),
+        });
+    }
+    Ok(ParsedServerSnippet::Gemini { name, server })
+}
+
 fn infer_snippet_format(rendered: &str) -> McpSnippetFormat {
     let trimmed = rendered.trim_start();
     if trimmed.starts_with('{') {
@@ -701,6 +1142,62 @@ fn append_env_block(
     lines.push(format!("[mcp_servers.{rendered_name}.env]"));
     for (key, value) in env {
         lines.push(format!("{key} = {}", encode_toml_string(&value)?));
+    }
+    Ok(())
+}
+
+fn append_string_map_table(
+    lines: &mut Vec<String>,
+    rendered_name: &str,
+    table_name: &str,
+    values: &BTreeMap<String, String>,
+) -> Result<()> {
+    if values.is_empty() {
+        return Ok(());
+    }
+
+    lines.push(String::new());
+    lines.push(format!("[mcp_servers.{rendered_name}.{table_name}]"));
+    for (key, value) in values {
+        lines.push(format!("{key} = {}", encode_toml_string(value)?));
+    }
+    Ok(())
+}
+
+fn append_claude_oauth_block(
+    lines: &mut Vec<String>,
+    rendered_name: &str,
+    oauth: &ClaudeMcpOAuthConfig,
+) -> Result<()> {
+    lines.push(String::new());
+    lines.push(format!("[mcp_servers.{rendered_name}.oauth]"));
+    if let Some(client_id) = &oauth.client_id {
+        lines.push(format!("clientId = {}", encode_toml_string(client_id)?));
+    }
+    if let Some(callback_port) = oauth.callback_port {
+        lines.push(format!("callbackPort = {callback_port}"));
+    }
+    if let Some(url) = &oauth.auth_server_metadata_url {
+        lines.push(format!(
+            "authServerMetadataUrl = {}",
+            encode_toml_string(url)?
+        ));
+    }
+    Ok(())
+}
+
+fn append_gemini_oauth_block(
+    lines: &mut Vec<String>,
+    rendered_name: &str,
+    oauth: &GeminiMcpOAuthConfig,
+) -> Result<()> {
+    lines.push(String::new());
+    lines.push(format!("[mcp_servers.{rendered_name}.oauth]"));
+    if !oauth.scopes.is_empty() {
+        lines.push(format!(
+            "scopes = {}",
+            encode_toml_string_array(&oauth.scopes)?
+        ));
     }
     Ok(())
 }
@@ -743,11 +1240,64 @@ fn split_stdio_env_bindings(name: &str, envs: &[EnvVarDef]) -> Result<StdioEnvRe
     })
 }
 
-fn split_http_codex_bindings(
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum EnvReferenceStyle {
+    Claude,
+    Gemini,
+}
+
+fn render_bound_env_map(
+    name: &str,
+    envs: &[EnvVarDef],
+    style: EnvReferenceStyle,
+) -> Result<BTreeMap<String, String>> {
+    let mut rendered = BTreeMap::new();
+    for EnvVarDef { key, binding } in envs {
+        let value = match binding {
+            SecretBinding::Literal { value } => value.clone(),
+            SecretBinding::Env { var } => format_env_reference(var, style),
+        };
+        if rendered.insert(key.clone(), value).is_some() {
+            return Err(AgentStowError::Mcp {
+                message: format!("mcp[{name}] env 重复声明：{key}").into(),
+            });
+        }
+    }
+    Ok(rendered)
+}
+
+fn materialize_http_headers(
+    render: &HttpBindingRender,
+    style: EnvReferenceStyle,
+) -> BTreeMap<String, String> {
+    let mut headers = render.http_headers.clone();
+    if let Some(var) = &render.bearer_token_env_var {
+        headers.insert(
+            "Authorization".to_string(),
+            format!("Bearer {}", format_env_reference(var, style)),
+        );
+    }
+    headers.extend(
+        render
+            .env_http_headers
+            .iter()
+            .map(|(key, var)| (key.clone(), format_env_reference(var, style))),
+    );
+    headers
+}
+
+fn format_env_reference(var: &str, style: EnvReferenceStyle) -> String {
+    match style {
+        EnvReferenceStyle::Claude => format!("${{{var}}}"),
+        EnvReferenceStyle::Gemini => format!("${var}"),
+    }
+}
+
+fn split_http_env_bindings(
     name: &str,
     headers: &std::collections::HashMap<String, String>,
     envs: &[EnvVarDef],
-) -> Result<HttpCodexRender> {
+) -> Result<HttpBindingRender> {
     let http_headers = headers
         .iter()
         .map(|(key, value)| (key.clone(), value.clone()))
@@ -826,7 +1376,7 @@ fn split_http_codex_bindings(
         });
     }
 
-    Ok(HttpCodexRender {
+    Ok(HttpBindingRender {
         bearer_token_env_var,
         http_headers,
         env_http_headers,
@@ -839,6 +1389,41 @@ fn looks_like_bearer_env_var(var: &str) -> bool {
         || upper.contains("API_KEY")
         || upper.contains("BEARER")
         || upper.contains("AUTH")
+}
+
+fn looks_like_gemini_snippet(rendered: &str) -> bool {
+    [
+        "httpUrl",
+        "http_url",
+        "includeTools",
+        "include_tools",
+        "excludeTools",
+        "exclude_tools",
+        "authProviderType",
+        "auth_provider_type",
+        "targetAudience",
+        "target_audience",
+        "targetServiceAccount",
+        "target_service_account",
+        "trust",
+        "timeout",
+        "cwd",
+    ]
+    .iter()
+    .any(|marker| rendered.contains(marker))
+}
+
+fn looks_like_claude_snippet(rendered: &str) -> bool {
+    [
+        "\"type\"",
+        "\ntype = ",
+        "\ntype:",
+        "clientId",
+        "callbackPort",
+        "authServerMetadataUrl",
+    ]
+    .iter()
+    .any(|marker| rendered.contains(marker))
 }
 
 fn render_server_name(name: &str) -> String {

@@ -142,6 +142,108 @@ fn adapt_server_snippet_to_codex_should_map_renamed_http_env_to_env_http_headers
 }
 
 #[test]
+fn adapt_server_snippet_to_claude_should_materialize_http_headers() {
+    let server = agentstow_manifest::McpServerDef {
+        transport: agentstow_manifest::McpTransport::Http {
+            url: "https://example.com/mcp".to_string(),
+            headers: HashMap::from([("Accept".to_string(), "application/json".to_string())]),
+        },
+        env: vec![agentstow_manifest::EnvVarDef {
+            key: "TAVILY_API_KEY".to_string(),
+            binding: agentstow_core::SecretBinding::Env {
+                var: "TAVILY_API_KEY".to_string(),
+            },
+        }],
+    };
+
+    let generic_json =
+        Mcp::render_generic_server_snippet("demo", &server, McpSnippetFormat::Json).unwrap();
+    let claude_json =
+        Mcp::adapt_server_snippet(&generic_json, McpTargetAdapter::Claude, None).unwrap();
+    let claude_toml = Mcp::convert_server_snippet(&claude_json, McpSnippetFormat::Toml).unwrap();
+
+    assert!(claude_json.contains("\"type\": \"http\""));
+    assert!(claude_json.contains("\"Authorization\": \"Bearer ${TAVILY_API_KEY}\""));
+    assert!(claude_json.contains("\"Accept\": \"application/json\""));
+    assert!(claude_toml.contains("type = \"http\""));
+    assert!(claude_toml.contains("Authorization = \"Bearer ${TAVILY_API_KEY}\""));
+}
+
+#[test]
+fn adapt_server_snippet_to_claude_should_reject_stdio_cwd() {
+    let server = agentstow_manifest::McpServerDef {
+        transport: agentstow_manifest::McpTransport::Stdio {
+            command: "uvx".to_string(),
+            args: vec!["demo-server".to_string()],
+            cwd: Some("/tmp/demo".into()),
+        },
+        env: vec![],
+    };
+
+    let generic_json =
+        Mcp::render_generic_server_snippet("demo", &server, McpSnippetFormat::Json).unwrap();
+    let err = Mcp::adapt_server_snippet(&generic_json, McpTargetAdapter::Claude, None).unwrap_err();
+
+    assert!(err.to_string().contains("Claude stdio 当前不支持 cwd"));
+}
+
+#[test]
+fn adapt_server_snippet_to_gemini_should_render_env_maps_and_default_trust() {
+    let server = agentstow_manifest::McpServerDef {
+        transport: agentstow_manifest::McpTransport::Stdio {
+            command: "uvx".to_string(),
+            args: vec!["demo-server".to_string()],
+            cwd: Some("/tmp/demo".into()),
+        },
+        env: vec![agentstow_manifest::EnvVarDef {
+            key: "API_KEY".to_string(),
+            binding: agentstow_core::SecretBinding::Env {
+                var: "SHARED_KEY".to_string(),
+            },
+        }],
+    };
+
+    let generic_json =
+        Mcp::render_generic_server_snippet("demo", &server, McpSnippetFormat::Json).unwrap();
+    let gemini_json =
+        Mcp::adapt_server_snippet(&generic_json, McpTargetAdapter::Gemini, None).unwrap();
+    let gemini_toml = Mcp::convert_server_snippet(&gemini_json, McpSnippetFormat::Toml).unwrap();
+
+    assert!(gemini_json.contains("\"command\": \"uvx\""));
+    assert!(gemini_json.contains("\"cwd\": \"/tmp/demo\""));
+    assert!(gemini_json.contains("\"trust\": false"));
+    assert!(gemini_json.contains("\"API_KEY\": \"$SHARED_KEY\""));
+    assert!(gemini_toml.contains("cwd = \"/tmp/demo\""));
+    assert!(gemini_toml.contains("trust = false"));
+    assert!(gemini_toml.contains("API_KEY = \"$SHARED_KEY\""));
+}
+
+#[test]
+fn adapt_server_snippet_to_gemini_should_materialize_http_headers() {
+    let server = agentstow_manifest::McpServerDef {
+        transport: agentstow_manifest::McpTransport::Http {
+            url: "https://example.com/mcp".to_string(),
+            headers: HashMap::from([("Accept".to_string(), "application/json".to_string())]),
+        },
+        env: vec![agentstow_manifest::EnvVarDef {
+            key: "X-Workspace-Token".to_string(),
+            binding: agentstow_core::SecretBinding::Env {
+                var: "WORKSPACE_TOKEN".to_string(),
+            },
+        }],
+    };
+
+    let generic_json =
+        Mcp::render_generic_server_snippet("demo", &server, McpSnippetFormat::Json).unwrap();
+    let gemini_json =
+        Mcp::adapt_server_snippet(&generic_json, McpTargetAdapter::Gemini, None).unwrap();
+
+    assert!(gemini_json.contains("\"type\": \"http\""));
+    assert!(gemini_json.contains("\"trust\": false"));
+    assert!(gemini_json.contains("\"X-Workspace-Token\": \"$WORKSPACE_TOKEN\""));
+}
+
+#[test]
 fn validate_server_should_reject_http_literal_env() {
     let server = agentstow_manifest::McpServerDef {
         transport: agentstow_manifest::McpTransport::Http {

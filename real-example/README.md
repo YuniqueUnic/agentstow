@@ -10,10 +10,13 @@
   会按当前目标文件格式自动渲染；无法判断时回退 JSON。
   如果你要强制格式，可以在模板里写 `{{ mcp_servers.filesystem | toml }}`、`{{ mcp_servers.filesystem | json }}`、`{{ mcp_servers.filesystem | yaml }}`。
   如果目标文件需要 OpenAI Codex MCP 语法，则显式写 `{{ mcp_servers.filesystem | codex }}`。
+  如果目标文件需要 Anthropic Claude 或 Gemini CLI 的 MCP 语法，则分别写 `{{ mcp_servers.filesystem | claude }}`、`{{ mcp_servers.filesystem | gemini }}`。
   `codex` filter 会把通用 schema 适配成 Codex 官方字段：
   stdio server 输出 `command` / `args` / `env` / `env_vars` / `cwd`；
   HTTP server 输出 `url` / `bearer_token_env_var` / `http_headers` / `env_http_headers`。
-  也可以继续链式指定输出格式，例如 `{{ mcp_servers.filesystem | codex | toml }}`、`{{ mcp_servers.filesystem | codex | json }}`、`{{ mcp_servers.filesystem | codex | yaml }}`。
+  `claude` filter 会输出 Claude Code 兼容的 `type` / `command` / `args` / `env` / `url` / `headers` 片段；Claude 官方当前未声明 stdio `cwd` 字段，因此带 `cwd` 的 stdio server 会直接报错。
+  `gemini` filter 会输出 Gemini CLI 兼容的 `command` / `args` / `env` / `cwd` / `url` / `type` / `headers` 片段，并显式写出官方默认值 `trust = false`。
+  也可以继续链式指定输出格式，例如 `{{ mcp_servers.filesystem | codex | toml }}`、`{{ mcp_servers.filesystem | claude | json }}`、`{{ mcp_servers.filesystem | gemini | yaml }}`。
 - `kind = "dir" + template = true`：把整棵 `.agents` 目录作为一等渲染产物。
 - `copy + symlink`：同一批渲染结果既可复制到目标，也可直接软链接到目标。
 
