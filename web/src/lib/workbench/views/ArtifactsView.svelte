@@ -1178,29 +1178,35 @@ Hello {{ name }}.
         </div>
       {/if}
 
-  <div class="explorer__section">
+  <div class="explorer__section explorer__section--profiles">
     <div class="section__title">
-      <span>Profiles</span>
-      <strong>{profileIds.length}</strong>
-        </div>
-        <div class="chips">
-          {#each profileIds as profileId (profileId)}
-            <button
-              class={['chip', selectedProfile === profileId ? 'chip--active' : ''].join(' ')}
-              onclick={() => onSelectProfile(profileId)}
-              type="button"
-            >
-              {profileId}
-            </button>
-      {/each}
+      <span>
+        {profileIds.length > 1
+          ? 'Profiles'
+          : selectedProfile
+            ? `Profile · ${selectedProfile}`
+            : 'Profile'}
+      </span>
+      <strong>
+        {selectedProfile
+          ? `${profileDetail?.merged_vars.length ?? 0} vars`
+          : profileIds.length}
+      </strong>
     </div>
-  </div>
 
-  <div class="explorer__section">
-    <div class="section__title">
-      <span>Profile Vars</span>
-      <strong>{profileDetail?.merged_vars.length ?? 0}</strong>
-    </div>
+    {#if profileIds.length > 1}
+      <div class="chips chips--tight profile-chips">
+        {#each profileIds as profileId (profileId)}
+          <button
+            class={['chip', selectedProfile === profileId ? 'chip--active' : ''].join(' ')}
+            onclick={() => onSelectProfile(profileId)}
+            type="button"
+          >
+            {profileId}
+          </button>
+        {/each}
+      </div>
+    {/if}
 
     {#if !selectedProfile}
       <div class="list__static">
@@ -1220,16 +1226,16 @@ Hello {{ name }}.
         <span class="mono">{selectedProfile}</span>
       </div>
     {:else}
-      <div class="token-list token-list--stack">
+      <div class="profile-vars-grid" aria-label="Profile Vars">
         {#each profileDetail.merged_vars as variable (variable.key)}
           <button
-            class="token token--interactive"
+            class="profile-var"
             type="button"
             title={variable.value_json}
             onclick={() => void copyToClipboard(`{{ ${variable.key} }}`, 'Tera 占位符')}
           >
-            <span class="token__label">{variable.key}</span>
-            <span class="token__meta mono">{`{{ ${variable.key} }}`}</span>
+            <span class="profile-var__key">{variable.key}</span>
+            <span class="profile-var__placeholder mono">{`{{ ${variable.key} }}`}</span>
           </button>
         {/each}
       </div>

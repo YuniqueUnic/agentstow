@@ -268,7 +268,7 @@
         <SplitView
           autoSaveId="workbench:links:stack"
           direction="vertical"
-          initialLeftPct={56}
+          initialLeftPct={50}
           minLeftPx={240}
           minRightPx={180}
         >
@@ -336,7 +336,7 @@
           {/snippet}
 
           {#snippet right()}
-            <section class="panel bottom-panel" aria-label="Links 结果面板">
+            <section class="panel bottom-panel links-results" aria-label="Links 结果面板">
               <Tabs.Root value={panelTab} onValueChange={(next) => (panelTab = next as typeof panelTab)}>
                 <div class="region__header">
                   <Tabs.List class="tabs" aria-label="Links panel tabs">
@@ -361,7 +361,7 @@
                               {item.message ?? truncateMiddle(item.item.target_path, 88)}
                             </span>
                           </div>
-                          <span class="mono muted">{item.item.method}</span>
+                          <span class="result-row__trail mono muted">{item.item.method}</span>
                         </li>
                       {/each}
                     </ul>
@@ -438,7 +438,7 @@
       {/snippet}
 
       {#snippet right()}
-        <section class="region secondary-sidebar" aria-label="links 操作侧栏">
+        <section class="region secondary-sidebar links-ops" aria-label="links 操作侧栏">
           <div class="region__header">
             <span>Operations</span>
             <span class="mono">{linkScope}</span>

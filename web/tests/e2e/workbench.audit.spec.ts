@@ -31,6 +31,11 @@ test('captures desktop UI audit screenshots for boot and workbench views', async
   const linksPath = testInfo.outputPath('links-desktop.png');
   await page.screenshot({ path: linksPath, fullPage: true });
   await testInfo.attach('links-desktop', { path: linksPath, contentType: 'image/png' });
+
+  await page.setViewportSize({ width: 1440, height: 780 });
+  const linksShortPath = testInfo.outputPath('links-short.png');
+  await page.screenshot({ path: linksShortPath, fullPage: true });
+  await testInfo.attach('links-short', { path: linksShortPath, contentType: 'image/png' });
 });
 
 test('captures mobile UI audit screenshots and guards against horizontal overflow', async ({
