@@ -111,6 +111,29 @@
     return linkOp.items.find((item) => item.item.target === activeTarget.id) ?? null;
   });
 
+  const scopedTargets = $derived.by(() => {
+    if (linkScope === 'all') {
+      return filteredTargets;
+    }
+
+    return targets.filter((target) => selectedTargets.includes(target.id));
+  });
+
+  const showDefaultProfileFallback = $derived(
+    scopedTargets.some((target) => !target.profile)
+  );
+
+  const canRepair = $derived.by(() => {
+    if (linkUnhealthyOnly) {
+      return filteredTargets.length > 0;
+    }
+
+    return scopedTargets.some((target) => {
+      const status = statusByPath.get(target.target_path);
+      return Boolean(status && !status.ok);
+    });
+  });
+
   function desiredSummary(desired: LinkDesiredInstallResponse): string {
     if (desired.kind === 'copy') {
       return `copy · ${desired.bytes_len} bytes · ${desired.blake3.slice(0, 10)}…`;
@@ -134,6 +157,20 @@
     }
 
     virtualizer.setOptions({ count: nextCount });
+  });
+
+  $effect(() => {
+    if (linkOp) {
+      panelTab = 'result';
+      return;
+    }
+
+    if (activeLinkStatus) {
+      panelTab = 'status';
+      return;
+    }
+
+    panelTab = 'result';
   });
 </script>
 
@@ -450,10 +487,12 @@
                 <span class="ops-metric__label">Selected</span>
                 <strong class="mono">{selectedTargets.length}</strong>
               </div>
-              <div class="ops-metric">
-                <span class="ops-metric__label">Profile</span>
-                <strong class="mono">{selectedProfile ?? 'auto'}</strong>
-              </div>
+              {#if showDefaultProfileFallback}
+                <div class="ops-metric">
+                  <span class="ops-metric__label">Default Fallback</span>
+                  <strong class="mono">{selectedProfile ?? 'auto'}</strong>
+                </div>
+              {/if}
               <div class="ops-metric">
                 <span class="ops-metric__label">Force</span>
                 <strong class="mono">{linkForce ? 'on' : 'off'}</strong>
@@ -507,14 +546,16 @@
               >
                 {busyLinkOp && linkOpTitle === 'apply' ? '处理中…' : 'Apply'}
               </button>
-              <button
-                class="ui-button ui-button--primary ui-button--danger"
-                disabled={busyLinkOp}
-                type="button"
-                onclick={() => void onRunLinkOperation('repair')}
-              >
-                {busyLinkOp && linkOpTitle === 'repair' ? '处理中…' : 'Repair'}
-              </button>
+              {#if canRepair}
+                <button
+                  class="ui-button ui-button--subtle"
+                  disabled={busyLinkOp}
+                  type="button"
+                  onclick={() => void onRunLinkOperation('repair')}
+                >
+                  {busyLinkOp && linkOpTitle === 'repair' ? '处理中…' : 'Repair'}
+                </button>
+              {/if}
             </div>
 
             <p class="stack-note stack-note--compact">

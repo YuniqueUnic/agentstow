@@ -1,9 +1,14 @@
 <script lang="ts">
+  import CodeEditor from '$lib/components/CodeEditor.svelte';
   import type {
     ProfileDetailResponse,
     ProfileVarSyntaxModeResponse,
     ProfileVarUpdateItemRequest
   } from '$lib/types';
+
+  type DraftProfileVarRow = ProfileVarUpdateItemRequest & {
+    draftId: string;
+  };
 
   type Props = {
     selectedProfile: string | null;
@@ -25,14 +30,26 @@
     onCopyPlaceholder
   }: Props = $props();
 
-  let draftRows = $state<ProfileVarUpdateItemRequest[]>([]);
+  let draftRows = $state<DraftProfileVarRow[]>([]);
   let syncKey = $state<string | null>(null);
+  let nextDraftId = 0;
 
-  function buildRows(detail: ProfileDetailResponse | null): ProfileVarUpdateItemRequest[] {
-    return (detail?.declared_vars ?? []).map((item) => ({
-      key: item.key,
-      value_json: item.value_json
-    }));
+  function createDraftRow(item?: Partial<ProfileVarUpdateItemRequest>): DraftProfileVarRow {
+    nextDraftId += 1;
+    return {
+      draftId: `profile-var-draft-${nextDraftId}`,
+      key: item?.key ?? '',
+      value_json: item?.value_json ?? '""'
+    };
+  }
+
+  function buildRows(detail: ProfileDetailResponse | null): DraftProfileVarRow[] {
+    return (detail?.declared_vars ?? []).map((item) =>
+      createDraftRow({
+        key: item.key,
+        value_json: item.value_json
+      })
+    );
   }
 
   function syntaxModeLabel(mode: ProfileVarSyntaxModeResponse | undefined): string {
@@ -61,22 +78,35 @@
     }
   }
 
-  const declaredRowsSnapshot = $derived(JSON.stringify(buildRows(detail)));
-  const dirty = $derived(JSON.stringify(draftRows) !== declaredRowsSnapshot);
+  const declaredRowsSnapshot = $derived(
+    JSON.stringify(
+      buildRows(detail).map((item) => ({
+        key: item.key,
+        value_json: item.value_json
+      }))
+    )
+  );
+  const draftRowsSnapshot = $derived(
+    JSON.stringify(
+      draftRows.map((item) => ({
+        key: item.key,
+        value_json: item.value_json
+      }))
+    )
+  );
+  const dirty = $derived(draftRowsSnapshot !== declaredRowsSnapshot);
   const declaredKeySet = $derived.by(() => new Set((detail?.declared_vars ?? []).map((item) => item.key)));
 
-  function replaceRow(index: number, patch: Partial<ProfileVarUpdateItemRequest>): void {
-    const next = draftRows.slice();
-    next[index] = { ...next[index], ...patch };
-    draftRows = next;
+  function replaceRow(draftId: string, patch: Partial<ProfileVarUpdateItemRequest>): void {
+    draftRows = draftRows.map((row) => (row.draftId === draftId ? { ...row, ...patch } : row));
   }
 
   function addRow(): void {
-    draftRows = [...draftRows, { key: '', value_json: '""' }];
+    draftRows = [...draftRows, createDraftRow()];
   }
 
-  function removeRow(index: number): void {
-    draftRows = draftRows.filter((_, currentIndex) => currentIndex !== index);
+  function removeRow(draftId: string): void {
+    draftRows = draftRows.filter((row) => row.draftId !== draftId);
   }
 
   function resetDraft(): void {
@@ -167,48 +197,69 @@
         {#if draftRows.length === 0}
           <p class="empty empty--flush">（当前 profile 还没有显式声明 vars，可直接新增）</p>
         {:else}
-          {#each draftRows as row, index (`${index}:${row.key}`)}
-            <div class="vars-editor__row">
-              <label class="field field--compact">
-                <span class="field__label">Key</span>
-                <input
-                  class="field__input mono"
-                  type="text"
-                  value={row.key}
-                  oninput={(event) => {
-                    const target = event.currentTarget as HTMLInputElement | null;
-                    replaceRow(index, { key: target?.value ?? '' });
-                  }}
-                />
-              </label>
+          {#each draftRows as row (row.draftId)}
+            <div class="vars-editor__row" data-testid="profile-var-row">
+              <div class="vars-editor__row-head">
+                <label class="field field--compact">
+                  <span class="field__label">Key</span>
+                  <input
+                    class="field__input mono"
+                    data-testid="profile-var-key"
+                    type="text"
+                    value={row.key}
+                    oninput={(event) => {
+                      const target = event.currentTarget as HTMLInputElement | null;
+                      replaceRow(row.draftId, { key: target?.value ?? '' });
+                    }}
+                  />
+                </label>
 
-              <label class="field field--compact">
+                <button
+                  class="ui-button ui-button--subtle"
+                  type="button"
+                  onclick={() => removeRow(row.draftId)}
+                >
+                  移除
+                </button>
+              </div>
+
+              <label class="field field--compact vars-editor__value">
                 <span class="field__label">Value JSON</span>
-                <input
-                  class="field__input mono"
-                  type="text"
-                  value={row.value_json}
-                  oninput={(event) => {
-                    const target = event.currentTarget as HTMLInputElement | null;
-                    replaceRow(index, { value_json: target?.value ?? '' });
-                  }}
-                />
+                <div class="vars-editor__value-frame">
+                  <CodeEditor
+                    value={row.value_json}
+                    documentLanguage="json"
+                    onChange={(next) => {
+                      replaceRow(row.draftId, { value_json: next });
+                    }}
+                    testId="profile-var-value"
+                  />
+                </div>
               </label>
-
-              <button class="ui-button ui-button--subtle" type="button" onclick={() => removeRow(index)}>
-                移除
-              </button>
             </div>
           {/each}
         {/if}
       </div>
 
       <div class="canvas__actions">
-        <button class="ui-button ui-button--ghost" type="button" onclick={addRow}>新增变量</button>
+        <button
+          class="ui-button ui-button--ghost"
+          data-testid="profile-vars-add"
+          type="button"
+          onclick={addRow}
+        >
+          新增变量
+        </button>
         <button class="ui-button ui-button--subtle" disabled={!dirty} type="button" onclick={resetDraft}>
           重置
         </button>
-        <button class="ui-button ui-button--primary" disabled={saving || !dirty} type="button" onclick={() => void save()}>
+        <button
+          class="ui-button ui-button--primary"
+          data-testid="profile-vars-save"
+          disabled={saving || !dirty}
+          type="button"
+          onclick={() => void save()}
+        >
           {saving ? '保存中…' : '保存 vars'}
         </button>
       </div>

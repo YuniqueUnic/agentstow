@@ -112,6 +112,32 @@ pub enum SecretBindingKindResponse {
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
 #[ts(export)]
+pub enum StdinModeResponse {
+    None,
+    Text,
+    Json,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
+pub enum OutputModeResponse {
+    Passthrough,
+    Capture,
+    Json,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
+pub enum CwdPolicyResponse {
+    Workspace,
+    Current,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
 pub enum EnvUsageOwnerKindResponse {
     EnvEmitSet,
     Script,
@@ -283,10 +309,15 @@ pub struct ScriptSummaryResponse {
     pub kind: String,
     pub entry: String,
     pub args: Vec<String>,
+    pub cwd_policy: CwdPolicyResponse,
     pub env_keys: Vec<String>,
     pub env_bindings: Vec<EnvVarSummaryResponse>,
+    pub stdin_mode: StdinModeResponse,
+    pub stdout_mode: OutputModeResponse,
+    pub stderr_mode: OutputModeResponse,
     #[ts(type = "number | null")]
     pub timeout_ms: Option<u64>,
+    pub expected_exit_codes: Vec<i32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]

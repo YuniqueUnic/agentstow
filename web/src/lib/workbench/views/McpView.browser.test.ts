@@ -50,6 +50,7 @@ describe('McpView', () => {
       onCreateManifestObject: vi.fn()
     });
 
+    await expect.element(screen.getByText('Config & Dry-run')).toBeInTheDocument();
     await expect.element(screen.getByTestId('mcp-launcher-preview')).toHaveTextContent(
       '@modelcontextprotocol/server-filesystem'
     );
@@ -70,9 +71,15 @@ describe('McpView', () => {
     await expect.element(screen.getByTestId('mcp-validate-issues')).toHaveTextContent(
       'OPENAI_API_KEY 尚未绑定到当前运行环境。'
     );
+    await expect.element(screen.getByTestId('mcp-validate-issues')).toHaveTextContent(
+      'mcp_env_unavailable'
+    );
 
     await screen.getByTestId('mcp-test-run').click();
-    await expect.element(screen.getByTestId('mcp-test-checks')).toHaveTextContent('env_missing');
+    await expect.element(screen.getByTestId('mcp-test-checks')).toHaveTextContent('validate');
+    await expect.element(screen.getByTestId('mcp-test-checks')).toHaveTextContent('launcher');
+    await expect.element(screen.getByTestId('mcp-test-checks')).toHaveTextContent('render');
+    await expect.element(screen.getByTestId('mcp-test-checks')).toHaveTextContent('env:OPENAI_API_KEY');
     await expect.element(screen.getByTestId('mcp-env-bindings')).toHaveTextContent(
       'source env: OPENAI_API_KEY'
     );

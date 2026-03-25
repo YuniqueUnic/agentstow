@@ -1,12 +1,14 @@
 use std::collections::{BTreeMap, BTreeSet};
 
+use agentstow_core::{CwdPolicy, OutputMode, StdinMode};
 use agentstow_core::{ProfileName, Result, normalize_for_display};
 use agentstow_manifest::{Manifest, McpTransport, Profile, ProfileVarSyntaxMode};
 use agentstow_mcp::Mcp;
 use agentstow_web_types::{
-    ArtifactSummaryResponse, EnvEmitSetSummaryResponse, EnvUsageRefResponse, McpHeaderResponse,
-    McpServerSummaryResponse, McpTransportKindResponse, ProfileSummaryResponse, ProfileVarResponse,
-    ProfileVarSyntaxModeResponse, ScriptSummaryResponse, TargetSummaryResponse,
+    ArtifactSummaryResponse, CwdPolicyResponse, EnvEmitSetSummaryResponse, EnvUsageRefResponse,
+    McpHeaderResponse, McpServerSummaryResponse, McpTransportKindResponse, OutputModeResponse,
+    ProfileSummaryResponse, ProfileVarResponse, ProfileVarSyntaxModeResponse,
+    ScriptSummaryResponse, StdinModeResponse, TargetSummaryResponse,
 };
 
 use super::common::{artifact_kind_response, install_method_response, validate_as_response};
@@ -179,12 +181,40 @@ pub(crate) fn build_script_summaries(
                 kind: script.kind.clone(),
                 entry: script.entry.clone(),
                 args: script.args.clone(),
+                cwd_policy: cwd_policy_response(script.cwd_policy),
                 env_keys: env_bindings.iter().map(|env| env.key.clone()).collect(),
                 env_bindings,
+                stdin_mode: stdin_mode_response(script.stdin_mode),
+                stdout_mode: output_mode_response(script.stdout_mode),
+                stderr_mode: output_mode_response(script.stderr_mode),
                 timeout_ms: script.timeout_ms,
+                expected_exit_codes: script.expected_exit_codes.clone(),
             }
         })
         .collect()
+}
+
+fn stdin_mode_response(mode: StdinMode) -> StdinModeResponse {
+    match mode {
+        StdinMode::None => StdinModeResponse::None,
+        StdinMode::Text => StdinModeResponse::Text,
+        StdinMode::Json => StdinModeResponse::Json,
+    }
+}
+
+fn output_mode_response(mode: OutputMode) -> OutputModeResponse {
+    match mode {
+        OutputMode::Passthrough => OutputModeResponse::Passthrough,
+        OutputMode::Capture => OutputModeResponse::Capture,
+        OutputMode::Json => OutputModeResponse::Json,
+    }
+}
+
+fn cwd_policy_response(policy: CwdPolicy) -> CwdPolicyResponse {
+    match policy {
+        CwdPolicy::Workspace => CwdPolicyResponse::Workspace,
+        CwdPolicy::Current => CwdPolicyResponse::Current,
+    }
 }
 
 pub(crate) fn build_mcp_server_summaries(

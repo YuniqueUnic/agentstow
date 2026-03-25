@@ -4,24 +4,25 @@ use ts_rs::TS;
 use crate::{
     ApiError, ArtifactDetailResponse, ArtifactGitCompareResponse, ArtifactGitHistoryResponse,
     ArtifactGitRollbackRequest, ArtifactGitRollbackResponse, ArtifactKindResponse,
-    ArtifactSourceResponse, ArtifactSourceUpdateRequest, ArtifactSummaryResponse, EnvEmitRequest,
-    EnvEmitResponse, EnvEmitSetSummaryResponse, EnvUsageOwnerKindResponse, EnvUsageRefResponse,
-    EnvVarSummaryResponse, GitCommitSummaryResponse, HealthResponse, ImpactAnalysisResponse,
-    ImpactSubjectKindResponse, InstallMethodResponse, LinkApplyRequest, LinkDesiredInstallResponse,
+    ArtifactSourceResponse, ArtifactSourceUpdateRequest, ArtifactSummaryResponse,
+    CwdPolicyResponse, EnvEmitRequest, EnvEmitResponse, EnvEmitSetSummaryResponse,
+    EnvUsageOwnerKindResponse, EnvUsageRefResponse, EnvVarSummaryResponse,
+    GitCommitSummaryResponse, HealthResponse, ImpactAnalysisResponse, ImpactSubjectKindResponse,
+    InstallMethodResponse, LinkApplyRequest, LinkDesiredInstallResponse,
     LinkOperationActionResponse, LinkOperationItemResponse, LinkOperationResponse,
     LinkPlanItemResponse, LinkPlanRequest, LinkRecordResponse, LinkRepairRequest,
     LinkStatusResponseItem, ManifestResponse, ManifestSourceResponse, ManifestSourceUpdateRequest,
     McpCheckResponse, McpCheckStatusResponse, McpHeaderResponse, McpRenderResponse,
     McpServerSummaryResponse, McpTestResponse, McpTransportKindResponse, McpValidateResponse,
-    ProfileDetailResponse, ProfileSummaryResponse, ProfileVarResponse,
+    OutputModeResponse, ProfileDetailResponse, ProfileSummaryResponse, ProfileVarResponse,
     ProfileVarSyntaxModeResponse, ProfileVarUpdateItemRequest, ProfileVarsUpdateRequest,
     RenderResponse, ScriptRunRequest, ScriptRunResponse, ScriptSummaryResponse,
-    SecretBindingKindResponse, ShellKindResponse, TargetSummaryResponse, ValidateAsResponse,
-    ValidationIssueResponse, WatchModeResponse, WatchStatusResponse, WatchTraceEventResponse,
-    WatchTraceLevelResponse, WorkspaceCountsResponse, WorkspaceGitSummaryResponse,
-    WorkspaceInitRequest, WorkspaceInitResponse, WorkspaceProbeRequest, WorkspaceProbeResponse,
-    WorkspaceSelectRequest, WorkspaceSelectResponse, WorkspaceStateResponse,
-    WorkspaceSummaryResponse,
+    SecretBindingKindResponse, ShellKindResponse, StdinModeResponse, TargetSummaryResponse,
+    ValidateAsResponse, ValidationIssueResponse, WatchModeResponse, WatchStatusResponse,
+    WatchTraceEventResponse, WatchTraceLevelResponse, WorkspaceCountsResponse,
+    WorkspaceGitSummaryResponse, WorkspaceInitRequest, WorkspaceInitResponse,
+    WorkspaceProbeRequest, WorkspaceProbeResponse, WorkspaceSelectRequest, WorkspaceSelectResponse,
+    WorkspaceStateResponse, WorkspaceSummaryResponse,
 };
 
 pub fn export_bindings() -> Result<(), ts_rs::ExportError> {
@@ -57,6 +58,9 @@ pub fn export_bindings() -> Result<(), ts_rs::ExportError> {
     ValidateAsResponse::export_all(&config)?;
     McpTransportKindResponse::export_all(&config)?;
     SecretBindingKindResponse::export_all(&config)?;
+    StdinModeResponse::export_all(&config)?;
+    OutputModeResponse::export_all(&config)?;
+    CwdPolicyResponse::export_all(&config)?;
     EnvUsageOwnerKindResponse::export_all(&config)?;
     ImpactSubjectKindResponse::export_all(&config)?;
     WatchModeResponse::export_all(&config)?;

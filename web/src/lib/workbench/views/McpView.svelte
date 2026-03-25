@@ -208,7 +208,7 @@
     <aside class="explorer surface" aria-label="资源面板">
       <div class="explorer__head">
         <p class="explorer__eyebrow">MCP</p>
-        <p class="explorer__hint">MCP server 需要像请求文档一样被检查，而不是停留在摘要 inspector。</p>
+        <p class="explorer__hint">这里展示的是 manifest 渲染结果、配置校验和 dry-run 检查，不会建立 live runtime 连接。</p>
       </div>
 
       <div class="explorer__section">
@@ -295,32 +295,24 @@
           >
             {busyTest ? '测试中…' : 'dry-run 测试'}
           </button>
-          <button
-            class="ui-button ui-button--ghost"
-            disabled={!activeMcpServer}
-            type="button"
-            onclick={() => void onCopyToClipboard(activeMcpServer?.id ?? '', 'MCP id')}
-          >
-            复制 id
-          </button>
         </div>
       </div>
       <div class="workspace-split surface">
         <SplitView autoSaveId="workbench:mcp:document" initialLeftPct={70} minLeftPx={440} minRightPx={280}>
           {#snippet left()}
-            <section class="region" aria-label="MCP server document">
+            <section class="region" aria-label="MCP config preview">
               <div class="region__header">
-                <span>Server Document</span>
+                <span>Config Contract</span>
                 <span class="mono">{activeMcpServer?.transport_kind ?? 'idle'}</span>
               </div>
 
               <div class="region__body">
                 {#if !activeMcpServer}
-                  <p class="empty">（选择 MCP server 后可查看 transport、launcher 与 config preview）</p>
+                  <p class="empty">（选择 MCP server 后可查看 transport、launcher preview 与渲染后的 config）</p>
                 {:else}
                   <div class="inspector-section">
                     <div class="section__title">
-                      <span>Transport</span>
+                      <span>Transport Contract</span>
                       <strong>{activeMcpServer.transport_kind}</strong>
                     </div>
 
@@ -410,19 +402,19 @@
           {/snippet}
 
           {#snippet right()}
-            <section class="region secondary-sidebar" aria-label="MCP runtime sidebar">
+            <section class="region secondary-sidebar" aria-label="MCP config sidebar">
               <div class="region__header">
-                <span>Runtime Inspector</span>
+                <span>Config &amp; Dry-run</span>
                 <span class="mono">{runtimeEnvBindings.length}</span>
               </div>
 
               <div class="region__body">
                 {#if !activeMcpServer}
-                  <p class="empty empty--flush">（选择 MCP server 后查看环境绑定和快捷操作）</p>
+                  <p class="empty empty--flush">（选择 MCP server 后查看 dry-run 检查、env 依赖和可复制输出）</p>
                 {:else}
                   <div class="inspector-section">
                     <div class="section__title">
-                      <span>Runtime</span>
+                      <span>Preview Contract</span>
                       <strong>{activeMcpServer.transport_kind}</strong>
                     </div>
                     <div class="subject-summary">
@@ -441,11 +433,11 @@
                         <span class="summary-row__value mono">{activeMcpServer.args.length}</span>
                       </div>
                       <div class="summary-row">
-                        <span class="summary-row__label">Validate</span>
-                        <span class="summary-row__value mono">
+                      <span class="summary-row__label">Validate</span>
+                      <span class="summary-row__value mono">
                           {validateState ? (validateIssueCount === 0 && validateState.ok ? 'ok' : `${validateIssueCount} issue`) : 'idle'}
-                        </span>
-                      </div>
+                      </span>
+                    </div>
                       <div class="summary-row">
                         <span class="summary-row__label">Dry-run</span>
                         <span class="summary-row__value mono">
@@ -558,13 +550,10 @@
 
                   <div class="inspector-section">
                     <div class="section__title">
-                      <span>Quick Actions</span>
+                      <span>Copy Outputs</span>
                       <strong>copy</strong>
                     </div>
                     <div class="chips chips--tight">
-                      <button class="chip" type="button" onclick={() => void onCopyToClipboard(activeMcpServer.id, 'MCP id')}>
-                        复制 id
-                      </button>
                       <button
                         class="chip"
                         disabled={!launcherPreview}

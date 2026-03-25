@@ -817,7 +817,7 @@
 
     if (!query.artifact && !query.profile) {
       impact = null;
-      errorMessage = 'impact analysis 需要至少选择 artifact 或 profile。';
+      errorMessage = 'impact summary 需要至少选择 artifact 或 profile。';
       return;
     }
 
@@ -825,10 +825,10 @@
     errorMessage = null;
     try {
       impact = await getImpactAnalysis(query);
-      statusLine = '已刷新 impact analysis。';
+      statusLine = '已刷新 impact summary。';
     } catch (error) {
       impact = null;
-      errorMessage = describeError(error, '无法生成 impact analysis。');
+      errorMessage = describeError(error, '无法生成 impact summary。');
     } finally {
       busy.impact = false;
     }
@@ -1429,8 +1429,8 @@
     cmds.push({
       id: 'impact:run',
       group: 'Impact',
-      title: 'Impact: Run analysis',
-      keywords: 'impact analyze',
+      title: 'Impact: Refresh summary',
+      keywords: 'impact refresh summary',
       disabled: !(selectedArtifact || selectedProfile),
       run: async () => {
         openImpactDocument();
@@ -1708,7 +1708,6 @@
               onOpenTarget={openTargetInLinks}
               onOpenArtifact={requestOpenArtifact}
               onOpenProfile={openProfileInArtifacts}
-              onCopyToClipboard={copyToClipboard}
             />
           {:else if view === 'mcp'}
             <McpView

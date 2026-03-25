@@ -66,11 +66,19 @@ vars = [
 
 [scripts.sync]
 kind = "shell"
-entry = "echo"
-args = ["sync"]
+entry = "python3"
+args = [
+  "-c",
+  '''import os,sys; payload=sys.stdin.read().strip(); print(f"sync:{os.environ.get('OPENAI_API_KEY', 'missing')}:{payload}")'''
+]
+cwd_policy = "workspace"
 env = [
   { key = "OPENAI_API_KEY", binding = { kind = "env", var = "OPENAI_API_KEY" } }
 ]
+stdin_mode = "text"
+stdout_mode = "capture"
+stderr_mode = "capture"
+expected_exit_codes = [0]
 
 [mcp_servers.local]
 transport = { kind = "stdio", command = "npx", args = ["-y", "@modelcontextprotocol/server-filesystem", "."] }

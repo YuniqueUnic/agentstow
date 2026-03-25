@@ -38,7 +38,44 @@
     onCreateManifestObject
   }: Props = $props();
 
-  let outputTab = $state<'stdout' | 'stderr' | 'meta'>('stdout');
+  let outputTab = $state<'stdout' | 'stderr' | 'summary'>('summary');
+
+  const scriptSupportsStdin = $derived(activeScript ? activeScript.stdin_mode !== 'none' : false);
+  const capturesStdout = $derived(activeScript ? activeScript.stdout_mode !== 'passthrough' : false);
+  const capturesStderr = $derived(activeScript ? activeScript.stderr_mode !== 'passthrough' : false);
+  const commandPreview = $derived(
+    activeScript
+      ? [activeScript.entry, ...activeScript.args].filter(Boolean).join(' ')
+      : ''
+  );
+
+  function modeLabel(mode: 'none' | 'text' | 'json' | 'passthrough' | 'capture'): string {
+    switch (mode) {
+      case 'none':
+        return 'disabled';
+      case 'text':
+        return 'text';
+      case 'json':
+        return 'json';
+      case 'capture':
+        return 'capture';
+      case 'passthrough':
+      default:
+        return 'passthrough';
+    }
+  }
+
+  $effect(() => {
+    const allowedTabs = [
+      capturesStdout ? 'stdout' : null,
+      capturesStderr ? 'stderr' : null,
+      'summary'
+    ].filter((tab): tab is typeof outputTab => tab !== null);
+
+    if (!allowedTabs.includes(outputTab)) {
+      outputTab = allowedTabs[0] ?? 'summary';
+    }
+  });
 </script>
 
 <SplitView autoSaveId="workbench:view:scripts" initialLeftPct={22} minLeftPx={256} minRightPx={760}>
@@ -46,7 +83,7 @@
     <aside class="explorer surface" aria-label="资源面板">
       <div class="explorer__head">
         <p class="explorer__eyebrow">SCRIPTS</p>
-        <p class="explorer__hint">中心区编辑 stdin，底部 panel 看运行输出。</p>
+        <p class="explorer__hint">按脚本契约展示 stdin / stdout / stderr，避免把所有脚本都伪装成通用终端。</p>
       </div>
 
   <div class="explorer__section">
@@ -113,11 +150,11 @@
       </button>
       <button
         class="ui-button ui-button--primary"
-        disabled={!scriptRun?.stdout}
+        disabled={!commandPreview}
         type="button"
-        onclick={() => void onCopyToClipboard(scriptRun?.stdout ?? '', 'stdout')}
+        onclick={() => void onCopyToClipboard(commandPreview, 'command preview')}
       >
-        复制 stdout
+        复制命令
       </button>
     </div>
   </div>
@@ -134,12 +171,46 @@
           {#snippet left()}
             <section class="region" aria-label="stdin editor">
               <div class="region__header">
-                <span>stdin / request</span>
-                <span class="mono">{activeScript?.kind ?? 'script'}</span>
+                <span>{scriptSupportsStdin ? 'stdin / request' : 'run contract'}</span>
+                <span class="mono">
+                  {activeScript ? `${modeLabel(activeScript.stdin_mode)} stdin` : 'script'}
+                </span>
               </div>
               <div class="panel__body panel__body--flush">
                 {#if !activeScript}
                   <p class="empty empty--flush">（选择 script 后可输入 stdin 并运行）</p>
+                {:else if !scriptSupportsStdin}
+                  <div class="region__body region__body--stack">
+                    <p class="stack-note">
+                      当前脚本未声明 `stdin_mode`，因此不会向子进程写入输入流。直接点击“运行”即可按 manifest 契约执行。
+                    </p>
+                    <div class="inspector-table">
+                      <div class="inspector-row">
+                        <span class="inspector-row__label">Command</span>
+                        <span class="inspector-row__value inspector-row__value--mono">
+                          {commandPreview || activeScript.entry}
+                        </span>
+                      </div>
+                      <div class="inspector-row">
+                        <span class="inspector-row__label">stdin</span>
+                        <span class="inspector-row__value inspector-row__value--mono">
+                          {modeLabel(activeScript.stdin_mode)}
+                        </span>
+                      </div>
+                      <div class="inspector-row">
+                        <span class="inspector-row__label">stdout</span>
+                        <span class="inspector-row__value inspector-row__value--mono">
+                          {modeLabel(activeScript.stdout_mode)}
+                        </span>
+                      </div>
+                      <div class="inspector-row">
+                        <span class="inspector-row__label">stderr</span>
+                        <span class="inspector-row__value inspector-row__value--mono">
+                          {modeLabel(activeScript.stderr_mode)}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
                 {:else}
                   <CodeEditor value={scriptStdin} onChange={onScriptStdin} />
                 {/if}
@@ -152,40 +223,62 @@
               <Tabs.Root value={outputTab} onValueChange={(next) => (outputTab = next as typeof outputTab)}>
                 <div class="region__header">
                   <Tabs.List class="tabs" aria-label="Script output tabs">
-                    <Tabs.Trigger class="tab" value="stdout">stdout</Tabs.Trigger>
-                    <Tabs.Trigger class="tab" value="stderr">stderr</Tabs.Trigger>
-                    <Tabs.Trigger class="tab" value="meta">meta</Tabs.Trigger>
+                    {#if capturesStdout}
+                      <Tabs.Trigger class="tab" value="stdout">stdout</Tabs.Trigger>
+                    {/if}
+                    {#if capturesStderr}
+                      <Tabs.Trigger class="tab" value="stderr">stderr</Tabs.Trigger>
+                    {/if}
+                    <Tabs.Trigger class="tab" value="summary">summary</Tabs.Trigger>
                   </Tabs.List>
                   <span class="mono">exit={scriptRun?.exit_code ?? 'idle'}</span>
                 </div>
 
-                <Tabs.Content class="panel__body" value="stdout">
-                  <div class="terminal">
-                    <pre class="terminal__screen">{scriptRun?.stdout ?? '（无输出或尚未运行）'}</pre>
-                  </div>
-                </Tabs.Content>
+                {#if capturesStdout}
+                  <Tabs.Content class="panel__body" value="stdout">
+                    <div class="terminal">
+                      <pre class="terminal__screen">{scriptRun?.stdout ?? '（stdout 未捕获或尚未运行）'}</pre>
+                    </div>
+                  </Tabs.Content>
+                {/if}
 
-                <Tabs.Content class="panel__body" value="stderr">
-                  <div class="terminal">
-                    <pre class="terminal__screen terminal__screen--stderr">
-                      {scriptRun?.stderr ?? '（无错误输出或尚未运行）'}
-                    </pre>
-                  </div>
-                </Tabs.Content>
+                {#if capturesStderr}
+                  <Tabs.Content class="panel__body" value="stderr">
+                    <div class="terminal">
+                      <pre class="terminal__screen terminal__screen--stderr">
+                        {scriptRun?.stderr ?? '（stderr 未捕获或尚未运行）'}
+                      </pre>
+                    </div>
+                  </Tabs.Content>
+                {/if}
 
-                <Tabs.Content class="panel__body" value="meta">
+                <Tabs.Content class="panel__body" value="summary">
                   {#if !activeScript}
                     <p class="empty empty--flush">（暂无 script 元信息）</p>
                   {:else}
                     <div class="inspector-table">
                       <div class="inspector-row">
-                        <span class="inspector-row__label">Entry</span>
-                        <span class="inspector-row__value inspector-row__value--mono">{activeScript.entry}</span>
+                        <span class="inspector-row__label">Command</span>
+                        <span class="inspector-row__value inspector-row__value--mono">{commandPreview}</span>
                       </div>
                       <div class="inspector-row">
-                        <span class="inspector-row__label">Args</span>
+                        <span class="inspector-row__label">CWD</span>
                         <span class="inspector-row__value inspector-row__value--mono">
-                          {activeScript.args.join(' ') || '（无）'}
+                          {activeScript.cwd_policy}
+                        </span>
+                      </div>
+                      <div class="inspector-row">
+                        <span class="inspector-row__label">stdio</span>
+                        <span class="inspector-row__value inspector-row__value--mono">
+                          stdin={modeLabel(activeScript.stdin_mode)} · stdout={modeLabel(activeScript.stdout_mode)} · stderr={modeLabel(activeScript.stderr_mode)}
+                        </span>
+                      </div>
+                      <div class="inspector-row">
+                        <span class="inspector-row__label">Expected Exit</span>
+                        <span class="inspector-row__value inspector-row__value--mono">
+                          {activeScript.expected_exit_codes.length > 0
+                            ? activeScript.expected_exit_codes.join(', ')
+                            : '0'}
                         </span>
                       </div>
                       <div class="inspector-row">
@@ -195,9 +288,9 @@
                         </span>
                       </div>
                       <div class="inspector-row">
-                        <span class="inspector-row__label">Result</span>
+                        <span class="inspector-row__label">Last Exit</span>
                         <span class="inspector-row__value inspector-row__value--mono">
-                          exit={scriptRun?.exit_code ?? '（未运行）'}
+                          {scriptRun?.exit_code ?? '（未运行）'}
                         </span>
                       </div>
                     </div>
@@ -212,48 +305,73 @@
       {#snippet right()}
         <section class="region secondary-sidebar" aria-label="脚本检查器">
           <div class="region__header">
-            <span>Script Inspector</span>
+            <span>Script Contract</span>
             <button
               class="ui-button ui-button--ghost"
-              disabled={!activeScript}
+              disabled={!commandPreview}
               type="button"
-              onclick={() => void onCopyToClipboard(activeScript?.entry ?? '', 'entry')}
+              onclick={() => void onCopyToClipboard(commandPreview, 'command preview')}
             >
-              复制 entry
+              复制命令
             </button>
           </div>
 
           <div class="region__body">
             {#if !activeScript}
-              <p class="empty empty--flush">（选择 script 后查看 entry / args / env keys）</p>
+              <p class="empty empty--flush">（选择 script 后查看执行契约与 env 依赖）</p>
             {:else}
-              <div class="inspector-table">
-                <div class="inspector-row">
-                  <span class="inspector-row__label">Kind</span>
-                  <span class="inspector-row__value inspector-row__value--mono">{activeScript.kind}</span>
+              <div class="inspector-section">
+                <div class="section__title">
+                  <span>Execution</span>
+                  <strong>{activeScript.kind}</strong>
                 </div>
-                <div class="inspector-row">
-                  <span class="inspector-row__label">Entry</span>
-                  <span class="inspector-row__value inspector-row__value--mono">{activeScript.entry}</span>
+                <div class="subject-summary">
+                  <div class="summary-row">
+                    <span class="summary-row__label">stdin</span>
+                    <span class="summary-row__value mono">{modeLabel(activeScript.stdin_mode)}</span>
+                  </div>
+                  <div class="summary-row">
+                    <span class="summary-row__label">stdout</span>
+                    <span class="summary-row__value mono">{modeLabel(activeScript.stdout_mode)}</span>
+                  </div>
+                  <div class="summary-row">
+                    <span class="summary-row__label">stderr</span>
+                    <span class="summary-row__value mono">{modeLabel(activeScript.stderr_mode)}</span>
+                  </div>
+                  <div class="summary-row">
+                    <span class="summary-row__label">cwd</span>
+                    <span class="summary-row__value mono">{activeScript.cwd_policy}</span>
+                  </div>
                 </div>
-                <div class="inspector-row">
-                  <span class="inspector-row__label">Args</span>
-                  <span class="inspector-row__value inspector-row__value--mono">
-                    {activeScript.args.join(' ') || '（无）'}
-                  </span>
+              </div>
+
+              <div class="inspector-section">
+                <div class="section__title">
+                  <span>Env Bindings</span>
+                  <strong>{activeScript.env_bindings.length}</strong>
                 </div>
-                <div class="inspector-row">
-                  <span class="inspector-row__label">Env Keys</span>
-                  <span class="inspector-row__value inspector-row__value--mono">
-                    {activeScript.env_keys.join(', ') || '（无）'}
-                  </span>
-                </div>
-                <div class="inspector-row">
-                  <span class="inspector-row__label">Timeout</span>
-                  <span class="inspector-row__value inspector-row__value--mono">
-                    {activeScript.timeout_ms ?? '（无）'}
-                  </span>
-                </div>
+                {#if activeScript.env_bindings.length === 0}
+                  <p class="empty empty--flush">（该 script 未声明 env 依赖）</p>
+                {:else}
+                  <ul class="result-list" aria-label="Script env bindings">
+                    {#each activeScript.env_bindings as binding (binding.key)}
+                      <li class="result-row">
+                        <span class={['pill', binding.available ? 'pill--ok' : 'pill--warn'].join(' ')}>
+                          {binding.available ? 'ready' : 'missing'}
+                        </span>
+                        <div class="result-row__main">
+                          <span class="result-row__title">{binding.key}</span>
+                          <span class="result-row__detail mono">
+                            {binding.binding_kind} · {binding.binding} · {binding.rendered_placeholder}
+                          </span>
+                          {#if binding.diagnostic}
+                            <span class="result-row__detail">{binding.diagnostic}</span>
+                          {/if}
+                        </div>
+                      </li>
+                    {/each}
+                  </ul>
+                {/if}
               </div>
             {/if}
           </div>

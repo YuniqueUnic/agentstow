@@ -18,8 +18,10 @@ test('captures desktop UI audit screenshots for boot and workbench views', async
   const nav = page.getByRole('navigation', { name: '主导航' });
 
   await nav.getByRole('button', { name: 'Env', exact: true }).click();
-  await page.getByRole('button', { name: '生成脚本', exact: true }).click();
-  await expect(page.getByLabel('Shell 预览').locator('.cm-content')).toContainText('OPENAI_API_KEY');
+  await expect(page.getByRole('button', { name: '重新生成', exact: true })).toBeVisible();
+  await expect(page.getByLabel('Shell 预览').locator('.cm-content')).toContainText(
+    'agentstow-playwright-token'
+  );
   const envPath = testInfo.outputPath('env-desktop.png');
   await page.screenshot({ path: envPath, fullPage: true });
   await testInfo.attach('env-desktop', { path: envPath, contentType: 'image/png' });

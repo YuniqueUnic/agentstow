@@ -149,7 +149,7 @@ vars = [
         type="button"
         onclick={() => void onEnvEmit()}
       >
-        {busyEnvEmit ? '生成中…' : '生成脚本'}
+        {busyEnvEmit ? '生成中…' : envScript ? '重新生成' : '生成脚本'}
       </button>
       <button
         class="ui-button ui-button--primary"

@@ -1908,9 +1908,40 @@ summary.tree__row::-webkit-details-marker {
 
 .vars-editor__row {
   display: grid;
-  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr) auto;
+  gap: 10px;
+  border: 1px solid color-mix(in oklch, var(--line) 56%, transparent);
+  border-radius: 12px;
+  background: color-mix(in oklch, var(--surface) 82%, transparent);
+  padding: 12px;
+}
+
+.vars-editor__row-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 10px;
   align-items: end;
+}
+
+.vars-editor__value {
+  min-width: 0;
+}
+
+.vars-editor__value-frame {
+  min-height: 132px;
+  border: 1px solid color-mix(in oklch, var(--line) 52%, transparent);
+  border-radius: 12px;
+  background: color-mix(in oklch, var(--panel-elevated) 76%, transparent);
+  overflow: hidden;
+}
+
+.vars-editor__value-frame .editor {
+  min-height: 132px;
+}
+
+.vars-editor__value-frame .editor__surface,
+.vars-editor__value-frame .cm-editor,
+.vars-editor__value-frame .cm-scroller {
+  min-height: 132px;
 }
 
 .subject-summary {
@@ -2793,7 +2824,7 @@ summary.tree__row::-webkit-details-marker {
     grid-template-rows: 46px 38px minmax(0, 1fr) 30px;
   }
 
-  .vars-editor__row {
+  .vars-editor__row-head {
     grid-template-columns: 1fr;
   }
 }

@@ -30,6 +30,7 @@ test('renders env object preview and opens usage referrers from the inspector', 
   await expect.element(screen.getByTestId('env-object-preview')).toHaveTextContent(
     '"OPENAI_API_KEY": "${OPENAI_API_KEY}"'
   );
+  await expect.element(screen.getByRole('button', { name: '重新生成', exact: true })).toBeEnabled();
   await expect.element(screen.getByTestId('env-object-preview')).toHaveAttribute('data-language', 'json');
   await expect.element(screen.getByTestId('env-binding-guide')).toHaveTextContent('[env.emit.default]');
   await expect.element(screen.getByTestId('env-binding-guide')).toHaveTextContent('kind = "literal"');

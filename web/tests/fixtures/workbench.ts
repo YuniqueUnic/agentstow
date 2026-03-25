@@ -108,8 +108,9 @@ export const workspaceSummaryFixture: WorkspaceSummaryResponse = {
     {
       id: 'sync',
       kind: 'shell',
-      entry: 'echo',
-      args: ['sync'],
+      entry: 'python3',
+      args: ['-c', 'print("sync")'],
+      cwd_policy: 'workspace',
       env_keys: ['OPENAI_API_KEY'],
       env_bindings: [
         {
@@ -129,7 +130,11 @@ export const workspaceSummaryFixture: WorkspaceSummaryResponse = {
           ]
         }
       ],
-      timeout_ms: null
+      stdin_mode: 'text',
+      stdout_mode: 'capture',
+      stderr_mode: 'capture',
+      timeout_ms: null,
+      expected_exit_codes: [0]
     }
   ],
   mcp_servers: [
@@ -197,7 +202,7 @@ export const mcpValidateFixture: McpValidateResponse = {
       severity: 'warn',
       scope: 'mcp_server',
       subject_id: 'local',
-      code: 'missing_env',
+      code: 'mcp_env_unavailable',
       message: 'OPENAI_API_KEY 尚未绑定到当前运行环境。'
     }
   ]
@@ -210,16 +215,28 @@ export const mcpTestFixture: McpTestResponse = {
   ok: false,
   checks: [
     {
-      code: 'env_missing',
-      status: 'warn',
-      message: 'dry-run 检测到缺失环境变量。',
-      detail: 'OPENAI_API_KEY'
+      code: 'validate',
+      status: 'ok',
+      message: 'Codex transport 校验通过',
+      detail: null
     },
     {
-      code: 'launcher_ready',
+      code: 'launcher',
       status: 'ok',
-      message: 'launcher preview 已生成。',
+      message: 'stdio launcher 已解析',
+      detail: 'npx -y @modelcontextprotocol/server-filesystem .'
+    },
+    {
+      code: 'render',
+      status: 'ok',
+      message: 'Codex 单 server 配置可渲染',
       detail: null
+    },
+    {
+      code: 'env:OPENAI_API_KEY',
+      status: 'error',
+      message: '环境变量 `OPENAI_API_KEY` 缺失',
+      detail: '缺少环境变量：OPENAI_API_KEY'
     }
   ]
 };

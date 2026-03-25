@@ -6,14 +6,43 @@ test('source editor content syncs when switching artifact files', async ({ page 
 
   const sourceEditor = page.getByTestId('artifact-source-editor');
   const sourceContent = sourceEditor.locator('.cm-content');
+  const manifestEntry = page.getByTestId('artifact-tree-item:$manifest');
+
+  await manifestEntry.scrollIntoViewIfNeeded();
+  await manifestEntry.click();
+  await expect(sourceEditor).toHaveAttribute('data-language', 'toml');
 
   await page.getByTestId('artifact-tree-item:hello').click();
   await expect(page.getByTestId('artifact-source-path')).toContainText('artifacts/hello.txt.tera');
+  await expect(sourceEditor).toHaveAttribute('data-language', 'jinja');
   await expect(sourceContent).toContainText('Hello {{ name }} from Git!');
 
   await page.getByTestId('artifact-tree-item:bye').click();
   await expect(page.getByTestId('artifact-source-path')).toContainText('artifacts/bye.txt.tera');
   await expect(sourceContent).toContainText('Bye from AgentStow.');
+});
+
+test('profile vars key input keeps focus while typing after adding a row', async ({ page }) => {
+  await openWorkspace(page);
+
+  const panel = page.getByTestId('profile-vars-panel');
+  await expect(panel).toBeVisible();
+
+  await page.getByTestId('profile-vars-add').click();
+  const row = page.getByTestId('profile-var-row').last();
+  const keyInput = row.getByTestId('profile-var-key');
+
+  await keyInput.click();
+
+  let typed = '';
+  for (const ch of ['a', 'b', 'c']) {
+    await page.keyboard.type(ch);
+    typed += ch;
+    await expect(keyInput).toBeFocused();
+    await expect(keyInput).toHaveValue(typed);
+  }
+
+  await expect(row.getByTestId('profile-var-value')).toHaveAttribute('data-language', 'json');
 });
 
 test('artifact preview pane state persists across view switches and save refreshes', async ({ page }) => {
@@ -158,12 +187,13 @@ test('artifact history compare uses structured diff rendering', async ({ page })
   await expect(diff).toContainText('Hello {{ name }} from Git!');
 });
 
-test('MCP view exposes validate render and dry-run test loop', async ({ page }) => {
+test('MCP view exposes config validate render and dry-run test loop', async ({ page }) => {
   await openWorkspace(page);
 
   const nav = page.getByRole('navigation', { name: '主导航' });
   await nav.getByRole('button', { name: 'MCP', exact: true }).click();
 
+  await expect(page.getByText('Config & Dry-run')).toBeVisible();
   await expect(page.getByTestId('mcp-rendered-config')).toContainText('"mcpServers"');
   await expect(page.getByTestId('mcp-env-bindings')).toContainText('OPENAI_API_KEY');
 
@@ -174,7 +204,9 @@ test('MCP view exposes validate render and dry-run test loop', async ({ page }) 
   const checks = page.getByTestId('mcp-test-checks');
   await expect(checks).toBeVisible();
   await expect(checks).toContainText('validate');
+  await expect(checks).toContainText('launcher');
   await expect(checks).toContainText('render');
+  await expect(checks).toContainText('env:OPENAI_API_KEY');
 });
 
 test('watch trace panel shows recent source save events', async ({ page }) => {

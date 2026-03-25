@@ -20,7 +20,6 @@
     onOpenTarget: (id: string) => void;
     onOpenArtifact: (id: string) => void;
     onOpenProfile: (id: string) => void;
-    onCopyToClipboard: (text: string, label: string) => Promise<void>;
   };
 
   let {
@@ -33,8 +32,7 @@
     onRefreshImpact,
     onOpenTarget,
     onOpenArtifact,
-    onOpenProfile,
-    onCopyToClipboard
+    onOpenProfile
   }: Props = $props();
 
   let panelTab = $state<'issues' | 'link_status' | 'summary'>('issues');
@@ -45,7 +43,7 @@
     <aside class="explorer surface" aria-label="资源面板">
       <div class="explorer__head">
         <p class="explorer__eyebrow">IMPACT</p>
-        <p class="explorer__hint">影响分析应该像 IDE 的 problems workspace，而不是静态摘要页。</p>
+        <p class="explorer__hint">当前展示的是基于 artifact/profile 选择收集出的影响结果摘要，而不是独立的依赖图分析引擎。</p>
       </div>
 
       <div class="explorer__section">
@@ -100,26 +98,18 @@
     <main class="canvas" aria-label="工作区画布">
       <div class="canvas__head">
         <div class="title">
-          <strong>Impact</strong>
-          <span class="muted">{impact ? `· ${impact.subject_id}` : '· analysis workspace'}</span>
+          <strong>Impact Summary</strong>
+          <span class="muted">{impact ? `· ${impact.subject_id}` : '· filtered workspace view'}</span>
         </div>
 
         <div class="canvas__actions">
-          <button
-            class="ui-button ui-button--ghost"
-            disabled={!impact}
-            type="button"
-            onclick={() => void onCopyToClipboard(impact?.subject_id ?? '', 'impact subject')}
-          >
-            复制 subject
-          </button>
           <button
             class="ui-button ui-button--primary"
             disabled={busyImpact}
             type="button"
             onclick={() => void onRefreshImpact()}
           >
-            {busyImpact ? '分析中…' : '运行分析'}
+            {busyImpact ? '刷新中…' : '刷新结果'}
           </button>
         </div>
       </div>
@@ -142,7 +132,7 @@
 
                   <div class="panel__body panel__body--flush">
                     {#if !impact}
-                      <p class="empty empty--flush">（尚未运行 impact analysis）</p>
+                      <p class="empty empty--flush">（尚未加载 impact summary）</p>
                     {:else if impact.affected_targets.length === 0}
                       <p class="empty empty--flush">（没有受影响 targets）</p>
                     {:else}
@@ -178,7 +168,7 @@
 
                   <div class="panel__body panel__body--flush">
                     {#if !impact}
-                      <p class="empty empty--flush">（运行分析后可查看 artifacts / profiles 导航）</p>
+                      <p class="empty empty--flush">（加载结果后可查看 artifacts / profiles 导航）</p>
                     {:else}
                       <div class="inspector-section">
                         <div class="section__title">
@@ -191,25 +181,16 @@
                         {:else}
                           <div class="token-action-list">
                             {#each impact.affected_artifacts as artifact (artifact.id)}
-                              <div class="token-action-row">
-                                <button
-                                  class="token token--interactive token--object"
-                                  onclick={() => onOpenArtifact(artifact.id)}
-                                  type="button"
-                                >
-                                  <span>{artifact.id}</span>
-                                  <span class="token__meta">
-                                    {artifact.kind} · {artifact.target_ids.length} targets
-                                  </span>
-                                </button>
-                                <button
-                                  class="ui-button ui-button--ghost ui-button--icon"
-                                  onclick={() => void onCopyToClipboard(artifact.id, 'artifact id')}
-                                  type="button"
-                                >
-                                  复制
-                                </button>
-                              </div>
+                              <button
+                                class="token token--interactive token--object"
+                                onclick={() => onOpenArtifact(artifact.id)}
+                                type="button"
+                              >
+                                <span>{artifact.id}</span>
+                                <span class="token__meta">
+                                  {artifact.kind} · {artifact.target_ids.length} targets
+                                </span>
+                              </button>
                             {/each}
                           </div>
                         {/if}
@@ -226,25 +207,16 @@
                         {:else}
                           <div class="token-action-list">
                             {#each impact.affected_profiles as profile (profile.id)}
-                              <div class="token-action-row">
-                                <button
-                                  class="token token--interactive token--object"
-                                  onclick={() => onOpenProfile(profile.id)}
-                                  type="button"
-                                >
-                                  <span>{profile.id}</span>
-                                  <span class="token__meta">
-                                    {profile.artifact_ids.length} artifacts · {profile.target_ids.length} targets
-                                  </span>
-                                </button>
-                                <button
-                                  class="ui-button ui-button--ghost ui-button--icon"
-                                  onclick={() => void onCopyToClipboard(profile.id, 'profile id')}
-                                  type="button"
-                                >
-                                  复制
-                                </button>
-                              </div>
+                              <button
+                                class="token token--interactive token--object"
+                                onclick={() => onOpenProfile(profile.id)}
+                                type="button"
+                              >
+                                <span>{profile.id}</span>
+                                <span class="token__meta">
+                                  {profile.artifact_ids.length} artifacts · {profile.target_ids.length} targets
+                                </span>
+                              </button>
                             {/each}
                           </div>
                         {/if}
