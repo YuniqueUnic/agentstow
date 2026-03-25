@@ -31,6 +31,11 @@
     WorkspaceSummaryResponse
   } from '$lib/types';
   import ProfileVarsPanel from '$lib/workbench/artifacts/ProfileVarsPanel.svelte';
+  import {
+    clearFailedAutoPreviewFingerprint,
+    getLatestFailedAutoPreviewFingerprint,
+    rememberFailedAutoPreviewFingerprint
+  } from '$lib/workbench/artifacts/auto_preview_cache';
   import { basenameFromPath, truncateMiddle } from '$lib/utils/format';
   import { buildArtifactTree, relativeSourcePath } from '$lib/workbench/artifacts/artifact_tree';
   import ArtifactTreeNode from '$lib/workbench/artifacts/ArtifactTreeNode.svelte';
@@ -94,7 +99,6 @@
 
   const MANIFEST_DOC_ID = '$manifest';
   const PREVIEW_PANE_STORAGE_KEY = 'agentstow:artifacts:preview-pane-open';
-
   function readPreviewPanePreference(): boolean {
     if (typeof window === 'undefined') {
       return true;
@@ -136,7 +140,6 @@
   let artifactSearch = $state('');
   let tabMenu = $state<{ id: string; x: number; y: number } | null>(null);
   let tabMenuEl = $state<HTMLDivElement | null>(null);
-  let lastAutoPreviewKey: string | null = null;
   let profileDetail = $state<ProfileDetailResponse | null>(null);
   let profileDetailBusy = $state(false);
   let profileDetailError = $state<string | null>(null);
@@ -223,6 +226,17 @@
     source: ArtifactSourceResponse | ManifestSourceResponse | null | undefined
   ): string {
     return source?.content ?? '';
+  }
+
+  function autoPreviewDocumentScope(documentId: string): string {
+    return `${workspaceRoot ?? '$workspace'}::${documentId}`;
+  }
+
+  function autoPreviewFingerprint(
+    profileId: string | null,
+    source: ArtifactSourceResponse | ManifestSourceResponse
+  ): string {
+    return `${profileId ?? ''}::${savedContentOf(source)}`;
   }
 
   function summarySourcePathOf(documentId: string | null): string | null {
@@ -580,13 +594,15 @@ Hello {{ name }}.
       revealPane?: boolean;
       showRenderedTab?: boolean;
       documentId?: string | null;
+      preserveError?: boolean;
     } = {}
   ): Promise<void> {
     const {
       announce = true,
       revealPane = false,
       showRenderedTab = false,
-      documentId = activeTab
+      documentId = activeTab,
+      preserveError = false
     } = options;
 
     if (!documentId) {
@@ -596,9 +612,12 @@ Hello {{ name }}.
     if (!st || st.busyPreview) {
       return;
     }
+    const documentScope = autoPreviewDocumentScope(documentId);
 
     st.busyPreview = true;
-    setErrorMessage(null);
+    if (!preserveError) {
+      setErrorMessage(null);
+    }
     try {
       if (revealPane) {
         setPreviewPaneOpen(true);
@@ -622,8 +641,16 @@ Hello {{ name }}.
       } else {
         st.previewText = '请选择 profile 后再渲染预览。';
       }
+      clearFailedAutoPreviewFingerprint(documentScope);
+      setErrorMessage(null);
     } catch (error) {
       st.previewText = '';
+      if (st.source) {
+        rememberFailedAutoPreviewFingerprint(
+          documentScope,
+          autoPreviewFingerprint(selectedProfile ?? null, st.source)
+        );
+      }
       setErrorMessage(describeError(error, '渲染预览失败。'));
     } finally {
       st.busyPreview = false;
@@ -980,7 +1007,6 @@ Hello {{ name }}.
   $effect(() => {
     const tabId = activeTab;
     if (!tabId) {
-      lastAutoPreviewKey = null;
       return;
     }
     if (!isManifestTab(tabId) && !selectedProfile) {
@@ -992,14 +1018,14 @@ Hello {{ name }}.
       return;
     }
 
-    const nextKey = `${tabId}::${selectedProfile ?? ''}::${savedContentOf(source)}`;
-    if (nextKey === lastAutoPreviewKey) {
+    const documentScope = autoPreviewDocumentScope(tabId);
+    const nextKey = autoPreviewFingerprint(selectedProfile ?? null, source);
+    if (getLatestFailedAutoPreviewFingerprint(documentScope) === nextKey) {
       return;
     }
 
-    lastAutoPreviewKey = nextKey;
     untrack(() => {
-      void refreshPreview({ announce: false });
+      void refreshPreview({ announce: false, documentId: tabId, preserveError: true });
     });
   });
 

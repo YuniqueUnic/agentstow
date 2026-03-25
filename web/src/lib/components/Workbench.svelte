@@ -5,17 +5,11 @@
   import WorkbenchBottomPanel, {
     type BottomPanelTab
   } from '$lib/workbench/WorkbenchBottomPanel.svelte';
+  import WorkbenchViewRouter from '$lib/components/WorkbenchViewRouter.svelte';
   import WorkspaceBoot from '$lib/workbench/WorkspaceBoot.svelte';
   import EditorTabs from '$lib/workbench/EditorTabs.svelte';
-  import SplitView from '$lib/components/SplitView.svelte';
   import WorkbenchRail from '$lib/workbench/WorkbenchRail.svelte';
   import WorkbenchTopbar from '$lib/workbench/WorkbenchTopbar.svelte';
-  import ArtifactsView from '$lib/workbench/views/ArtifactsView.svelte';
-  import EnvView from '$lib/workbench/views/EnvView.svelte';
-  import ImpactView from '$lib/workbench/views/ImpactView.svelte';
-  import LinksView from '$lib/workbench/views/LinksView.svelte';
-  import McpView from '$lib/workbench/views/McpView.svelte';
-  import ScriptsView from '$lib/workbench/views/ScriptsView.svelte';
   import {
     ApiClientError,
     applyLinks,
@@ -718,6 +712,50 @@
     impact = null;
     ensureFallbackDocument();
     statusLine = '已连接到 workspace。';
+  }
+
+  async function handleArtifactSourceSaved(): Promise<void> {
+    await Promise.all([refreshWorkspaceGit(), refreshWatchStatus()]);
+  }
+
+  function setWorkbenchStatusLine(next: string): void {
+    statusLine = next;
+  }
+
+  function setWorkbenchErrorMessage(next: string | null): void {
+    errorMessage = next;
+  }
+
+  function handleArtifactRequestHandled(id: string): void {
+    if (artifactRequestId === id) {
+      artifactRequestId = null;
+    }
+  }
+
+  function handleManifestInsertHandled(kind: ManifestInsertKind): void {
+    if (manifestInsertRequest === kind) {
+      manifestInsertRequest = null;
+    }
+  }
+
+  function setLinkSearchValue(next: string): void {
+    linkSearch = next;
+  }
+
+  function setLinkUnhealthyOnlyValue(next: boolean): void {
+    linkUnhealthyOnly = next;
+  }
+
+  function setLinkForceValue(next: boolean): void {
+    linkForce = next;
+  }
+
+  function setLinkScopeValue(next: 'selected' | 'all'): void {
+    linkScope = next;
+  }
+
+  function setScriptStdinValue(next: string): void {
+    scriptStdin = next;
   }
 
   async function refreshLinkStatus(announce = true): Promise<void> {
@@ -1601,145 +1639,93 @@
       </div>
 
       <div class="workbench-view">
-        {#snippet currentView()}
-          {#if view === 'artifacts'}
-            <ArtifactsView
-              summary={summary}
-              selectedProfile={selectedProfile}
+        <div
+          class={[
+            'workbench-view__stack',
+            bottomPanelOpen ? 'workbench-view__stack--bottom-open' : ''
+          ].join(' ')}
+        >
+          <div class="workbench-view__content">
+            <WorkbenchViewRouter
+              {view}
+              {summary}
+              {selectedProfile}
               onSelectProfile={selectProfile}
               onFocusArtifact={focusArtifact}
               onOpenTarget={openTargetInLinks}
               onRefreshWorkspace={bootstrapConfigured}
-              onSourceSaved={async () => {
-                await Promise.all([refreshWorkspaceGit(), refreshWatchStatus()]);
-              }}
+              onSourceSaved={handleArtifactSourceSaved}
               requestedArtifactId={artifactRequestId}
-              onRequestHandled={(id) => {
-                if (artifactRequestId === id) {
-                  artifactRequestId = null;
-                }
-              }}
+              onRequestHandled={handleArtifactRequestHandled}
               requestedManifestInsert={manifestInsertRequest}
-              onManifestInsertHandled={(kind) => {
-                if (manifestInsertRequest === kind) {
-                  manifestInsertRequest = null;
-                }
-              }}
+              onManifestInsertHandled={handleManifestInsertHandled}
               shortcutsEnabled={!paletteOpen}
-              setStatusLine={(next) => (statusLine = next)}
-              setErrorMessage={(next) => (errorMessage = next)}
-            />
-          {:else if view === 'links'}
-            <LinksView
-              targets={targets}
-              linkStatus={linkStatus}
-              selectedTargetId={selectedTargetId}
-              selectedTargets={selectedTargets}
-              linkSearch={linkSearch}
-              linkUnhealthyOnly={linkUnhealthyOnly}
-              linkForce={linkForce}
-              linkScope={linkScope}
-              linkOp={linkOp}
-              linkOpTitle={linkOpTitle}
-              activeTarget={activeTarget}
-              activeLinkStatus={activeLinkStatus}
-              selectedProfile={selectedProfile}
+              setStatusLine={setWorkbenchStatusLine}
+              setErrorMessage={setWorkbenchErrorMessage}
+              {targets}
+              {linkStatus}
+              {selectedTargetId}
+              {selectedTargets}
+              {linkSearch}
+              {linkUnhealthyOnly}
+              {linkForce}
+              {linkScope}
+              {linkOp}
+              {linkOpTitle}
+              {activeTarget}
+              {activeLinkStatus}
               busyLinks={busy.links}
               busyLinkOp={busy.link_op}
-              errorMessage={errorMessage}
-              statusLine={statusLine}
-              onLinkSearch={(next) => (linkSearch = next)}
-              onLinkUnhealthyOnly={(next) => (linkUnhealthyOnly = next)}
-              onLinkForce={(next) => (linkForce = next)}
-              onLinkScope={(next) => (linkScope = next)}
+              onLinkSearch={setLinkSearchValue}
+              onLinkUnhealthyOnly={setLinkUnhealthyOnlyValue}
+              onLinkForce={setLinkForceValue}
+              onLinkScope={setLinkScopeValue}
               onSelectTarget={openTargetDocument}
               onToggleTarget={toggleTargetSelection}
               onRefreshLinkStatus={refreshLinkStatus}
               onCopyToClipboard={copyToClipboard}
               onRunLinkOperation={runLinkOperation}
-            />
-          {:else if view === 'env'}
-            <EnvView
               envSets={envSets}
-              selectedEnvSet={selectedEnvSet}
+              {selectedEnvSet}
               activeEnvSet={activeEnvSet}
-              selectedShell={selectedShell}
-              shellChoices={shellChoices}
+              {selectedShell}
+              {shellChoices}
               envScript={envScript}
               busyEnvEmit={busy.env_emit}
-              errorMessage={errorMessage}
-              statusLine={statusLine}
               onSelectEnvSet={openEnvDocument}
               onSelectShell={handleShellSelect}
               onEnvEmit={handleEnvEmit}
-              onCopyToClipboard={copyToClipboard}
               onOpenUsageRef={openEnvUsageRef}
               onOpenManifestEditor={openManifestEditor}
               onCreateManifestObject={requestManifestInsert}
-            />
-          {:else if view === 'scripts'}
-            <ScriptsView
-              scripts={scripts}
-              selectedScript={selectedScript}
+              {scripts}
+              {selectedScript}
               activeScript={activeScript}
-              scriptStdin={scriptStdin}
+              {scriptStdin}
               scriptRun={scriptRun}
               busyScriptRun={busy.script_run}
-              errorMessage={errorMessage}
-              statusLine={statusLine}
               onSelectScript={openScriptDocument}
-              onScriptStdin={(next) => (scriptStdin = next)}
+              onScriptStdin={setScriptStdinValue}
               onScriptRun={handleScriptRun}
-              onCopyToClipboard={copyToClipboard}
-              onOpenManifestEditor={openManifestEditor}
-              onCreateManifestObject={requestManifestInsert}
-            />
-          {:else if view === 'impact'}
-            <ImpactView
-              impactMode={impactMode}
-              impact={impact}
-              selectedArtifact={selectedArtifact}
-              selectedProfile={selectedProfile}
+              {impactMode}
+              {impact}
+              {selectedArtifact}
               busyImpact={busy.impact}
-              errorMessage={errorMessage}
-              statusLine={statusLine}
               onSetImpactMode={setImpactMode}
               onRefreshImpact={refreshImpactAnalysis}
-              onOpenTarget={openTargetInLinks}
               onOpenArtifact={requestOpenArtifact}
               onOpenProfile={openProfileInArtifacts}
-            />
-          {:else if view === 'mcp'}
-            <McpView
               mcpServers={mcpServers}
-              selectedMcpServerId={selectedMcpServerId}
+              {selectedMcpServerId}
               activeMcpServer={activeMcpServer}
-              errorMessage={errorMessage}
-              statusLine={statusLine}
-              setErrorMessage={(next) => (errorMessage = next)}
               onSelectMcpServer={openMcpDocument}
-              onCopyToClipboard={copyToClipboard}
-              onOpenManifestEditor={openManifestEditor}
-              onCreateManifestObject={requestManifestInsert}
+              {errorMessage}
+              {statusLine}
             />
-          {/if}
-        {/snippet}
+          </div>
 
-        {#if bottomPanelOpen}
-          <SplitView
-            autoSaveId="workbench:main-bottom"
-            direction="vertical"
-            initialLeftPct={82}
-            minLeftPx={280}
-            minRightPx={180}
-          >
-            {#snippet left()}
-              <div class="workbench-view__content">
-                {@render currentView()}
-              </div>
-            {/snippet}
-
-            {#snippet right()}
+          {#if bottomPanelOpen}
+            <div class="workbench-view__bottom">
               <WorkbenchBottomPanel
                 activeTab={bottomPanelTab}
                 errorMessage={errorMessage}
@@ -1759,13 +1745,9 @@
                   bottomPanelOpen = false;
                 }}
               />
-            {/snippet}
-          </SplitView>
-        {:else}
-          <div class="workbench-view__content">
-            {@render currentView()}
-          </div>
-        {/if}
+            </div>
+          {/if}
+        </div>
       </div>
 
       <CommandPalette

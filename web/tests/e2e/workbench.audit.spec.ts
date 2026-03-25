@@ -15,6 +15,15 @@ test('captures desktop UI audit screenshots for boot and workbench views', async
   await page.screenshot({ path: workbenchPath, fullPage: true });
   await testInfo.attach('workbench-desktop', { path: workbenchPath, contentType: 'image/png' });
 
+  await page.getByRole('button', { name: 'Light', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Light', exact: true })).toHaveAttribute(
+    'aria-pressed',
+    'true'
+  );
+  const lightPath = testInfo.outputPath('workbench-light-desktop.png');
+  await page.screenshot({ path: lightPath, fullPage: true });
+  await testInfo.attach('workbench-light-desktop', { path: lightPath, contentType: 'image/png' });
+
   const nav = page.getByRole('navigation', { name: '主导航' });
 
   await nav.getByRole('button', { name: 'Env', exact: true }).click();

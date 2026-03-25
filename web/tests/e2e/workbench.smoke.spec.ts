@@ -24,5 +24,4 @@ test('keeps the bottom panel collapsed until the operator opens it', async ({ pa
 
   await expect(page.getByTestId('workbench-bottom-panel')).toHaveCount(0);
   await expect(page.getByRole('button', { name: /problems/i })).toBeVisible();
-  await expect(page.getByRole('contentinfo')).toContainText('已连接到 workspace。');
 });

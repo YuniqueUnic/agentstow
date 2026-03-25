@@ -1,8 +1,62 @@
-import { expect, test } from '@playwright/test';
-import { openWorkspace } from './helpers';
+import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+
+import { expect, test, type Page } from '@playwright/test';
+import { createWorkbenchWorkspace, openWorkspace } from './helpers';
+
+async function createCleanArtifactWorkspace(): Promise<string> {
+  const workspaceRoot = await mkdtemp(path.join(os.tmpdir(), 'agentstow-preview-storm-'));
+  await mkdir(path.join(workspaceRoot, 'artifacts'), { recursive: true });
+  await writeFile(
+    path.join(workspaceRoot, 'agentstow.toml'),
+    `[profiles.base]
+vars = { name = "AgentStow" }
+
+[artifacts.hello]
+kind = "file"
+source = "artifacts/hello.txt.tera"
+template = true
+validate_as = "none"
+`
+  );
+  await writeFile(path.join(workspaceRoot, 'artifacts', 'hello.txt.tera'), 'Hello {{ name }}!\n');
+  return workspaceRoot;
+}
+
+async function createWorkspaceWithHelloAndBye(): Promise<string> {
+  const workspaceRoot = await mkdtemp(path.join(os.tmpdir(), 'agentstow-artifact-switch-'));
+  await mkdir(path.join(workspaceRoot, 'artifacts'), { recursive: true });
+  await writeFile(
+    path.join(workspaceRoot, 'agentstow.toml'),
+    `[profiles.base]
+vars = { name = "AgentStow" }
+
+[artifacts.hello]
+kind = "file"
+source = "artifacts/hello.txt.tera"
+template = true
+validate_as = "none"
+
+[artifacts.bye]
+kind = "file"
+source = "artifacts/bye.txt.tera"
+template = false
+validate_as = "none"
+`
+  );
+  await writeFile(path.join(workspaceRoot, 'artifacts', 'hello.txt.tera'), 'Hello {{ name }} from Git!\n');
+  await writeFile(path.join(workspaceRoot, 'artifacts', 'bye.txt.tera'), 'Bye from AgentStow.\n');
+  return workspaceRoot;
+}
+
+async function openFreshWorkbenchWorkspace(page: Page): Promise<void> {
+  await openWorkspace(page, await createWorkbenchWorkspace());
+}
 
 test('source editor content syncs when switching artifact files', async ({ page }) => {
-  await openWorkspace(page);
+  const workspaceRoot = await createWorkspaceWithHelloAndBye();
+  await openWorkspace(page, workspaceRoot);
 
   const sourceEditor = page.getByTestId('artifact-source-editor');
   const sourceContent = sourceEditor.locator('.cm-content');
@@ -23,7 +77,7 @@ test('source editor content syncs when switching artifact files', async ({ page 
 });
 
 test('profile vars key input keeps focus while typing after adding a row', async ({ page }) => {
-  await openWorkspace(page);
+  await openFreshWorkbenchWorkspace(page);
 
   const panel = page.getByTestId('profile-vars-panel');
   await expect(panel).toBeVisible();
@@ -46,7 +100,7 @@ test('profile vars key input keeps focus while typing after adding a row', async
 });
 
 test('artifact preview pane state persists across view switches and save refreshes', async ({ page }) => {
-  await openWorkspace(page);
+  await openFreshWorkbenchWorkspace(page);
 
   const mod = process.platform === 'darwin' ? 'Meta' : 'Control';
   const nav = page.getByRole('navigation', { name: '主导航' });
@@ -74,8 +128,94 @@ test('artifact preview pane state persists across view switches and save refresh
   await expect(page.getByRole('tab', { name: 'Rendered' })).toHaveCount(0);
 });
 
+test('saving an invalid tera artifact triggers one failed preview instead of a render storm', async ({
+  page
+}) => {
+  const workspaceRoot = await createCleanArtifactWorkspace();
+  await openWorkspace(page, workspaceRoot);
+
+  const mod = process.platform === 'darwin' ? 'Meta' : 'Control';
+  const sourceEditor = page.getByTestId('artifact-source-editor');
+  const sourceContent = sourceEditor.locator('.cm-content');
+  const renderStatuses: number[] = [];
+
+  await page.getByTestId('artifact-tree-item:hello').click();
+  await expect(page.getByTestId('artifact-source-path')).toContainText('artifacts/hello.txt.tera');
+  await expect(page.getByText('Hello AgentStow!')).toBeVisible();
+
+  page.on('response', (response) => {
+    const url = response.url();
+    if (!url.includes('/api/render?artifact=hello') || !url.includes('profile=base')) {
+      return;
+    }
+    renderStatuses.push(response.status());
+  });
+
+  await sourceContent.click();
+  await page.keyboard.press(`${mod}+A`);
+  await page.keyboard.insertText('Hello {{ missing_name }}!\n');
+
+  const firstBadRender = page.waitForResponse((response) => {
+    const url = response.url();
+    return (
+      url.includes('/api/render?artifact=hello') &&
+      url.includes('profile=base') &&
+      response.status() === 400
+    );
+  });
+
+  renderStatuses.length = 0;
+  await page.keyboard.press(`${mod}+S`);
+  await firstBadRender;
+
+  await expect(page.getByTestId('artifact-source-path')).toContainText('artifacts/hello.txt.tera');
+  await expect(page.getByTestId('workbench-bottom-panel')).toContainText('当前操作失败');
+
+  await page.waitForTimeout(700);
+  const settledCount = renderStatuses.length;
+  await page.waitForTimeout(700);
+
+  expect(settledCount).toBeLessThanOrEqual(2);
+  expect(renderStatuses.length).toBe(settledCount);
+});
+
+test('returning to Artifacts does not retry the same failing saved snapshot', async ({ page }) => {
+  const workspaceRoot = await createCleanArtifactWorkspace();
+  await openWorkspace(page, workspaceRoot);
+
+  const mod = process.platform === 'darwin' ? 'Meta' : 'Control';
+  const nav = page.getByRole('navigation', { name: '主导航' });
+  const sourceContent = page.getByTestId('artifact-source-editor').locator('.cm-content');
+  const renderStatuses: number[] = [];
+
+  page.on('response', (response) => {
+    const url = response.url();
+    if (!url.includes('/api/render?artifact=hello') || !url.includes('profile=base')) {
+      return;
+    }
+    renderStatuses.push(response.status());
+  });
+
+  await page.getByTestId('artifact-tree-item:hello').click();
+  await page.waitForTimeout(600);
+  renderStatuses.length = 0;
+
+  await sourceContent.click();
+  await page.keyboard.press(`${mod}+A`);
+  await page.keyboard.insertText('Hello {{ missing_name }}!\n');
+  await page.keyboard.press(`${mod}+S`);
+
+  await expect.poll(() => renderStatuses.filter((status) => status === 400).length).toBe(1);
+
+  await nav.getByRole('button', { name: 'MCP', exact: true }).click();
+  await nav.getByRole('button', { name: 'Artifacts', exact: true }).click();
+  await page.waitForTimeout(1200);
+
+  expect(renderStatuses.filter((status) => status === 400).length).toBe(1);
+});
+
 test('artifact source editor retains an internal scroll container for long content', async ({ page }) => {
-  await openWorkspace(page);
+  await openFreshWorkbenchWorkspace(page);
 
   const sourceEditor = page.getByTestId('artifact-source-editor');
   const sourceContent = sourceEditor.locator('.cm-content');
@@ -103,7 +243,8 @@ test('artifact source editor retains an internal scroll container for long conte
 test('inserting a new artifact snippet updates the editor and opens the bootstrapped source after save', async ({
   page
 }) => {
-  await openWorkspace(page);
+  const workspaceRoot = await createCleanArtifactWorkspace();
+  await openWorkspace(page, workspaceRoot);
 
   const manifestEntry = page.getByTestId('artifact-tree-item:$manifest');
   await manifestEntry.scrollIntoViewIfNeeded();
@@ -157,7 +298,7 @@ test('clipboard fallback still copies MCP launcher when Clipboard API write fail
     });
   });
 
-  await openWorkspace(page);
+  await openFreshWorkbenchWorkspace(page);
 
   const nav = page.getByRole('navigation', { name: '主导航' });
   await nav.getByRole('button', { name: 'MCP', exact: true }).click();
@@ -169,7 +310,7 @@ test('clipboard fallback still copies MCP launcher when Clipboard API write fail
 });
 
 test('artifact history compare uses structured diff rendering', async ({ page }) => {
-  await openWorkspace(page);
+  await openFreshWorkbenchWorkspace(page);
 
   await page.getByTestId('artifact-tree-item:hello').click();
 
@@ -188,7 +329,7 @@ test('artifact history compare uses structured diff rendering', async ({ page })
 });
 
 test('MCP view exposes config validate render and dry-run test loop', async ({ page }) => {
-  await openWorkspace(page);
+  await openFreshWorkbenchWorkspace(page);
 
   const nav = page.getByRole('navigation', { name: '主导航' });
   await nav.getByRole('button', { name: 'MCP', exact: true }).click();
@@ -210,7 +351,7 @@ test('MCP view exposes config validate render and dry-run test loop', async ({ p
 });
 
 test('watch trace panel shows recent source save events', async ({ page }) => {
-  await openWorkspace(page);
+  await openFreshWorkbenchWorkspace(page);
 
   const mod = process.platform === 'darwin' ? 'Meta' : 'Control';
   const sourceEditor = page.getByTestId('artifact-source-editor');

@@ -12,33 +12,33 @@
 
 :root[data-theme='light'] {
   color-scheme: light;
-  --canvas: oklch(0.985 0.003 95);
-  --canvas-deep: oklch(0.942 0.005 95);
-  --canvas-tint: oklch(0.972 0.007 95);
-  --surface: oklch(0.968 0.004 95);
-  --surface-strong: oklch(0.934 0.007 95);
-  --surface-muted: oklch(0.902 0.01 95);
-  --topbar-bg: oklch(0.938 0.006 95);
-  --rail-bg: oklch(0.902 0.008 95);
-  --explorer-bg: oklch(0.95 0.006 95);
-  --panel-bg: oklch(0.976 0.003 95);
-  --panel-elevated: oklch(0.958 0.005 95);
-  --line: oklch(0.79 0.012 95);
-  --line-strong: oklch(0.66 0.016 95);
-  --ink: oklch(0.22 0.01 255);
-  --ink-soft: oklch(0.33 0.012 255);
-  --ink-muted: oklch(0.46 0.012 255);
+  --canvas: oklch(0.94 0.007 95);
+  --canvas-deep: oklch(0.892 0.009 95);
+  --canvas-tint: oklch(0.924 0.011 95);
+  --surface: oklch(0.932 0.007 95);
+  --surface-strong: oklch(0.894 0.01 95);
+  --surface-muted: oklch(0.858 0.013 95);
+  --topbar-bg: oklch(0.902 0.009 95);
+  --rail-bg: oklch(0.866 0.011 95);
+  --explorer-bg: oklch(0.912 0.009 95);
+  --panel-bg: oklch(0.936 0.006 95);
+  --panel-elevated: oklch(0.914 0.008 95);
+  --line: oklch(0.67 0.015 95);
+  --line-strong: oklch(0.54 0.019 95);
+  --ink: oklch(0.16 0.013 255);
+  --ink-soft: oklch(0.24 0.015 255);
+  --ink-muted: oklch(0.34 0.015 255);
   --primary: oklch(0.56 0.13 255);
   --primary-strong: oklch(0.5 0.13 255);
-  --primary-soft: oklch(0.9 0.03 255);
+  --primary-soft: oklch(0.8 0.05 255);
   --accent: oklch(0.62 0.12 72);
   --success: oklch(0.62 0.12 156);
   --danger: oklch(0.58 0.16 28);
-  --shadow: 0 20px 48px rgba(21, 29, 41, 0.08);
+  --shadow: 0 18px 42px rgba(21, 29, 41, 0.14);
   --page-gradient:
-    linear-gradient(180deg, color-mix(in oklch, white 72%, var(--canvas-tint)), var(--canvas));
-  --page-grid-color: color-mix(in oklch, var(--line) 20%, transparent);
-  --page-grid-opacity: 0.78;
+    linear-gradient(180deg, color-mix(in oklch, white 28%, var(--canvas-tint)), var(--canvas));
+  --page-grid-color: color-mix(in oklch, var(--line) 32%, transparent);
+  --page-grid-opacity: 0.56;
 }
 
 :root[data-theme='dark'] {
@@ -108,33 +108,33 @@
 @media (prefers-color-scheme: light) {
   :root:not([data-theme='dark']) {
     color-scheme: light;
-    --canvas: oklch(0.985 0.003 95);
-    --canvas-deep: oklch(0.942 0.005 95);
-    --canvas-tint: oklch(0.972 0.007 95);
-    --surface: oklch(0.968 0.004 95);
-    --surface-strong: oklch(0.934 0.007 95);
-    --surface-muted: oklch(0.902 0.01 95);
-    --topbar-bg: oklch(0.938 0.006 95);
-    --rail-bg: oklch(0.902 0.008 95);
-    --explorer-bg: oklch(0.95 0.006 95);
-    --panel-bg: oklch(0.976 0.003 95);
-    --panel-elevated: oklch(0.958 0.005 95);
-    --line: oklch(0.79 0.012 95);
-    --line-strong: oklch(0.66 0.016 95);
-    --ink: oklch(0.22 0.01 255);
-    --ink-soft: oklch(0.33 0.012 255);
-    --ink-muted: oklch(0.46 0.012 255);
+    --canvas: oklch(0.94 0.007 95);
+    --canvas-deep: oklch(0.892 0.009 95);
+    --canvas-tint: oklch(0.924 0.011 95);
+    --surface: oklch(0.932 0.007 95);
+    --surface-strong: oklch(0.894 0.01 95);
+    --surface-muted: oklch(0.858 0.013 95);
+    --topbar-bg: oklch(0.902 0.009 95);
+    --rail-bg: oklch(0.866 0.011 95);
+    --explorer-bg: oklch(0.912 0.009 95);
+    --panel-bg: oklch(0.936 0.006 95);
+    --panel-elevated: oklch(0.914 0.008 95);
+    --line: oklch(0.67 0.015 95);
+    --line-strong: oklch(0.54 0.019 95);
+    --ink: oklch(0.16 0.013 255);
+    --ink-soft: oklch(0.24 0.015 255);
+    --ink-muted: oklch(0.34 0.015 255);
     --primary: oklch(0.56 0.13 255);
     --primary-strong: oklch(0.5 0.13 255);
-    --primary-soft: oklch(0.9 0.03 255);
+    --primary-soft: oklch(0.8 0.05 255);
     --accent: oklch(0.62 0.12 72);
     --success: oklch(0.62 0.12 156);
     --danger: oklch(0.58 0.16 28);
-    --shadow: 0 20px 48px rgba(21, 29, 41, 0.08);
+    --shadow: 0 18px 42px rgba(21, 29, 41, 0.14);
     --page-gradient:
-      linear-gradient(180deg, color-mix(in oklch, white 72%, var(--canvas-tint)), var(--canvas));
-    --page-grid-color: color-mix(in oklch, var(--line) 20%, transparent);
-    --page-grid-opacity: 0.78;
+      linear-gradient(180deg, color-mix(in oklch, white 28%, var(--canvas-tint)), var(--canvas));
+    --page-grid-color: color-mix(in oklch, var(--line) 32%, transparent);
+    --page-grid-opacity: 0.56;
   }
 }
 

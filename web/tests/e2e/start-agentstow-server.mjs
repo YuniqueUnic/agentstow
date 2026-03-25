@@ -8,6 +8,7 @@ const currentDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(currentDir, '..', '..', '..');
 const port = Number(process.env.PLAYWRIGHT_AGENTSTOW_PORT ?? '8877');
 const workspaceRoot = path.join(os.tmpdir(), 'agentstow-playwright-workspace');
+const stateRoot = path.join(os.tmpdir(), `agentstow-playwright-home-${port}`);
 
 async function runCommand(command, args, cwd) {
   await new Promise((resolve, reject) => {
@@ -34,7 +35,9 @@ async function runCommand(command, args, cwd) {
 
 async function prepareWorkspace() {
   await rm(workspaceRoot, { recursive: true, force: true });
+  await rm(stateRoot, { recursive: true, force: true });
   await mkdir(path.join(workspaceRoot, 'artifacts'), { recursive: true });
+  await mkdir(stateRoot, { recursive: true });
 
   await writeFile(
     path.join(workspaceRoot, 'agentstow.toml'),
@@ -91,18 +94,18 @@ env = [
   await writeFile(path.join(workspaceRoot, 'artifacts', 'hello.txt.tera'), 'Hello {{ name }}!\n');
   await writeFile(path.join(workspaceRoot, 'artifacts', 'bye.txt.tera'), 'Bye from AgentStow.\n');
 
-  await runCommand('git', ['init'], workspaceRoot);
-  await runCommand('git', ['config', 'user.name', 'AgentStow Playwright'], workspaceRoot);
-  await runCommand('git', ['config', 'user.email', 'playwright@agentstow.local'], workspaceRoot);
-  await runCommand('git', ['add', '.'], workspaceRoot);
-  await runCommand('git', ['commit', '-m', 'initial workspace'], workspaceRoot);
+  await runCommand('git', ['-C', workspaceRoot, 'init'], repoRoot);
+  await runCommand('git', ['-C', workspaceRoot, 'config', 'user.name', 'AgentStow Playwright'], repoRoot);
+  await runCommand('git', ['-C', workspaceRoot, 'config', 'user.email', 'playwright@agentstow.local'], repoRoot);
+  await runCommand('git', ['-C', workspaceRoot, 'add', '.'], repoRoot);
+  await runCommand('git', ['-C', workspaceRoot, 'commit', '-m', 'initial workspace'], repoRoot);
 
   await writeFile(
     path.join(workspaceRoot, 'artifacts', 'hello.txt.tera'),
     'Hello {{ name }} from Git!\n'
   );
-  await runCommand('git', ['add', '.'], workspaceRoot);
-  await runCommand('git', ['commit', '-m', 'update hello template'], workspaceRoot);
+  await runCommand('git', ['-C', workspaceRoot, 'add', '.'], repoRoot);
+  await runCommand('git', ['-C', workspaceRoot, 'commit', '-m', 'update hello template'], repoRoot);
 }
 
 await prepareWorkspace();
@@ -115,7 +118,8 @@ const server = spawn(
     stdio: 'inherit',
     env: {
       ...process.env,
-      OPENAI_API_KEY: process.env.OPENAI_API_KEY ?? 'agentstow-playwright-token'
+      OPENAI_API_KEY: process.env.OPENAI_API_KEY ?? 'agentstow-playwright-token',
+      AGENTSTOW_HOME: stateRoot
     }
   }
 );

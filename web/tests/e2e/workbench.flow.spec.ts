@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-import { openWorkspace } from './helpers';
+import { createWorkbenchWorkspace, openWorkspace } from './helpers';
 
 test('env view auto-emits a shell script for the selected export set', async ({ page }) => {
   await openWorkspace(page);
@@ -18,7 +18,7 @@ test('env view auto-emits a shell script for the selected export set', async ({ 
 });
 
 test('links view can apply the declared target and report a healthy status', async ({ page }) => {
-  await openWorkspace(page);
+  await openWorkspace(page, await createWorkbenchWorkspace('agentstow-links-flow-workspace-'));
 
   const nav = page.getByRole('navigation', { name: '主导航' });
   const resultsPanel = page.getByRole('region', { name: 'Links 结果面板' });

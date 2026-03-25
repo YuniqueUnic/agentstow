@@ -181,11 +181,32 @@
   overflow: hidden;
 }
 
+.workbench-view__stack {
+  min-height: 0;
+  min-width: 0;
+  height: 100%;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
+  overflow: hidden;
+}
+
+.workbench-view__stack--bottom-open {
+  grid-template-rows: minmax(0, 1fr) clamp(192px, 28vh, 288px);
+}
+
 .workbench-view__content {
   min-height: 0;
   min-width: 0;
   height: 100%;
   overflow: hidden;
+}
+
+.workbench-view__bottom {
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+  border-top: 1px solid color-mix(in oklch, var(--line) 70%, transparent);
+  background: color-mix(in oklch, var(--panel-bg) 94%, var(--canvas-deep));
 }
 
 .workbench-trace {
